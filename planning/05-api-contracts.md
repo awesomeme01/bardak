@@ -211,6 +211,8 @@ ADR-002. Причины:
 | `ATTEMPT_REJECTED` | `{seatNo}` — 🟨 **только факт, без карты** | Всем |
 | `TRICK_RESOLVED` | `{outcome: BEATEN\|TAKEN, nextAttackerSeat}` | Всем |
 | `CARDS_DRAWN` | `{drawn: [{seatNo, count}], deckLeft}` + свои карты | Персонально |
+| `HIDDEN_CARD_REVEALED` | ⭐ `{seatNo, cardCode}` — скрытая карта открыта | Всем |
+| `TRUMP_CHANGED` | ⭐ `{newTrumpSuit, cardCode, toSeat}` — открылся потайной козырь | Всем |
 | `PLAYER_OUT` | `{seatNo, place}` | Всем |
 | `HANGING_STARTED` | `{targetSeat, canHangSeat, requiredRank, deadlineTs}` | Всем |
 | `CARD_HUNG` | ⭐ `{fromSeat, toSeat, cardCode, navesLevelAfter}` | Всем |
@@ -248,7 +250,9 @@ Payload содержит только номер места. Какая имен
   "dealNo": 3,
   "phase": "DEFEND",
   "trumpSuit": "H",
+  "protectedSuit": "S",
   "deckLeft": 12,
+  "iHaveHiddenCard": true,
   "discardCount": 20,
   "anyTrickBeaten": true,
   "maxAttackThisRound": 6,
@@ -289,6 +293,15 @@ Payload содержит только номер места. Какая имен
    `navesLevel` остался — по нему фронт рисует placeholder в пустом слоте.
 1. **Чужой руки в этом объекте нет физически.** Только `cardsCount`. Не «есть, но скрыты» —
    их нет в сериализованном виде вообще.
+
+   ⭐ **Скрытая карта не попадает в проекцию вообще ни к кому — даже к владельцу.** В `myHand`
+   её нет, у соседей — только флаг «есть/нет». Это единственная сущность в игре, которую
+   не видит никто, пока она не откроется (`03-domain-rules.md` §1.8). Владелец знает лишь
+   `iHaveHiddenCard: true`.
+
+   `protectedSuit` шлётся отдельно от `trumpSuit`: козырь может смениться посреди раздачи
+   (потайной козырь, §1.9), и защищённая масть пересчитывается вместе с ним — фронт не
+   должен выводить её сам.
 2. **`availableActions` приходит от сервера.** Фронт подсвечивает возможные ходы, не зная
    правил. В фазе `HANGING` там окажутся `HANG_CARD` с конкретными картами из руки и
    `HANG_SKIP` — фронт не вычисляет, какой ранг сейчас подходит.
