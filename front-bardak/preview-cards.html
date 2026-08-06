@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <title>Проверка набора карт</title>
+    <style>
+        body { background:#14171c; color:#e6edf3; font:14px system-ui; padding:1.5rem; }
+        h2 { font-size:1rem; margin:1.5rem 0 .6rem; }
+        .grid { display:grid; grid-template-columns:repeat(10, 1fr); gap:.4rem; }
+        figure { margin:0; text-align:center; }
+        img { width:100%; display:block; }
+        figcaption { font-size:.65rem; color:#8b949e; margin-top:.2rem; }
+        .bad img { outline:2px solid #f85149; }
+    </style>
+</head>
+<body>
+<h1 style="font-size:1.2rem">Проверка маппинга карт</h1>
+<div id="out"></div>
+<script type="module">
+    const RANKS = ['6','7','8','9','10','J','Q','K','A'];
+    const SUITS = ['diamonds','hearts','spades','clubs'];
+    const out = document.getElementById('out');
+
+    for (const [set, ext] of [['classic','png'], ['classic-svg','svg']]) {
+        const h = document.createElement('h2');
+        h.textContent = `${set} — 36 карт + Joker + back`;
+        out.append(h);
+
+        const grid = document.createElement('div');
+        grid.className = 'grid';
+        const codes = [...SUITS.flatMap(s => RANKS.map(r => `${r}-${s}`)), 'Joker', 'back'];
+
+        for (const code of codes) {
+            const fig = document.createElement('figure');
+            const img = new Image();
+            img.src = `/assets/card-sets/${set}/${code}.${ext}`;
+            img.alt = code;
+            img.onerror = () => fig.classList.add('bad');
+            const cap = document.createElement('figcaption');
+            cap.textContent = code;
+            fig.append(img, cap);
+            grid.append(fig);
+        }
+        out.append(grid);
+    }
+</script>
+</body>
+</html>

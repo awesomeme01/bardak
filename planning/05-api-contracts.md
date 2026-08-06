@@ -8,7 +8,7 @@
 Граница проведена в `02-architecture.md`. Практическое следствие: создание стола — REST,
 вход за стол — WS.
 
-Терминология: **матч** = игра в бардак до предельного счёта, **раздача** = партия дурака
+Терминология: **матч** = игра в бардак до чьего-то джокера, **раздача** = партия дурака
 внутри матча (см. `03-domain-rules.md` §0).
 
 ---
@@ -145,11 +145,31 @@ ADR-002. Причины:
 | `PASS` | `{}` | «Больше не подкидываю» — передаёт право второму соседу |
 | `TAKE` | `{}` | Взять карты со стола |
 | `TRANSFER` | `{cardCode}` | Перевести атаку на следующего |
+| **`HANG_CARD`** | `{cardCode, targetSeat}` | ⭐ Навесить карту в слот соперника |
+| `HANG_SKIP` | `{}` | Отказаться от навеса — право уходит дальше |
 | `PLAY_JOKER` | `{jokerIndex, ...}` | 🟨 Payload зависит от правил джокеров (OQ-2) |
 | `RESYNC` | `{lastSeq}` | Догнать состояние после разрыва |
 | `PING` | `{}` | Heartbeat |
 
-Зарезервировано: `NAVES_*` — под механику навесов (OQ-3).
+### `HANG_CARD` — навес ⭐
+
+Доступна только в фазе `HANGING`, которая открывается **после «взял»** (не после «бито»)
+и только тому, у кого сейчас право навесить: сначала последний атаковавший, затем остальные
+(`03-domain-rules.md` §2.3).
+
+Сервер проверяет:
+
+| Проверка | Ошибка при нарушении |
+|---|---|
+| Фаза `HANGING` | `NOT_HANGING_PHASE` |
+| Право навешивать сейчас у отправителя | `NOT_YOUR_TURN` |
+| `targetSeat` — тот, кто только что взял | `INVALID_HANG_TARGET` |
+| `targetSeat` ≠ отправитель | `CANNOT_HANG_ON_SELF` |
+| Карта есть в руке | `CARD_NOT_IN_HAND` |
+| **Ранг карты = следующий по шкале жертвы** | `WRONG_NAVES_RANK` |
+
+Последняя проверка — суть механики: навесить можно только следующую ступень личной шкалы
+(`6` → `7` → … → `A` → `Joker`), масть не важна.
 
 ### `PLAY_CARD` — одна команда, два смысла ⭐
 
@@ -177,7 +197,7 @@ ADR-002. Причины:
 | `STATE_SYNC` | Полная **персональная** проекция состояния | Одному игроку |
 | `PLAYER_JOINED` / `PLAYER_LEFT` | `{userId, seatNo, displayName}` | Всем |
 | `PLAYER_READY` | `{userId, ready}` | Всем |
-| `MATCH_STARTED` | `{matchId, scoreLimit, seats[]}` | Всем |
+| `MATCH_STARTED` | `{matchId, navesScale, seats[]}` | Всем |
 | `DEAL_STARTED` | `{dealNo, trumpSuit, deckSize}` | Всем |
 | `CARDS_DEALT` | Свои карты; у остальных — только количество | Персонально |
 | `TURN_CHANGED` | `{attackerSeat, defenderSeat, canAttackSeat, deadlineTs}` | Всем |
@@ -187,13 +207,15 @@ ADR-002. Причины:
 | `TRICK_RESOLVED` | `{outcome: BEATEN\|TAKEN, nextAttackerSeat}` | Всем |
 | `CARDS_DRAWN` | `{drawn: [{seatNo, count}], deckLeft}` + свои карты | Персонально |
 | `PLAYER_OUT` | `{seatNo, place}` | Всем |
-| `CARD_HUNG` | 🟨 `{fromSeat, toSeat, cardCode}` — навесили карту в слот игрока | Всем |
-| `SCORE_CHANGED` | `{scores: [{seatNo, delta, total}], reason}` | Всем |
-| `DEAL_FINISHED` | `{dealNo, loserSeat, results[], scores[]}` | Всем |
+| `HANGING_STARTED` | `{targetSeat, canHangSeat, requiredRank, deadlineTs}` | Всем |
+| `CARD_HUNG` | ⭐ `{fromSeat, toSeat, cardCode, navesLevelAfter}` | Всем |
+| `HANGING_SKIPPED` | `{seatNo, nextCanHangSeat}` — отказался, право дальше | Всем |
+| `LOSER_DETERMINED` | ⭐ `{seatNo}` — навесили джокер; раздача **продолжается** | Всем |
+| `DEAL_FINISHED` | `{dealNo, loserSeat, results[], navesLevels[]}` | Всем |
 | `MATCH_PAUSED` | `{reason, waitingForSeat, resumeDeadlineTs}` | Всем |
 | `MATCH_RESUMED` | `{}` | Всем |
 | `MATCH_ABORTED` | `{reason}` | Всем |
-| `MATCH_OVER` | `{loserSeat, lossType, places[], scores[], ratingChanges[]}` | Всем |
+| `MATCH_OVER` | `{loserSeat, lossType, places[], navesLevels[], ratingChanges[]}` | Всем |
 | `ACK` | `{commandId, accepted}` | Отправителю |
 | `ERROR` | `{code, message, commandId?}` | Отправителю |
 | `PONG` | `{}` | Отправителю |
@@ -218,7 +240,6 @@ Payload содержит только номер места. Какая имен
   "matchId": "uuid",
   "seq": 42,
   "matchStatus": "IN_PROGRESS",
-  "scoreLimit": 100,
   "dealNo": 3,
   "phase": "DEFEND",
   "trumpSuit": "H",
@@ -227,9 +248,11 @@ Payload содержит только номер места. Какая имен
   "mySeat": 2,
   "players": [
     {"seatNo": 0, "userId": "...", "displayName": "...", "cardsCount": 6,
-     "hung": ["6-clubs"], "score": 40, "online": true, "passed": true},
+     "hung": ["6-clubs"], "navesLevel": "6", "nextNavesRank": "7",
+     "online": true, "passed": true},
     {"seatNo": 1, "userId": "...", "displayName": "...", "cardsCount": 4,
-     "hung": ["Joker-1", "K-hearts"], "score": 25, "online": true, "passed": false}
+     "hung": [], "navesLevel": "K", "nextNavesRank": "A",
+     "online": true, "passed": false}
   ],
   "table": [
     {"attack": "10-diamonds", "defend": null}
@@ -247,20 +270,49 @@ Payload содержит только номер места. Какая имен
 
 Четыре принципиальных момента:
 
-0. ⭐ **`hung` — слот навесов, и он открытый.** Карты, навешенные на игрока, видны всем
-   (🟨 требует подтверждения, OQ-14) — в отличие от руки. Это единственные чужие карты,
-   которые вообще попадают в проекцию, и попадают они туда легально: без них игроки не могут
-   оценивать положение, а джокер в чужом слоте — важнейшая информация за столом.
+0. ⭐ **Слот навесов открыт всем.** Три поля вместо одного, и все три нужны:
+   - `hung` — карты, навешенные в **этой** раздаче; очищается при перераздаче;
+   - `navesLevel` — достигнутый уровень шкалы; **переносится** между раздачами;
+   - `nextNavesRank` — что можно навесить следующим; сервер считает сам, чтобы фронт не
+     воспроизводил шкалу.
+
+   Это единственные чужие карты, попадающие в проекцию, и попадают легально: «кому осталось
+   два навеса до джокера» — ключевая информация за столом. После перераздачи `hung` пуст, а
+   `navesLevel` остался — по нему фронт рисует placeholder в пустом слоте.
 1. **Чужой руки в этом объекте нет физически.** Только `cardsCount`. Не «есть, но скрыты» —
    их нет в сериализованном виде вообще.
 2. **`availableActions` приходит от сервера.** Фронт подсвечивает возможные ходы, не зная
-   правил. Когда добавятся навесы, фронт не переучивается — просто получит новые типы
-   действий в списке.
-3. **Счёт матча в состоянии есть всегда** (`score` у каждого игрока, `scoreLimit`) — игрок
-   должен видеть, насколько он близок к проигрышу, в любой момент.
+   правил. В фазе `HANGING` там окажутся `HANG_CARD` с конкретными картами из руки и
+   `HANG_SKIP` — фронт не вычисляет, какой ранг сейчас подходит.
+3. **Положение по навесам видно всегда** — игрок должен в любой момент понимать, насколько он
+   и соперники близки к джокеру. Это заменяет счёт, которого в бардаке нет.
 
 `canAttackSeat` — у кого сейчас право подкидывать. Отдельно от `attackerSeat`, потому что
 после паса право уходит второму соседу, а начавшим раунд остаётся прежний игрок.
+Аналогично в фазе `HANGING` есть `canHangSeat`.
+
+## Навес: обмен сообщениями ⭐
+
+```
+защищающийся не отбился → TAKE
+  → TRICK_RESOLVED {outcome: TAKEN}
+  → HANGING_STARTED {targetSeat: 2, canHangSeat: 1, requiredRank: "7"}
+        │
+        ├─ у игрока 1 есть семёрка и он хочет:
+        │     HANG_CARD {cardCode: "7-clubs", targetSeat: 2}
+        │       → CARD_HUNG {fromSeat: 1, toSeat: 2, cardCode: "7-clubs",
+        │                    navesLevelAfter: "7"}
+        │
+        ├─ не хочет или нечем:
+        │     HANG_SKIP  → HANGING_SKIPPED {seatNo: 1, nextCanHangSeat: 3}
+        │       → право уходит следующему, requiredRank тот же
+        │
+        └─ никто не навесил → фаза закрывается, идём в REFILL
+```
+
+Если навешен джокер, дополнительно приходит `LOSER_DETERMINED {seatNo}` — но раздача
+**продолжается**: она доигрывается, чтобы определить степень проигрыша (`03-domain-rules.md`
+§0.2). `MATCH_OVER` придёт только после `DEAL_FINISHED`.
 
 ## Пауза при отключении ⭐
 

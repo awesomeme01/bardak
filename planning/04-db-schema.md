@@ -13,7 +13,7 @@
 5. Идентификаторы сущностей — `uuid`; порядковые вещи (лог событий) — `bigserial`.
 
 **Терминология** (см. `03-domain-rules.md` §0):
-**матч** = игра в бардак до предельного счёта, **раздача** = одна партия дурака внутри матча.
+**матч** = игра в бардак до чьего-то джокера, **раздача** = одна партия дурака внутри матча.
 Рейтинг и история строятся вокруг **матча**.
 
 ---
@@ -138,16 +138,23 @@ create table table_players (
   "dealSize": 6,
   "maxAttackBeforeAnyBeaten": 5,
   "maxAttackTotal": 6,
-  "scoreLimit": 100,
   "turnTimeoutSeconds": 30,
   "disconnectGraceSeconds": 60,
   "attackOrder": "BARDAK_STRICT_NEIGHBOURS",
   "transfersEnabled": true,
   "jokersEnabled": true,
   "showRejectedAttempts": false,
-  "naves": { "enabled": false }
+  "naves": {
+    "enabled": false,
+    "scale": ["6", "7", "8", "9", "10", "J", "Q", "K", "A"],
+    "finalCard": "JOKER"
+  }
 }
 ```
+
+`naves.scale` — та самая шкала из `03-domain-rules.md` §0.1, вынесенная в конфиг по ADR-016.
+Её длина определяет, сколько навесов игрок выдерживает до проигрыша; сокращённая шкала даёт
+более быстрый матч.
 
 Форма переменная и зависит от включённых правил — поэтому `jsonb`, а не колонки.
 
@@ -161,14 +168,13 @@ create table matches (
     table_id       uuid not null references game_tables(id),
     status         varchar(16) not null,     -- IN_PROGRESS | PAUSED | FINISHED | ABORTED
     players_count  smallint    not null,
-    score_limit    integer     not null,     -- копия из rules на момент старта
     deals_played   smallint    not null default 0,
     rng_seed       bigint      not null,     -- под-seed раздачи выводится из него
     rules_snapshot jsonb       not null,     -- копия rules_config на момент старта
     started_at     timestamptz not null default now(),
     finished_at    timestamptz,
-    loser_user_id  uuid references users(id),   -- достигший score_limit
-    loss_type      varchar(32),                 -- ⬜ тип проигрыша, см. OQ-11
+    loser_user_id  uuid references users(id),   -- получивший джокер в навес
+    loss_type      varchar(32),                 -- ⬜ степень проигрыша, см. OQ-11
     abort_reason   varchar(255)                 -- 'Игрок 3 покинул игру'
 );
 create index idx_matches_table_time on matches(table_id, started_at desc);
@@ -178,7 +184,7 @@ create table match_players (
     match_id       uuid not null references matches(id) on delete cascade,
     user_id        uuid not null references users(id),
     seat_no        smallint not null,
-    score          integer  not null default 0,   -- накопленный счёт по матчу
+    naves_level    varchar(2),                    -- ⭐ '6'..'A', 'JK'; null = навесов не было
     place          smallint,                      -- итоговое место, null пока идёт
     rating_before  numeric(8,2),
     rating_after   numeric(8,2),
@@ -190,13 +196,20 @@ create index idx_match_players_user on match_players(user_id);
 
 Ключевые моменты:
 
+- ⭐ **`naves_level` вместо `score`.** В бардаке нет очков: роль счёта играет уровень навеса —
+  личная шкала `6 → 7 → … → A → Joker` (`03-domain-rules.md` §0.1). Он живёт на уровне матча
+  и переносится между раздачами; джокер означает проигрыш.
+- Нет колонки `score_limit`: предел один и он не настраивается — это конец шкалы, джокер.
 - `rules_snapshot` **обязателен**. Правила стола могут поменяться позже; матч должен остаться
   интерпретируемым ровно по тем правилам, по которым игрался. Без этого реплей старых матчей
   сломается при первом же изменении правил.
-- `score` живёт на уровне матча и переносится между раздачами — это и есть механика бардака.
 - `ABORTED` матчи **не влияют на рейтинг**: `rating_*` остаются `null`, строк в
   `rating_history` не появляется. Но матч сохраняется целиком и доступен для просмотра.
 - `rng_seed` не отдаётся клиенту, пока матч не завершён.
+
+Почему `naves_level` — `varchar`, а не число: ранги это домен игры, и `'J'`, `'Q'`, `'K'`
+читаются в дампе и в логе без расшифровки. Порядок задаётся кодом, а не сортировкой БД —
+сортировать шкалу навесов средствами SQL нам нигде не нужно.
 
 ---
 
@@ -215,17 +228,21 @@ create table deals (
 );
 
 create table deal_results (
-    deal_id      uuid not null references deals(id) on delete cascade,
-    seat_no      smallint not null,
-    place        smallint,                   -- порядок выхода в раздаче
-    score_delta  integer not null default 0, -- начислено навесами за раздачу
-    score_after  integer not null,           -- счёт в матче после раздачи
+    deal_id           uuid not null references deals(id) on delete cascade,
+    seat_no           smallint not null,
+    place             smallint,        -- порядок выхода в раздаче
+    hung_cards        jsonb not null default '[]'::jsonb,  -- что навесили за раздачу
+    naves_level_after varchar(2),      -- уровень шкалы после раздачи
     primary key (deal_id, seat_no)
 );
 ```
 
-`deal_results` даёт разбор «откуда взялся счёт» — по нему строится таблица результатов матча
-по раздачам. Когда появятся навесы (OQ-3), `score_delta` наполнится смыслом; пока он нулевой.
+`deal_results` отвечает на вопрос «как игрок дошёл до своего уровня»: по нему строится
+разбор матча по раздачам.
+
+`hung_cards` — список карт, навешенных игроку **в этой раздаче** (`["6-diamonds", "7-clubs"]`).
+Сами карты после раздачи возвращаются в колоду, поэтому кроме лога их нигде не остаётся —
+а для разбора партии они нужны. Форма простая и не запрашиваемая → `jsonb`.
 
 ---
 
@@ -239,7 +256,7 @@ create table match_events (
     match_id    uuid        not null references matches(id) on delete cascade,
     seq         integer     not null,        -- сквозной номер по МАТЧУ, с 1
     deal_no     smallint,                    -- null для событий уровня матча
-    type        varchar(32) not null,        -- CARD_PLAYED, TRICK_RESOLVED, SCORE_CHANGED...
+    type        varchar(32) not null,        -- CARD_PLAYED, TRICK_RESOLVED, CARD_HUNG...
     actor_seat  smallint,                    -- null для системных событий
     payload     jsonb       not null,
     created_at  timestamptz not null default now(),
@@ -303,7 +320,7 @@ create table rating_history (
 create index idx_rating_history_user_time on rating_history(user_id, created_at desc);
 ```
 
-Считается **по матчу**, не по раздаче: рейтинговое событие — достижение кем-то предельного
+Считается **по матчу**, не по раздаче: рейтинговое событие — получение кем-то джокера и
 счёта. Отменённые матчи сюда не попадают вообще.
 
 `deviation` и `volatility` заводятся сразу, хотя MVP использует простой Elo — переезд на

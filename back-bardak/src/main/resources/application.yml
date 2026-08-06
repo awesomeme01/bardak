@@ -26,8 +26,8 @@ spring:
   jackson:
     default-property-inclusion: non_null
 
-  # dev: фронт отдаётся прямо из своей папки, без сборки и без второго порта.
-  # Когда появится Vite (нужен Node 18+), фронт переедет на свой dev-сервер с proxy.
+  # Собранный фронт (npm run build). Для разработки удобнее Vite на 5173 —
+  # он проксирует /api и /ws сюда, а этот путь нужен, чтобы поднять всё одним процессом.
   web:
     resources:
       static-locations: file:${bardak.frontend.path}
@@ -41,7 +41,11 @@ server:
 
 bardak:
   frontend:
-    path: ../front-bardak/
+    path: ../front-bardak/dist/
+  assets:
+    # Наборы карт и темы стола. Отдаются как /assets/card-sets/<набор>/<карта>.png
+    path: ./assets/
+    cache-seconds: 0     # в проде — надолго: имена карт стабильны, версия набора в манифесте
   ws:
     # 5173 — будущий dev-сервер Vite, когда обновится Node.
     allowed-origins: http://localhost:8088,http://localhost:5173
