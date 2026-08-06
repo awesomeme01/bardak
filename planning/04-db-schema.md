@@ -237,6 +237,8 @@ create table deals (
     started_at   timestamptz not null default now(),
     finished_at  timestamptz,
     loser_seat   smallint,                   -- «дурак» этой раздачи
+    -- ⭐ состав последней атаки: от него зависят степени ROYAL и SUPER_MEGA_SUCK
+    last_attack_cards jsonb not null default '[]'::jsonb,
     unique (match_id, deal_no)
 );
 
@@ -258,6 +260,11 @@ create table deal_results (
 
 `hung_cards` — карты, навешенные игроку **в этой раздаче** (`["6-diamonds", "7-clubs"]`).
 После раздачи они возвращаются в колоду, и кроме лога их взять негде.
+
+⭐ `last_attack_cards` в `deals` — карты, выложенные в атаке последнего раунда
+(`["8-clubs","8-hearts","8-spades","8-diamonds"]`). Считается именно **выложенное**, а не
+то, что попало проигравшему в руку: он мог всё отбить и всё равно получить `ROYAL`
+(`03-domain-rules.md` §0.3).
 
 ⭐ `level_changes` — почему уровень поменялся. Сдвигов четыре вида и они могут сочетаться
 в одной раздаче (`03-domain-rules.md` §0.1), поэтому одного «было → стало» мало:
