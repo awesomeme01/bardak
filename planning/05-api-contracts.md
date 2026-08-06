@@ -210,12 +210,12 @@ ADR-002. Причины:
 | `HANGING_STARTED` | `{targetSeat, canHangSeat, requiredRank, deadlineTs}` | Всем |
 | `CARD_HUNG` | ⭐ `{fromSeat, toSeat, cardCode, navesLevelAfter}` | Всем |
 | `HANGING_SKIPPED` | `{seatNo, nextCanHangSeat}` — отказался, право дальше | Всем |
-| `LOSER_DETERMINED` | ⭐ `{seatNo}` — навесили джокер; раздача **продолжается** | Всем |
-| `DEAL_FINISHED` | `{dealNo, loserSeat, results[], navesLevels[]}` | Всем |
+| `JOKER_HUNG` | ⭐ `{seatNo}` — джокер в слоте; **ещё не проигрыш**, можно снять выходом первым | Всем |
+| `DEAL_FINISHED` | ⭐ `{dealNo, dealLoserSeat, results[], levelChanges[], losers[]}` | Всем |
 | `MATCH_PAUSED` | `{reason, waitingForSeat, resumeDeadlineTs}` | Всем |
 | `MATCH_RESUMED` | `{}` | Всем |
 | `MATCH_ABORTED` | `{reason}` | Всем |
-| `MATCH_OVER` | `{loserSeat, lossType, places[], navesLevels[], ratingChanges[]}` | Всем |
+| `MATCH_OVER` | ⭐ `{losers: [{seatNo, lossType}], mainLoserSeat, places[], navesLevels[], ratingChanges[]}` | Всем |
 | `ACK` | `{commandId, accepted}` | Отправителю |
 | `ERROR` | `{code, message, commandId?}` | Отправителю |
 | `PONG` | `{}` | Отправителю |
@@ -310,9 +310,40 @@ Payload содержит только номер места. Какая имен
         └─ никто не навесил → фаза закрывается, идём в REFILL
 ```
 
-Если навешен джокер, дополнительно приходит `LOSER_DETERMINED {seatNo}` — но раздача
-**продолжается**: она доигрывается, чтобы определить степень проигрыша (`03-domain-rules.md`
-§0.2). `MATCH_OVER` придёт только после `DEAL_FINISHED`.
+Если навешен джокер, дополнительно приходит `JOKER_HUNG {seatNo}`. Это **не объявление
+проигрыша**: игрок, вышедший первым в этой же раздаче, снимает джокер и продолжает играть
+(`03-domain-rules.md` §0.4, corner case 1). Судьба решается только в `DEAL_FINISHED`.
+
+## Итог раздачи: `DEAL_FINISHED` ⭐
+
+Самое насыщенное событие протокола — в нём результат всех четырёх проходов подсчёта
+(`03-domain-rules.md` §0.6):
+
+```json
+{
+  "dealNo": 3,
+  "dealLoserSeat": 2,
+  "results": [
+    {"seatNo": 0, "place": 1, "navesLevelBefore": "7", "navesLevelAfter": "6"},
+    {"seatNo": 1, "place": 2, "navesLevelBefore": "A", "navesLevelAfter": "A"},
+    {"seatNo": 2, "place": null, "navesLevelBefore": "K", "navesLevelAfter": "JK"}
+  ],
+  "levelChanges": [
+    {"seatNo": 0, "reason": "FINISHED_FIRST", "delta": -1},
+    {"seatNo": 2, "reason": "HUNG", "by": 1, "card": "A-clubs"},
+    {"seatNo": 2, "reason": "LOST_DEAL", "delta": 1},
+    {"seatNo": 1, "reason": "KILLED_LOSER", "delta": -1, "victim": 2}
+  ],
+  "losers": [{"seatNo": 2, "lossType": "SUPER_MEGA_FAIL"}]
+}
+```
+
+`levelChanges` нужен, потому что уровень двигают четыре разные причины и они сочетаются.
+Без разбора по причинам игрок не поймёт, почему его `−1` куда-то делся, а `KILLED_LOSER`
+(награда за добивание чужого) вообще выглядит необъяснимо.
+
+`losers` пустой → перераздача. Непустой → следом придёт `MATCH_OVER`; проигравших может быть
+несколько, главный определяется старшинством степени.
 
 ## Пауза при отключении ⭐
 

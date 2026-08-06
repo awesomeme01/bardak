@@ -173,8 +173,9 @@ create table matches (
     rules_snapshot jsonb       not null,     -- копия rules_config на момент старта
     started_at     timestamptz not null default now(),
     finished_at    timestamptz,
-    loser_user_id  uuid references users(id),   -- получивший джокер в навес
-    loss_type      varchar(32),                 -- ⬜ степень проигрыша, см. OQ-11
+    -- ⭐ главный проигравший: тот, у кого степень старше по шкале.
+    -- Проигравших может быть несколько — все они в match_players.loss_type.
+    loser_user_id  uuid references users(id),
     abort_reason   varchar(255)                 -- 'Игрок 3 покинул игру'
 );
 create index idx_matches_table_time on matches(table_id, started_at desc);
@@ -184,12 +185,16 @@ create table match_players (
     match_id       uuid not null references matches(id) on delete cascade,
     user_id        uuid not null references users(id),
     seat_no        smallint not null,
-    naves_level    varchar(2),                    -- ⭐ '6'..'A', 'JK'; null = навесов не было
+    naves_level    varchar(2),     -- ⭐ '6'..'A', 'JK'; null = «летит 6», навесов не было
+    loss_type      varchar(24),    -- ⭐ степень проигрыша; null = не проиграл
     place          smallint,                      -- итоговое место, null пока идёт
     rating_before  numeric(8,2),
     rating_after   numeric(8,2),
     rating_delta   numeric(8,2),
-    primary key (match_id, user_id)
+    primary key (match_id, user_id),
+    constraint match_players_loss_type_check check (loss_type is null or loss_type in (
+        'ROYAL', 'SUPER_MEGA_SUCK', 'SUPER_MEGA_FAIL', 'SUPER_FAIL', 'FAIL'
+    ))
 );
 create index idx_match_players_user on match_players(user_id);
 ```
@@ -197,9 +202,17 @@ create index idx_match_players_user on match_players(user_id);
 Ключевые моменты:
 
 - ⭐ **`naves_level` вместо `score`.** В бардаке нет очков: роль счёта играет уровень навеса —
-  личная шкала `6 → 7 → … → A → Joker` (`03-domain-rules.md` §0.1). Он живёт на уровне матча
-  и переносится между раздачами; джокер означает проигрыш.
+  личная шкала `6 → 7 → … → A → Joker` (`03-domain-rules.md` §0.1). Он живёт на уровне матча,
+  переносится между раздачами и умеет **уменьшаться**: выход первым даёт `−1`.
 - Нет колонки `score_limit`: предел один и он не настраивается — это конец шкалы, джокер.
+- ⭐ **`loss_type` у игрока, а не только у матча.** Проигравших может быть несколько, у
+  каждого своя степень (`03-domain-rules.md` §0.3). В `matches.loser_user_id` — только
+  главный, тот, у кого степень старше.
+
+Порядок степеней от тяжёлой к лёгкой: `ROYAL` → `SUPER_MEGA_SUCK` → `SUPER_MEGA_FAIL` →
+`SUPER_FAIL` → `FAIL`. В БД это `varchar` с `check`, а не `enum`: правила ещё уточняются,
+а менять `check` дешевле, чем тип. Порядок задаётся кодом — сортировать степени средствами
+SQL нам не нужно.
 - `rules_snapshot` **обязателен**. Правила стола могут поменяться позже; матч должен остаться
   интерпретируемым ровно по тем правилам, по которым игрался. Без этого реплей старых матчей
   сломается при первом же изменении правил.
@@ -228,11 +241,14 @@ create table deals (
 );
 
 create table deal_results (
-    deal_id           uuid not null references deals(id) on delete cascade,
-    seat_no           smallint not null,
-    place             smallint,        -- порядок выхода в раздаче
-    hung_cards        jsonb not null default '[]'::jsonb,  -- что навесили за раздачу
-    naves_level_after varchar(2),      -- уровень шкалы после раздачи
+    deal_id            uuid not null references deals(id) on delete cascade,
+    seat_no            smallint not null,
+    place              smallint,       -- порядок выхода; null = проиграл раздачу
+    hung_cards         jsonb not null default '[]'::jsonb,  -- что навесили картами
+    naves_level_before varchar(2),
+    naves_level_after  varchar(2),
+    -- ⭐ откуда взялся сдвиг: разбор по причинам, а не только итог
+    level_changes      jsonb not null default '[]'::jsonb,
     primary key (deal_id, seat_no)
 );
 ```
@@ -240,9 +256,23 @@ create table deal_results (
 `deal_results` отвечает на вопрос «как игрок дошёл до своего уровня»: по нему строится
 разбор матча по раздачам.
 
-`hung_cards` — список карт, навешенных игроку **в этой раздаче** (`["6-diamonds", "7-clubs"]`).
-Сами карты после раздачи возвращаются в колоду, поэтому кроме лога их нигде не остаётся —
-а для разбора партии они нужны. Форма простая и не запрашиваемая → `jsonb`.
+`hung_cards` — карты, навешенные игроку **в этой раздаче** (`["6-diamonds", "7-clubs"]`).
+После раздачи они возвращаются в колоду, и кроме лога их взять негде.
+
+⭐ `level_changes` — почему уровень поменялся. Сдвигов четыре вида и они могут сочетаться
+в одной раздаче (`03-domain-rules.md` §0.1), поэтому одного «было → стало» мало:
+
+```json
+[
+  {"reason": "HUNG",           "by": 2, "card": "7-clubs", "to": "7"},
+  {"reason": "LOST_DEAL",      "delta": 1,  "to": "8"},
+  {"reason": "FINISHED_FIRST", "delta": -1, "to": "7"},
+  {"reason": "KILLED_LOSER",   "delta": -1, "victim": 3, "to": "6"}
+]
+```
+
+Без этого разбор спорной ситуации превращается в гадание — особенно вокруг
+`KILLED_LOSER`, где `−1` прилетает за чужой проигрыш.
 
 ---
 
