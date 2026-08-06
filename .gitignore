@@ -1,0 +1,43 @@
+# --- Java / Gradle ---
+build/
+.gradle/
+!gradle/wrapper/gradle-wrapper.jar
+out/
+*.class
+*.jar
+!gradle-wrapper.jar
+
+# --- Node / Vite ---
+node_modules/
+dist/
+dist-ssr/
+.vite/
+*.local
+
+# --- IDE ---
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+!.vscode/extensions.json
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+
+# --- Env / secrets ---
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+
+# --- Logs / temp ---
+*.log
+logs/
+tmp/
+
+# --- Локальные данные ---
+docker/pgdata/
+uploads/
