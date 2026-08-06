@@ -5,32 +5,31 @@
 
 ---
 
-## M0 — Репозиторий и документация ✅ текущий
+## M0 — Репозиторий и документация ✅
 
 Структура репозитория, planning-доки, `.gitignore`, README.
 
-**Готово, когда:** структура на месте, документы читаемы, открытые вопросы выписаны.
-Кода нет.
+---
+
+## M1 — Каркас, который запускается ✅
+
+- ✅ Gradle 8.14.3 (Kotlin DSL), Spring Boot 3.5.5, Java 21
+- ✅ `docker-compose.yml`: Postgres 16
+- ✅ Flyway `V1__users_and_auth.sql`
+- ✅ `GET /api/health` — статус приложения + проверка БД
+- ✅ WS `/ws`: конверт протокола с версией, `PING`/`PONG`, эхо (без авторизации)
+- ✅ Фронт: страница-проба, `ws-client.js` с backoff, heartbeat, очередью команд
+
+**Проверено:** браузер на http://localhost:8088/ показывает ответ `/api/health` с версией
+Postgres и числом миграций, WS отвечает `ECHO`, соединение переживает heartbeat-цикл.
+
+Отклонения от плана: порт **8088** (8080 занят Docker Desktop); **Vite не используется** —
+на машине Node v10, нужен 18+, поэтому фронт на нативных ES-модулях, а Spring отдаёт его
+из `../front-bardak/` в dev-профиле.
 
 ---
 
-## M1 — Каркас, который запускается
-
-- `back-bardak`: Gradle (Kotlin DSL), Spring Boot 3, Java 21, зависимости (web, websocket,
-  security, data-jpa, validation, actuator, flyway, postgresql).
-- `docker-compose.yml`: Postgres.
-- Первая Flyway-миграция (пустая или `users`).
-- `GET /api/health`.
-- WS-эндпоинт `/ws` с эхо-ответом (пока без авторизации).
-- `front-bardak`: Vite-скелет, страница-заглушка, вызов `/api/health`, подключение к `/ws`,
-  вывод эха на экран.
-
-**Готово, когда:** `docker compose up -d && ./gradlew bootRun`, открыт фронт, на странице
-видно ответ `/api/health` и эхо из WebSocket. Связка живая от браузера до Postgres.
-
----
-
-## M2 — Авторизация
+## M2 — Авторизация ← следующий
 
 - `users`, `refresh_tokens` + миграции.
 - Регистрация, логин, BCrypt.

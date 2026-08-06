@@ -14,24 +14,42 @@
 
 ```
 Движок знает:            Клиент рисует:
-Card.Of(RANK_A, SPADES)  →  card_code "S_A"  →  URL из манифеста выбранного набора
-Card.Joker(1)            →  card_code "JOKER_1"
+Card.Of(RANK_A, SPADES)  →  card_code "A-spades"  →  URL из манифеста выбранного набора
+Card.Joker(1)            →  card_code "Joker-1"  →  общий Joker.png
 ```
 
 Движок **никогда** не оперирует картинками, URL или наборами. Смена набора карт не может
 повлиять на ход партии в принципе — это гарантия, а не соглашение.
 
-## Коды карт
+## Коды карт и имена файлов ✅
 
-Стабильный, человекочитаемый формат — контракт между движком, БД и наборами:
+Формат задан автором и **совпадает с именем файла без расширения** — один формат вместо двух,
+никакого маппинга между «кодом в БД» и «файлом на диске»:
 
-| Что | Код | Пример |
+| Что | Код = имя файла | Примеры |
 |---|---|---|
-| Обычная карта | `<МАСТЬ>_<РАНГ>` | `S_A`, `H_10`, `D_6`, `C_K` |
-| Джокер | `JOKER_<n>` | `JOKER_1` … `JOKER_5` |
-| Рубашка | `BACK` | |
+| Обычная карта | `<ранг>-<масть>` | `6-diamonds.png`, `10-hearts.png`, `A-spades.png`, `K-clubs.png` |
+| Джокер | `Joker` | `Joker.png` |
+| Рубашка | `back` | `back.png` |
 
-Масти: `S` ♠, `H` ♥, `D` ♦, `C` ♣. Ранги: `6 7 8 9 10 J Q K A`.
+- Ранги: `6 7 8 9 10 J Q K A`
+- Масти: `diamonds` ♦, `hearts` ♥, `spades` ♠, `clubs` ♣
+- Файлов в полном наборе: **36 карт + `Joker.png` + `back.png` = 38**
+
+### Один файл джокера на несколько джокеров ⭐
+
+Джокеров в колоде столько же, сколько игроков (до 5), но **картинка у них одна**. Логически
+это разные карты, визуально — нет:
+
+```
+логическая карта  Joker-1 ┐
+                  Joker-2 ├──→ Joker.png
+                  Joker-3 ┘
+```
+
+Правило маппинга: код вида `Joker-<n>` рисуется файлом `Joker.png`. Если позже захочется
+различать джокеров визуально, добавятся `Joker-1.png` и т.д., а правило станет «сначала
+точное имя, иначе общий `Joker.png`» — коды карт при этом менять не придётся.
 
 Коды **не меняются никогда** — на них завязаны манифесты всех наборов и весь исторический
 лог событий.
@@ -71,32 +89,40 @@ DDL — в `04-db-schema.md`.
   "code": "classic",
   "name": "Классика",
   "version": "1.0.0",
-  "format": "svg",
+  "format": "png",
   "cardSize": { "w": 180, "h": 252 },
   "cards": {
-    "S_6":  "/assets/card-sets/classic/S_6.svg",
-    "S_7":  "/assets/card-sets/classic/S_7.svg",
-    "...":  "...",
-    "JOKER_1": "/assets/card-sets/classic/JOKER_1.svg",
-    "BACK": "/assets/card-sets/classic/back.svg"
+    "6-diamonds":  "/assets/card-sets/classic/6-diamonds.png",
+    "6-hearts":    "/assets/card-sets/classic/6-hearts.png",
+    "...":         "...",
+    "A-clubs":     "/assets/card-sets/classic/A-clubs.png",
+    "Joker":       "/assets/card-sets/classic/Joker.png",
+    "back":        "/assets/card-sets/classic/back.png"
   }
 }
 ```
 
 **Валидация набора при регистрации** — набор считается валидным, только если покрывает:
-- все 36 карт (`4 масти × 9 рангов`),
-- `BACK`,
-- `JOKER_1..JOKER_5` (максимум игроков за столом).
+- все 36 карт (`9 рангов × 4 масти`),
+- `Joker`,
+- `back`.
 
 Неполный набор нельзя выбрать при создании стола. Проверка выполняется один раз при
 регистрации набора, а не в рантайме на каждой раздаче.
 
 ## Хранение файлов
 
-На MVP — статика, отдаваемая бэком из каталога/тома:
+На MVP — статика, отдаваемая бэком из каталога:
 
 ```
-back-bardak/assets/card-sets/<set-code>/<CARD_CODE>.svg
+back-bardak/assets/card-sets/<set-code>/
+├── 6-diamonds.png   7-diamonds.png   …   A-diamonds.png
+├── 6-hearts.png     7-hearts.png     …   A-hearts.png
+├── 6-spades.png     7-spades.png     …   A-spades.png
+├── 6-clubs.png      7-clubs.png      …   A-clubs.png
+├── Joker.png
+└── back.png
+
 back-bardak/assets/themes/<theme-code>/background.jpg
 ```
 

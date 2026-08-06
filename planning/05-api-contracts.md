@@ -187,6 +187,7 @@ ADR-002. Причины:
 | `TRICK_RESOLVED` | `{outcome: BEATEN\|TAKEN, nextAttackerSeat}` | Всем |
 | `CARDS_DRAWN` | `{drawn: [{seatNo, count}], deckLeft}` + свои карты | Персонально |
 | `PLAYER_OUT` | `{seatNo, place}` | Всем |
+| `CARD_HUNG` | 🟨 `{fromSeat, toSeat, cardCode}` — навесили карту в слот игрока | Всем |
 | `SCORE_CHANGED` | `{scores: [{seatNo, delta, total}], reason}` | Всем |
 | `DEAL_FINISHED` | `{dealNo, loserSeat, results[], scores[]}` | Всем |
 | `MATCH_PAUSED` | `{reason, waitingForSeat, resumeDeadlineTs}` | Всем |
@@ -222,31 +223,35 @@ Payload содержит только номер места. Какая имен
   "phase": "DEFEND",
   "trumpSuit": "H",
   "deckLeft": 12,
-  "myHand": ["S_A", "H_7", "JOKER_1"],
+  "myHand": ["A-spades", "7-hearts"],
   "mySeat": 2,
   "players": [
     {"seatNo": 0, "userId": "...", "displayName": "...", "cardsCount": 6,
-     "score": 40, "online": true, "passed": true},
+     "hung": ["6-clubs"], "score": 40, "online": true, "passed": true},
     {"seatNo": 1, "userId": "...", "displayName": "...", "cardsCount": 4,
-     "score": 25, "online": true, "passed": false}
+     "hung": ["Joker-1", "K-hearts"], "score": 25, "online": true, "passed": false}
   ],
   "table": [
-    {"attack": "D_10", "defend": null}
+    {"attack": "10-diamonds", "defend": null}
   ],
   "attackerSeat": 1,
   "defenderSeat": 2,
   "canAttackSeat": 1,
   "turnDeadlineTs": 1730000030000,
   "availableActions": [
-    {"type": "PLAY_CARD", "cardCode": "H_7", "targetCardCode": "D_10"},
+    {"type": "PLAY_CARD", "cardCode": "7-hearts", "targetCardCode": "10-diamonds"},
     {"type": "TAKE"}
   ]
 }
 ```
 
-Три принципиальных момента:
+Четыре принципиальных момента:
 
-1. **Чужих карт в этом объекте нет физически.** Только `cardsCount`. Не «есть, но скрыты» —
+0. ⭐ **`hung` — слот навесов, и он открытый.** Карты, навешенные на игрока, видны всем
+   (🟨 требует подтверждения, OQ-14) — в отличие от руки. Это единственные чужие карты,
+   которые вообще попадают в проекцию, и попадают они туда легально: без них игроки не могут
+   оценивать положение, а джокер в чужом слоте — важнейшая информация за столом.
+1. **Чужой руки в этом объекте нет физически.** Только `cardsCount`. Не «есть, но скрыты» —
    их нет в сериализованном виде вообще.
 2. **`availableActions` приходит от сервера.** Фронт подсвечивает возможные ходы, не зная
    правил. Когда добавятся навесы, фронт не переучивается — просто получит новые типы

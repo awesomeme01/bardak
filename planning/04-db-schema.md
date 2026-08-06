@@ -70,7 +70,7 @@ create unique index idx_card_sets_single_default on card_sets(is_default) where 
 create table card_assets (
     id           uuid primary key,
     card_set_id  uuid not null references card_sets(id) on delete cascade,
-    card_code    varchar(16) not null,    -- 'S_A', 'H_10', 'JOKER_1', 'BACK'
+    card_code    varchar(24) not null,    -- '6-diamonds', '10-hearts', 'Joker', 'back'
     asset_url    varchar(512) not null,
     mime         varchar(64)  not null,   -- image/svg+xml | image/png
     ordinal      smallint     not null default 0,
