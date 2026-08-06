@@ -7,10 +7,14 @@
 
 1. Flyway с первой миграции. Никакого `ddl-auto: update`.
 2. `jsonb` — только для данных переменной формы, по которым мы **не ищем и не джойним**
-   (payload события, конфиг правил стола). Всё, по чему фильтруем — обычные колонки.
-3. `game_events` — append-only. Никаких `UPDATE`/`DELETE`.
+   (payload события, конфиг правил). Всё, по чему фильтруем — обычные колонки.
+3. `match_events` — append-only. Никаких `UPDATE`/`DELETE`.
 4. Все временные метки — `timestamptz`.
 5. Идентификаторы сущностей — `uuid`; порядковые вещи (лог событий) — `bigserial`.
+
+**Терминология** (см. `03-domain-rules.md` §0):
+**матч** = игра в бардак до предельного счёта, **раздача** = одна партия дурака внутри матча.
+Рейтинг и история строятся вокруг **матча**.
 
 ---
 
@@ -46,37 +50,6 @@ create index idx_refresh_tokens_user on refresh_tokens(user_id) where revoked_at
 
 ---
 
-## Рейтинг
-
-```sql
-create table user_rating (
-    user_id       uuid primary key references users(id) on delete cascade,
-    rating        numeric(8,2) not null default 1000,   -- текущее значение
-    deviation     numeric(8,2) not null default 350,    -- неопределённость (RD / sigma)
-    volatility    numeric(8,5) not null default 0.06,   -- для Glicko-2, пока не используется
-    games_played  integer      not null default 0,
-    updated_at    timestamptz  not null default now()
-);
-
-create table rating_history (
-    id             bigserial primary key,
-    user_id        uuid not null references users(id) on delete cascade,
-    game_id        uuid not null references games(id) on delete cascade,
-    rating_before  numeric(8,2) not null,
-    rating_after   numeric(8,2) not null,
-    deviation_after numeric(8,2) not null,
-    place          smallint not null,
-    players_count  smallint not null,
-    created_at     timestamptz not null default now()
-);
-create index idx_rating_history_user_time on rating_history(user_id, created_at desc);
-```
-
-`deviation` и `volatility` заводятся **сразу**, хотя MVP использует простой Elo: переезд на
-Glicko-2 / OpenSkill не должен требовать миграции с потерей данных. См. `07-rating-system.md`.
-
----
-
 ## Наборы карт и темы стола
 
 ```sql
@@ -109,8 +82,8 @@ create table table_themes (
     code              varchar(64) not null unique,
     name              varchar(128) not null,
     background_url    varchar(512),
-    felt_color        varchar(16),         -- '#0b6623'
-    default_back_code varchar(16),         -- какую рубашку использовать по умолчанию
+    felt_color        varchar(16),
+    default_back_code varchar(16),
     preview_url       varchar(512),
     is_default        boolean not null default false,
     created_at        timestamptz not null default now()
@@ -130,7 +103,7 @@ create table game_tables (
     name           varchar(64)  not null,
     host_user_id   uuid not null references users(id),
     max_players    smallint     not null,          -- 2..5
-    status         varchar(16)  not null,          -- WAITING | IN_GAME | CLOSED
+    status         varchar(16)  not null,          -- WAITING | IN_MATCH | CLOSED
     card_set_id    uuid not null references card_sets(id),
     theme_id       uuid not null references table_themes(id),
     rules_config   jsonb        not null default '{}'::jsonb,
@@ -144,7 +117,7 @@ create index idx_game_tables_open on game_tables(status) where status = 'WAITING
 create table table_players (
     table_id   uuid not null references game_tables(id) on delete cascade,
     user_id    uuid not null references users(id),
-    seat_no    smallint not null,          -- 0..4, определяет порядок хода
+    seat_no    smallint not null,          -- 0..4, определяет порядок хода по часовой
     state      varchar(16) not null,       -- JOINED | READY | LEFT
     joined_at  timestamptz not null default now(),
     primary key (table_id, user_id),
@@ -156,56 +129,103 @@ create table table_players (
 `unique (table_id, seat_no)` закрывает ту же гонку на уровне БД — второй получит нарушение
 ограничения и вежливый отказ.
 
-`rules_config` в `jsonb` — переменной формы, зависит от того, какие правила включены:
+### `rules_config` ⭐
+
+Все игровые числа живут здесь, а не в коде (`03-domain-rules.md` §1.6):
 
 ```json
 {
+  "dealSize": 6,
+  "maxAttackBeforeAnyBeaten": 5,
+  "maxAttackTotal": 6,
+  "scoreLimit": 100,
+  "turnTimeoutSeconds": 30,
+  "disconnectGraceSeconds": 60,
   "attackOrder": "BARDAK_STRICT_NEIGHBOURS",
   "transfersEnabled": true,
   "jokersEnabled": true,
-  "naves": { "enabled": false },
-  "turnTimeoutSeconds": 45,
-  "maxCardsPerRound": 6
+  "showRejectedAttempts": false,
+  "naves": { "enabled": false }
 }
 ```
 
+Форма переменная и зависит от включённых правил — поэтому `jsonb`, а не колонки.
+
 ---
 
-## Партии
+## Матчи ⭐
 
 ```sql
-create table games (
+create table matches (
     id             uuid primary key,
     table_id       uuid not null references game_tables(id),
-    status         varchar(16) not null,          -- IN_PROGRESS | FINISHED | ABORTED
+    status         varchar(16) not null,     -- IN_PROGRESS | PAUSED | FINISHED | ABORTED
     players_count  smallint    not null,
-    rng_seed       bigint      not null,          -- детерминизм и реплей
-    rules_snapshot jsonb       not null,          -- копия rules_config на момент старта
-    trump_suit     varchar(2),                    -- 'S'|'H'|'D'|'C'
+    score_limit    integer     not null,     -- копия из rules на момент старта
+    deals_played   smallint    not null default 0,
+    rng_seed       bigint      not null,     -- под-seed раздачи выводится из него
+    rules_snapshot jsonb       not null,     -- копия rules_config на момент старта
     started_at     timestamptz not null default now(),
     finished_at    timestamptz,
-    loser_user_id  uuid references users(id)      -- «дурак»
+    loser_user_id  uuid references users(id),   -- достигший score_limit
+    loss_type      varchar(32),                 -- ⬜ тип проигрыша, см. OQ-11
+    abort_reason   varchar(255)                 -- 'Игрок 3 покинул игру'
 );
-create index idx_games_table_time on games(table_id, started_at desc);
+create index idx_matches_table_time on matches(table_id, started_at desc);
+create index idx_matches_status on matches(status) where status in ('IN_PROGRESS','PAUSED');
 
-create table game_players (
-    game_id        uuid not null references games(id) on delete cascade,
+create table match_players (
+    match_id       uuid not null references matches(id) on delete cascade,
     user_id        uuid not null references users(id),
     seat_no        smallint not null,
-    place          smallint,                      -- 1 = вышел первым; null пока идёт
+    score          integer  not null default 0,   -- накопленный счёт по матчу
+    place          smallint,                      -- итоговое место, null пока идёт
     rating_before  numeric(8,2),
     rating_after   numeric(8,2),
     rating_delta   numeric(8,2),
-    primary key (game_id, user_id)
+    primary key (match_id, user_id)
 );
-create index idx_game_players_user on game_players(user_id);
+create index idx_match_players_user on match_players(user_id);
 ```
 
-`rules_snapshot` — обязателен. Правила стола могут поменяться позже; партия должна остаться
-интерпретируемой ровно по тем правилам, по которым игралась. Без этого реплей старых партий
-сломается при первом же изменении правил.
+Ключевые моменты:
 
-`rng_seed` не отдаётся клиенту, пока партия не завершена.
+- `rules_snapshot` **обязателен**. Правила стола могут поменяться позже; матч должен остаться
+  интерпретируемым ровно по тем правилам, по которым игрался. Без этого реплей старых матчей
+  сломается при первом же изменении правил.
+- `score` живёт на уровне матча и переносится между раздачами — это и есть механика бардака.
+- `ABORTED` матчи **не влияют на рейтинг**: `rating_*` остаются `null`, строк в
+  `rating_history` не появляется. Но матч сохраняется целиком и доступен для просмотра.
+- `rng_seed` не отдаётся клиенту, пока матч не завершён.
+
+---
+
+## Раздачи
+
+```sql
+create table deals (
+    id           uuid primary key,
+    match_id     uuid not null references matches(id) on delete cascade,
+    deal_no      smallint not null,          -- 1, 2, 3, ... внутри матча
+    trump_suit   varchar(2),                 -- 'S'|'H'|'D'|'C'
+    started_at   timestamptz not null default now(),
+    finished_at  timestamptz,
+    loser_seat   smallint,                   -- «дурак» этой раздачи
+    unique (match_id, deal_no)
+);
+
+create table deal_results (
+    deal_id      uuid not null references deals(id) on delete cascade,
+    seat_no      smallint not null,
+    place        smallint,                   -- порядок выхода в раздаче
+    score_delta  integer not null default 0, -- начислено навесами за раздачу
+    score_after  integer not null,           -- счёт в матче после раздачи
+    primary key (deal_id, seat_no)
+);
+```
+
+`deal_results` даёт разбор «откуда взялся счёт» — по нему строится таблица результатов матча
+по раздачам. Когда появятся навесы (OQ-3), `score_delta` наполнится смыслом; пока он нулевой.
 
 ---
 
@@ -214,38 +234,80 @@ create index idx_game_players_user on game_players(user_id);
 Основа истории, реплея и восстановления стола после рестарта.
 
 ```sql
-create table game_events (
-    id          bigserial primary key,
-    game_id     uuid        not null references games(id) on delete cascade,
-    seq         integer     not null,        -- порядковый номер внутри партии, с 1
-    type        varchar(32) not null,        -- CARD_PLAYED, TRICK_RESOLVED, ...
+create table match_events (
+    id          bigserial   primary key,
+    match_id    uuid        not null references matches(id) on delete cascade,
+    seq         integer     not null,        -- сквозной номер по МАТЧУ, с 1
+    deal_no     smallint,                    -- null для событий уровня матча
+    type        varchar(32) not null,        -- CARD_PLAYED, TRICK_RESOLVED, SCORE_CHANGED...
     actor_seat  smallint,                    -- null для системных событий
     payload     jsonb       not null,
     created_at  timestamptz not null default now(),
-    unique (game_id, seq)
+    unique (match_id, seq)
 );
-create index idx_game_events_game on game_events(game_id, seq);
+create index idx_match_events_match on match_events(match_id, seq);
 
-create table game_snapshots (
-    game_id    uuid    not null references games(id) on delete cascade,
+create table match_snapshots (
+    match_id   uuid    not null references matches(id) on delete cascade,
     seq        integer not null,       -- состояние ПОСЛЕ события с этим seq
-    state      jsonb   not null,       -- полное внутреннее состояние партии
+    state      jsonb   not null,       -- полное внутреннее состояние: матч + текущая раздача
     created_at timestamptz not null default now(),
-    primary key (game_id, seq)
+    primary key (match_id, seq)
 );
 ```
+
+Почему `seq` сквозной по матчу, а не по раздаче: клиент отслеживает **один** счётчик за всё
+время за столом, и `RESYNC(lastSeq)` остаётся простым — не нужно синхронизировать пару
+`(dealNo, seq)` и обрабатывать переход между раздачами как особый случай. `deal_no` в строке
+события есть, поэтому разбить лог по раздачам всегда можно запросом.
 
 Правила работы с логом:
 
 - Только `INSERT`. Событие записано — оно неизменяемо.
-- `unique (game_id, seq)` гарантирует отсутствие дыр и дублей при гонках.
+- `unique (match_id, seq)` гарантирует отсутствие дыр и дублей при гонках.
 - Запись события происходит **до** рассылки клиентам (см. `02-architecture.md`).
-- `payload` содержит **полную** информацию, включая скрытую (какая именно карта у кого) —
-  это внутренний лог. Наружу он никогда не отдаётся сырым, только через проекцию.
-- Снапшот пишется раз в N событий (например, каждые 50) — чтобы восстановление стола и
-  переподключение не требовали проигрывания всей партии.
+- `payload` содержит **полную** информацию, включая скрытую (какая карта у кого) — это
+  внутренний лог. Наружу он никогда не отдаётся сырым, только через проекцию.
+- Отклонённые попытки хода (§2.1 правил) в лог **пишутся** — они часть истории стола,
+  хотя состояние не меняют.
+- Снапшот пишется раз в N событий (например, каждые 50) и **обязательно на границе раздач** —
+  граница это естественная точка, где состояние компактно.
 
-Партиционирование `game_events` по времени — когда таблица вырастет (🟢, не на MVP).
+Партиционирование `match_events` по времени — когда таблица вырастет (🟢, не на MVP).
+
+---
+
+## Рейтинг
+
+```sql
+create table user_rating (
+    user_id       uuid primary key references users(id) on delete cascade,
+    rating        numeric(8,2) not null default 1000,
+    deviation     numeric(8,2) not null default 350,    -- Glicko-2 RD / OpenSkill σ, про запас
+    volatility    numeric(8,5) not null default 0.06,   -- про запас
+    matches_played integer     not null default 0,
+    updated_at    timestamptz  not null default now()
+);
+
+create table rating_history (
+    id              bigserial primary key,
+    user_id         uuid not null references users(id) on delete cascade,
+    match_id        uuid not null references matches(id) on delete cascade,
+    rating_before   numeric(8,2) not null,
+    rating_after    numeric(8,2) not null,
+    deviation_after numeric(8,2) not null,
+    place           smallint not null,
+    players_count   smallint not null,
+    created_at      timestamptz not null default now()
+);
+create index idx_rating_history_user_time on rating_history(user_id, created_at desc);
+```
+
+Считается **по матчу**, не по раздаче: рейтинговое событие — достижение кем-то предельного
+счёта. Отменённые матчи сюда не попадают вообще.
+
+`deviation` и `volatility` заводятся сразу, хотя MVP использует простой Elo — переезд на
+Glicko-2 / OpenSkill не должен требовать миграции с потерей данных. См. `07-rating-system.md`.
 
 ---
 
@@ -256,15 +318,18 @@ create table game_snapshots (
 | `V1__users_and_auth.sql` | `users`, `refresh_tokens` |
 | `V2__card_sets_and_themes.sql` | `card_sets`, `card_assets`, `table_themes` + дефолтный набор |
 | `V3__tables.sql` | `game_tables`, `table_players` |
-| `V4__games_and_events.sql` | `games`, `game_players`, `game_events`, `game_snapshots` |
-| `V5__rating.sql` | `user_rating`, `rating_history` |
+| `V4__matches_and_deals.sql` | `matches`, `match_players`, `deals`, `deal_results` |
+| `V5__match_events.sql` | `match_events`, `match_snapshots` |
+| `V6__rating.sql` | `user_rating`, `rating_history` |
 
 ---
 
 ## Открытые решения
 
-- Хранить ли текущее состояние активного стола в БД, или только лог + память.
-  Сейчас: **только лог + память**, состояние восстанавливается. Пересмотреть, если
-  восстановление окажется медленным.
-- Мягкое удаление пользователей (`status = BLOCKED` против физического `DELETE`) — сейчас
-  мягкое, потому что на пользователя ссылается история партий.
+- Хранить ли текущее состояние активного матча в БД, или только лог + память.
+  Сейчас: **только лог + снапшоты + память**. Пересмотреть, если восстановление окажется
+  медленным.
+- Мягкое удаление пользователей (`status = BLOCKED` вместо `DELETE`) — на пользователя
+  ссылается история матчей.
+- `loss_type` пока `varchar` без справочника — станет перечислением, когда типы проигрыша
+  будут описаны (OQ-11).
