@@ -144,7 +144,9 @@ ADR-002. Причины:
 | **`PLAY_CARD`** | `{cardCode, targetCardCode?}` | ⭐ Универсальное «положить карту на стол» |
 | `PASS` | `{}` | «Больше не подкидываю» — передаёт право второму соседу |
 | `TAKE` | `{}` | Взять карты со стола |
-| `TRANSFER` | `{cardCode}` | Перевести атаку на следующего |
+| `TRANSFER` | `{cardCode}` | Перевести атаку на следующего — карта **добавляется** в атаку |
+| `ROLL_DICE` | `{}` | Бросок кости, когда козырем вышел джокер (§1.2 правил) |
+| `CHOOSE_TRUMP` | `{suit}` | Победитель броска выбирает козырную масть |
 | **`HANG_CARD`** | `{cardCode, targetSeat}` | ⭐ Навесить карту в слот соперника |
 | `HANG_SKIP` | `{}` | Отказаться от навеса — право уходит дальше |
 | `PLAY_JOKER` | `{jokerIndex, ...}` | 🟨 Payload зависит от правил джокеров (OQ-2) |
@@ -199,6 +201,9 @@ ADR-002. Причины:
 | `PLAYER_READY` | `{userId, ready}` | Всем |
 | `MATCH_STARTED` | `{matchId, navesScale, seats[]}` | Всем |
 | `DEAL_STARTED` | `{dealNo, trumpSuit, deckSize}` | Всем |
+| `DICE_ROLL_REQUIRED` | `{seats[], deadlineTs}` — козырь-джокер, все бросают | Всем |
+| `DICE_ROLLED` | `{seatNo, value}` | Всем |
+| `TRUMP_CHOSEN` | `{bySeat, suit}` | Всем |
 | `CARDS_DEALT` | Свои карты; у остальных — только количество | Персонально |
 | `TURN_CHANGED` | `{attackerSeat, defenderSeat, canAttackSeat, deadlineTs}` | Всем |
 | `CARD_PLAYED` | `{seatNo, cardCode, slot, kind: ATTACK\|DEFEND\|TRANSFER}` | Всем |
@@ -244,6 +249,9 @@ Payload содержит только номер места. Какая имен
   "phase": "DEFEND",
   "trumpSuit": "H",
   "deckLeft": 12,
+  "discardCount": 20,
+  "anyTrickBeaten": true,
+  "maxAttackThisRound": 6,
   "myHand": ["A-spades", "7-hearts"],
   "mySeat": 2,
   "players": [
@@ -290,6 +298,14 @@ Payload содержит только номер места. Какая имен
 `canAttackSeat` — у кого сейчас право подкидывать. Отдельно от `attackerSeat`, потому что
 после паса право уходит второму соседу, а начавшим раунд остаётся прежний игрок.
 Аналогично в фазе `HANGING` есть `canHangSeat`.
+
+⭐ **Про отбой.** `discardCount` — сколько карт ушло в отбой, `anyTrickBeaten` — были ли уже
+биты в этой раздаче. Второе определяет лимит атаки (5 в первом раунде, 6 дальше — §1.5
+правил), поэтому сервер шлёт и готовый `maxAttackThisRound`, чтобы фронт не воспроизводил
+правило.
+
+Карты отбоя **не передаются** — только количество. Фронт рисует символическую стопку
+перевёрнутых карт: игрок должен видеть, что биты были, но не что именно в них ушло.
 
 ## Навес: обмен сообщениями ⭐
 

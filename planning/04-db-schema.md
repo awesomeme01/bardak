@@ -136,8 +136,8 @@ create table table_players (
 ```json
 {
   "dealSize": 6,
-  "maxAttackBeforeAnyBeaten": 5,
-  "maxAttackTotal": 6,
+  "maxAttackFirstRound": 5,
+  "maxAttackPerRound": 6,
   "turnTimeoutSeconds": 30,
   "disconnectGraceSeconds": 60,
   "attackOrder": "BARDAK_STRICT_NEIGHBOURS",
