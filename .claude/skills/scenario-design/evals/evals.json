@@ -1,0 +1,31 @@
+{
+  "skill_name": "scenario-design",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "We have a `SubscriptionPlan` entity with a `status` field (trial, active, past_due, cancelled, expired) that changes based on billing events (payment_success, payment_failure, cancel, trial_end, reactivate). It also has a `seatCount` field with valid range 1-500 that customers can change at any time. I want a systematic pass over this before we ship the billing rewrite -- what am I missing?",
+      "expected_output": "Recognition that this problem has two distinct shapes: a stateful entity (status field driven by billing events) and a range-constrained input (seatCount). Diagnosis naming both dimensions and recommending state-transition-testing for the status field and equivalence-partitioning-bva for seatCount as two separate passes, confirming with the user before proceeding, then handing off to (or applying) both techniques and tying the two outputs together in a combined summary.",
+      "files": [],
+      "expectations": [
+        "The response explicitly identifies that the problem has two distinct shapes/dimensions rather than forcing everything into one technique",
+        "State-transition testing (or equivalent reasoning about states and events) is recommended for the status field",
+        "Equivalence partitioning / boundary value analysis (or equivalent reasoning about valid/invalid ranges and boundaries) is recommended for the seatCount field",
+        "The response confirms the approach with the user (or clearly explains the plan) before producing the full output",
+        "A combined output or summary ties the two technique outputs together rather than leaving them as two disconnected artifacts"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "I want to map out all the transitions in our order fulfillment state machine -- states are placed, picking, packed, shipped, delivered, returned, cancelled. Can you build me the transition table?",
+      "expected_output": "Recognition that the problem shape is unambiguous (a single state machine, no other dimension mentioned) and the technique is clearly state-transition-testing. The skill should hand off to (or directly apply) state-transition-testing rather than re-deriving its own separate procedure, and should not force in unrelated techniques like decision tables or FMEA just to seem thorough.",
+      "files": [],
+      "expectations": [
+        "The response identifies state-transition testing as the technique with no unnecessary hedging, since the problem shape is unambiguous",
+        "The response does not stack in unrelated techniques (e.g. decision tables, FMEA) for a problem that only has one dimension",
+        "A state transition table or equivalent structured artifact covering the 7 states and the fulfillment events is produced",
+        "Gaps (undefined or invalid transitions) are flagged explicitly",
+        "The output is written to a markdown file"
+      ]
+    }
+  ]
+}

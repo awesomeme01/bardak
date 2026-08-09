@@ -1,0 +1,18 @@
+{
+  "skill_name": "state-transition-testing",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "We have a `PaymentTransaction` entity with these states: `initiated`, `processing`, `completed`, `failed`, `refunded`, `disputed`. The events that can occur are: `submit`, `process_success`, `process_failure`, `request_refund`, `refund_success`, `dispute`, `resolve_dispute`. I want to find gaps in our state handling — are there transitions we haven't handled? Can you map this out systematically?",
+      "expected_output": "A state transition table covering all (state, event) combinations. Every cell should specify either the next state + action, 'ignored/no-op', or be flagged as a gap (undefined behavior). Invalid transitions (e.g. refunding a transaction that hasn't completed) should be called out. A derived test case list. Optionally a Mermaid diagram. Output written to a markdown file.",
+      "files": [],
+      "expectations": [
+        "The output includes a state transition table with states as rows (or columns) and events as columns (or rows)",
+        "The table covers all combinations of the 6 states and 7 events (or clearly notes which combinations are out of scope)",
+        "At least 3 undefined or invalid transitions are identified as gaps",
+        "The output includes a derived test case list with start state, event, expected next state, and expected action",
+        "The output is written to a markdown file"
+      ]
+    }
+  ]
+}

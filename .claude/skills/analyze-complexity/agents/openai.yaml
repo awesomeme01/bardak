@@ -1,0 +1,4 @@
+interface:
+  display_name: "Analyze Complexity"
+  short_description: "Separate inherent from accidental complexity"
+  default_prompt: "Use $analyze-complexity to separate this system's inherent complexity from accidental implementation complexity."

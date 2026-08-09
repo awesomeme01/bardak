@@ -1,0 +1,18 @@
+{
+  "skill_name": "fmea",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "We're about to launch a webhook-based payment reconciliation system: Stripe sends us webhook events for charges and refunds, we validate the signature, write the event to a queue, a worker processes the queue and updates our internal ledger, and a nightly job reconciles our ledger against Stripe's API as a backstop. This is a critical-path financial system and I want a structured risk review before we ship. What could go wrong?",
+      "expected_output": "A scoped FMEA covering the webhook receipt, signature validation, queueing, worker processing, and nightly reconciliation components. Each failure mode scored on Severity, Occurrence, and Detection (1-10), with RPN = S x O x D calculated. High-RPN items (>100) called out with recommended mitigations. Output written to a markdown file.",
+      "files": [],
+      "expectations": [
+        "The output identifies failure modes across multiple components of the pipeline (e.g. webhook receipt, signature validation, queue processing, worker, nightly reconciliation) rather than just one",
+        "Each failure mode is scored with Severity, Occurrence, and Detection values on a 1-10 scale",
+        "RPN is calculated as the product of S, O, and D for each failure mode",
+        "At least one high-RPN item (RPN > 100) is identified and given a specific recommended mitigation, not a vague one",
+        "The output is written to a markdown file"
+      ]
+    }
+  ]
+}

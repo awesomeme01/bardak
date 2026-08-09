@@ -1,0 +1,20 @@
+{
+  "skill_name": "decision-tables",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Our checkout has three discount factors: loyalty members get 5% off, orders over $100 get 10% off, and a valid promo code gives 15% off. I want to make sure we've thought through all the cases — particularly what happens when a customer qualifies for more than one. Can you help me map this out?",
+      "expected_output": "A decision table covering all 8 combinations of the three binary conditions. The 5 single-condition and no-condition rules are clear; the 4 multi-condition combinations (loyalty+order, loyalty+promo, order+promo, all three) should be flagged as gaps because the stacking rule is unspecified — additive (30%), maximum (15%), or a separate tiered schedule. Output written to a markdown file.",
+      "files": [],
+      "expectations": [
+        "The output uses a decision table format with conditions as rows and rules (combinations) as columns",
+        "All 8 combinations of the three binary conditions are represented",
+        "The 4 multi-condition combinations are identified as gaps or unresolved questions because the discount stacking rule is not specified",
+        "The output explicitly names the stacking ambiguity (e.g. additive vs. max vs. tiered) as the key unresolved question",
+        "Each rule column header includes a short descriptive name tied to its conditions (e.g. 'Rule 1: Loyalty Only'), not just a bare number",
+        "The output includes a one-line plain-English summary per rule stating the scenario and its outcome, separate from the Y/N/checkmark table",
+        "The output is written to a markdown file"
+      ]
+    }
+  ]
+}

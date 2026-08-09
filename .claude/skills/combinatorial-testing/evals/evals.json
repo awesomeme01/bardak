@@ -1,0 +1,18 @@
+{
+  "skill_name": "combinatorial-testing",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Our notification system lets users configure six settings: `email_enabled` (on or off), `sms_enabled` (on or off), `push_enabled` (on or off), `in_app_enabled` (on or off), `digest_mode` (immediate, daily, or weekly), and `quiet_hours_enabled` (on or off). I want to write a test suite for this but I'm not sure how to approach it systematically -- exhaustively testing every combination feels like way too much. What would you suggest?",
+      "expected_output": "Recognition that this is a combinatorial problem where exhaustive testing (96 combinations: 2^4 x 3 x 2) is impractical. Selection and explanation of pairwise/all-pairs testing as the right technique. A pairwise test matrix with a small fraction of the 96 exhaustive rows (roughly 10-15 rows for 6 factors of this shape). Pair coverage verified across all factor pairs. Exhaustive vs. pairwise count stated. Gaps or constraints documented. Output written to a markdown file.",
+      "files": [],
+      "expectations": [
+        "The output explains why pairwise/combinatorial testing is the right technique for this problem, given the combination space is too large to test exhaustively by hand",
+        "The output produces a test matrix with substantially fewer rows than the 96 exhaustive combinations (roughly 10-15 rows, not dozens)",
+        "The test matrix guarantees that every pair of factor values appears at least once (pairwise coverage) -- spot-check at least 2-3 factor pairs against the matrix",
+        "The output states both the exhaustive combination count (96) and the pairwise count, making the size of the reduction explicit",
+        "The output is written to a markdown file"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "skill_name": "analyze-complexity",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Our webhook ingestion pipeline has retries at the HTTP endpoint, another retry queue, two idempotency tables, several timeouts, and special handling for out-of-order provider events. It works, but I can't tell which complexity is genuinely required by webhook delivery and which parts we invented. Analyze the inherent versus accidental complexity and document what a rewrite must preserve.",
+      "expected_output": "A canonical complexity map that fixes the boundary around the provider contract and current requirements, traces data/lifecycle/failure flows, registers inherent obligations such as duplicate delivery, out-of-order events, partial failure, bounded retries, and durable acknowledgement, and separately names accidental mechanisms such as duplicated retry policy or overlapping idempotency ownership. It should state invariants and freedom to simplify without prescribing a full replacement architecture.",
+      "files": [],
+      "expectations": [
+        "The output explicitly states the system boundary and treats complexity as relative to the provider contract and requirements",
+        "Inherent complexity is expressed as external cause and required invariant rather than as current classes, queues, tables, or timers",
+        "The analysis separates mixed concerns, preserving retry/idempotency obligations while challenging duplicated policies and ownership",
+        "The output includes a constraint register with stable identifiers and a freedom-to-simplify column",
+        "Lifecycle, liveness, failure, or verification views are included only where they clarify the pipeline",
+        "The output is written as one canonical markdown document rather than one file per constraint"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "This background export service streams database rows into compressed multipart object-storage uploads. Cancellation, backpressure, part retries, finalization, and cleanup are tangled together. Before we refactor, tell me what complexity is unavoidable and what is just our implementation.",
+      "expected_output": "An analysis that identifies inherent obligations such as bounded memory, producer-consumer backpressure, multipart size/order rules, retry-safe part identity, distinct complete versus abort semantics, and cleanup after partial failure. It should identify accidental complexity in the current coordination mechanisms without assuming that the current task, token, timer, or callback structure is required, and should identify evidence gaps a refactor must cover.",
+      "files": [],
+      "expectations": [
+        "The response distinguishes the obligation to provide bounded backpressure from the current streaming primitives",
+        "Normal completion and abort are treated as inherently distinct lifecycle intents",
+        "Multipart protocol constraints are separated from replaceable coordination and retry mechanisms",
+        "Accidental findings name concrete costs such as non-local reasoning, duplicated policy, or ambiguous failure ownership",
+        "The result includes verification evidence or explicit test gaps for the preserved invariants",
+        "The response does not turn the task into greenfield design-space exploration or an undifferentiated technical-debt list"
+      ]
+    }
+  ]
+}

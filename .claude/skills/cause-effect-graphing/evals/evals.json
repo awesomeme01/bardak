@@ -1,0 +1,18 @@
+{
+  "skill_name": "cause-effect-graphing",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Our refund eligibility logic has gotten really tangled: a customer can get a full refund if the order is within 30 days AND (the item is defective OR the item was never delivered), unless they're a marketplace seller's order in which case only store credit is issued instead of a refund, UNLESS the seller has opted into our buyer-protection program in which case a full refund still applies. I need to present this to our support team and I don't think prose is going to work -- can you help me untangle this?",
+      "expected_output": "A cause-effect graph identifying the causes (within 30 days, item defective, item never delivered, marketplace seller order, seller in buyer-protection program) and effects (full refund, store credit), connected via AND/OR/NOT logic, presented as a Mermaid diagram for stakeholder communication. A derived decision table as the authoritative test-case source. Output written to a markdown file.",
+      "files": [],
+      "expectations": [
+        "The output identifies the distinct causes (e.g. within-30-days, defective, never-delivered, marketplace-seller, buyer-protection-opt-in) and effects (full refund, store credit) as separate labeled items",
+        "The output includes a graph (e.g. Mermaid graph LR) showing how causes combine via AND/OR/NOT logic to produce effects",
+        "The output includes a derived decision table enumerating the rule combinations, consistent with the graph's logic",
+        "The buyer-protection override (marketplace seller normally gets store credit, but full refund if seller opted into buyer protection) is correctly represented in either the graph or the derived table",
+        "The output is written to a markdown file"
+      ]
+    }
+  ]
+}

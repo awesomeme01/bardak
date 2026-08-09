@@ -1,0 +1,18 @@
+{
+  "skill_name": "equivalence-partitioning-bva",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I'm writing a `createBooking` method that accepts three integer parameters: `numberOfGuests` (valid range 1–20), `durationDays` (valid range 1–30), and `advanceDays` (how many days ahead the booking is made, valid range 1–365). I know I need input validation but I'm not sure what test cases to write. What scenarios should I cover?",
+      "expected_output": "An equivalence partitioning + boundary value analysis table for all three parameters, identifying valid/invalid partitions and boundary values (e.g. 0, 1, 2 at the lower boundary and 19, 20, 21 at the upper). A derived test case list showing the representative inputs and expected outcomes. Any gaps (e.g. null/undefined handling, multi-parameter invalid combos) flagged explicitly. Output written to a markdown file.",
+      "files": [],
+      "expectations": [
+        "The output identifies valid and invalid equivalence classes for all three parameters (numberOfGuests, durationDays, advanceDays)",
+        "The output includes boundary values: at-minimum, just-below-minimum, just-above-minimum, at-maximum, just-above-maximum for at least one parameter",
+        "The output includes a derived test case table or list with representative values and expected outcomes",
+        "The output explicitly flags gaps or unspecified behavior (e.g. null/missing inputs, behavior when multiple parameters are simultaneously invalid)",
+        "The output is written to a markdown file (not only printed to conversation)"
+      ]
+    }
+  ]
+}

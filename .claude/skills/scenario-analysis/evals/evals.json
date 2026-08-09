@@ -1,0 +1,19 @@
+{
+  "skill_name": "scenario-analysis",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "We're building a feature where users can share a folder of files with other users, either by inviting a specific person by email or by generating a public link. Before I hand this off to QA, I want to walk through the meaningful ways different people would actually use this so we're sure our acceptance criteria cover them -- not just the happy path.",
+      "expected_output": "A set of named, narrative scenarios covering different actors (folder owner, invited user, public-link visitor, someone without an account) and conditions (folder empty vs populated, link revoked, invitee already has access, owner deletes folder while shared). Each scenario has preconditions, actor, action, and expected outcome. A coverage summary table. Gaps or open questions flagged. Output written to a markdown file.",
+      "files": [],
+      "expectations": [
+        "The output presents distinct named scenarios (not a decision table or exhaustive combination matrix), each with actor, preconditions, action, and expected outcome",
+        "At least 4 distinct actors or situations are covered, including at least one beyond the folder owner (e.g. invited user, public-link visitor, unauthenticated visitor)",
+        "At least one scenario covers an edge condition such as revoked access, an already-shared recipient, or the owner modifying/deleting the folder while it's shared",
+        "At least one scenario covers an adversarial or misuse actor -- someone using the sharing mechanism in a way it wasn't designed for (e.g. brute-forcing or guessing a public link, probing for folders they weren't invited to, using invites to spam or phish)",
+        "The output includes a coverage summary and explicitly flags at least one gap or open question needing a product decision",
+        "The output is written to a markdown file"
+      ]
+    }
+  ]
+}

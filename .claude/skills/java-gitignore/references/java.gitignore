@@ -1,0 +1,105 @@
+# Java .gitignore — Maven + Gradle + IDE + OS + secrets.
+# Trim to your build tool. Source basis: github/gitignore Java.gitignore + common real-world additions.
+
+# ─── Secrets / local config (NEVER COMMIT) ───────────────────────────────────
+*.env
+.envrc
+application-local.*
+*-local.properties
+*-secret*.*
+credentials*
+*.pem
+*.p12
+*.pfx
+*.jks
+*.keystore
+
+# ─── Compiled output ─────────────────────────────────────────────────────────
+*.class
+target/
+build/
+out/
+bin/
+!**/src/main/**/build/
+!**/src/test/**/build/
+!**/src/main/**/out/
+!**/src/main/**/bin/
+
+# ─── Packaged artifacts ──────────────────────────────────────────────────────
+*.jar
+*.war
+*.nar
+*.ear
+*.zip
+*.tar.gz
+*.rar
+
+# Keep build-tool wrappers so ./gradlew and ./mvnw work for everyone
+!gradle/wrapper/gradle-wrapper.jar
+
+# ─── Logs & JVM crash dumps ──────────────────────────────────────────────────
+*.log
+hs_err_pid*
+replay_pid*
+
+# ─── Maven ───────────────────────────────────────────────────────────────────
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+.flattened-pom.xml
+
+# ─── Gradle ──────────────────────────────────────────────────────────────────
+.gradle/
+gradle-app.setting
+!gradle-wrapper.properties
+
+# ─── IntelliJ IDEA ───────────────────────────────────────────────────────────
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# ─── Eclipse / STS ───────────────────────────────────────────────────────────
+.classpath
+.project
+.settings/
+.metadata
+.apt_generated/
+.factorypath
+.springBeans
+.sts4-cache/
+*.launch
+
+# ─── NetBeans ────────────────────────────────────────────────────────────────
+/nbproject/private/
+/nbbuild/
+/nbdist/
+/.nb-gradle/
+
+# ─── VS Code ─────────────────────────────────────────────────────────────────
+.vscode/
+
+# ─── OS files ────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+ehthumbs.db
+[Dd]esktop.ini
+$RECYCLE.BIN/
+
+# ─── Git / merge tool backups ────────────────────────────────────────────────
+*.orig
+*.BACKUP.*
+*.BASE.*
+*.LOCAL.*
+*.REMOTE.*
+
+# ─── Editor / misc temp ──────────────────────────────────────────────────────
+*.bak
+*.tmp
+*.swp
+*~

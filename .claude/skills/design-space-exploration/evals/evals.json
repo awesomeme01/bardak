@@ -1,0 +1,18 @@
+{
+  "skill_name": "design-space-exploration",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "We need to add real-time notifications to our web app (a user gets notified when someone comments on their post). Right now we're leaning towards just polling every 10 seconds, but someone on the team suggested WebSockets and someone else mentioned SSE. Before we commit, can you help me think through this systematically so we're not missing a better option?",
+      "expected_output": "A design space with dimensions like transport mechanism (polling/SSE/WebSockets/long-polling), delivery guarantee, connection model, and infrastructure cost. Known options (polling, WebSockets, SSE) placed in the space with tradeoffs. At least one unexplored or under-considered region identified and evaluated for whether it's worth investigating. A recommendation or clear open question. Output written to a markdown file.",
+      "files": [],
+      "expectations": [
+        "The output identifies at least 3 distinct design dimensions (not just 'which transport') relevant to the notification design decision",
+        "Polling, WebSockets, and SSE are all placed in the design space with explicit tradeoffs (not just a bullet list of pros/cons)",
+        "At least one unexplored or under-considered region of the design space is called out explicitly, with a judgment on whether it's worth investigating",
+        "The output distinguishes this from a testing/gap-finding exercise -- it reasons about the space of possible designs, not test cases for an existing one",
+        "The output is written to a markdown file"
+      ]
+    }
+  ]
+}
