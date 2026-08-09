@@ -23,7 +23,7 @@ public final class MoveRules {
     public MoveVerdict canAttack(final DealState state, final int seatNo, final Card card) {
         Objects.requireNonNull(state, "state");
         Objects.requireNonNull(card, "card");
-        if (state.attackRightSeat() != seatNo) {
+        if (state.attackRightSeat() != seatNo || state.hasPassed(seatNo)) {
             return MoveVerdict.rejected(RejectionReason.NOT_YOUR_TURN);
         }
         final MoveVerdict holding = canPlayFromHand(state, seatNo, card);

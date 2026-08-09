@@ -19,8 +19,11 @@ final class DealStateFixture {
             PlayerState.of(1, List.of(), null),
             PlayerState.of(2, List.of(), null));
     private List<TableSlot> table = List.of();
+    private int roundStarterSeat = 0;
     private int attackRightSeat = 0;
     private int defenderSeat = 1;
+    private List<Integer> passedSeats = List.of();
+    private List<Integer> exitOrder = List.of();
     private boolean anyCardBeatenThisRound;
     private boolean anyPileDiscarded;
 
@@ -81,6 +84,21 @@ final class DealStateFixture {
         return this;
     }
 
+    DealStateFixture withRoundStarterAt(final int seatNo) {
+        this.roundStarterSeat = seatNo;
+        this.attackRightSeat = seatNo;
+        return this;
+    }
+
+    DealStateFixture withPassed(final int... seats) {
+        final List<Integer> passed = new ArrayList<>(passedSeats);
+        for (final int seat : seats) {
+            passed.add(seat);
+        }
+        this.passedSeats = List.copyOf(passed);
+        return this;
+    }
+
     DealStateFixture withAttackRightAt(final int seatNo) {
         this.attackRightSeat = seatNo;
         return this;
@@ -101,9 +119,20 @@ final class DealStateFixture {
         return this;
     }
 
+    /** Стол на нужное число мест; руки и скрытые карты задаются отдельно. */
+    DealStateFixture withSeats(final int seatCount) {
+        final List<PlayerState> seated = new ArrayList<>();
+        for (int seat = 0; seat < seatCount; seat++) {
+            seated.add(PlayerState.of(seat, List.of(), null));
+        }
+        this.players = List.copyOf(seated);
+        return this;
+    }
+
     DealState build() {
-        return new DealState(phase, trump, deck, players, table,
-                attackRightSeat, defenderSeat, anyCardBeatenThisRound, anyPileDiscarded);
+        return new DealState(phase, trump, deck, players, table, roundStarterSeat,
+                attackRightSeat, defenderSeat, passedSeats, exitOrder,
+                anyCardBeatenThisRound, anyPileDiscarded);
     }
 
     private PlayerState player(final int seatNo) {
