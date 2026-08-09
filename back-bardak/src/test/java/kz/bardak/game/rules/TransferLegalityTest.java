@@ -126,7 +126,7 @@ class TransferLegalityTest {
     @DisplayName("Should reject a transfer When transfers are switched off in the table config")
     @Test
     void shouldRejectATransferWhenTransfersAreSwitchedOffInTheTableConfig() {
-        final RulesConfig noTransfers = new RulesConfig(6, 5, 6, false, true);
+        final RulesConfig noTransfers = RulesConfig.defaults().withTransfersDisabled();
         final DealState state = aDeal()
                 .withAttackCards(SEVEN_DIAMONDS)
                 .withHand(1, SEVEN_CLUBS)

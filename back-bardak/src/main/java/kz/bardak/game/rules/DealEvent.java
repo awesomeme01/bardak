@@ -86,6 +86,38 @@ public sealed interface DealEvent {
     record PlayerLeftDeal(int seatNo) implements DealEvent {
     }
 
+    /** Окно навеса открылось на взявшего карты (§2.3). */
+    record HangingWindowOpened(int seatNo) implements DealEvent {
+    }
+
+    /**
+     * ⭐ Карта ушла из руки навесившего в чужой слот и выбыла из игры до конца раздачи.
+     * {@code seatNo} — навесивший, {@code victimSeat} — жертва: для награды за добивание
+     * джокером (§0.4) важно именно кто навесил.
+     */
+    record CardHung(int seatNo, int victimSeat, Card card) implements DealEvent {
+
+        public CardHung {
+            Objects.requireNonNull(card, "card");
+        }
+    }
+
+    /** Уровень по шкале поднялся — ровно на одну ступень за окно (§2.3). */
+    record NavesLevelChanged(int seatNo, int level) implements DealEvent {
+    }
+
+    /** Спор за право навесить разрешён костью (ADR-029). */
+    record DiceRolled(int seatNo, List<Integer> participants) implements DealEvent {
+
+        public DiceRolled {
+            participants = List.copyOf(Objects.requireNonNull(participants, "participants"));
+        }
+    }
+
+    /** Окно закрылось: либо навес случился, либо нужной карты ни у кого не нашлось. */
+    record HangingWindowClosed(int seatNo) implements DealEvent {
+    }
+
     /** Карты остались у одного — он и «дурак» раздачи (§1.7). */
     record DealFinished(int seatNo) implements DealEvent {
     }

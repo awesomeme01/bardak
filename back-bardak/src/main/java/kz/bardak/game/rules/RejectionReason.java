@@ -46,5 +46,17 @@ public enum RejectionReason {
     TRANSFER_RANK_MISMATCH,
 
     /** Принимающему не хватит карт отбить атаку — перевод запрещён (§2.2). */
-    NEXT_PLAYER_HAS_TOO_FEW_CARDS
+    NEXT_PLAYER_HAS_TOO_FEW_CARDS,
+
+    /** Навесы выключены в конфиге стола (§2.3). */
+    NAVES_DISABLED,
+
+    /** Себе навесить нельзя — смысл игры в том, чтобы держать уровень ниже (§2.3). */
+    CANNOT_HANG_ON_SELF,
+
+    /** Карта не той ступени: навесить можно ровно ту, что летит жертве по её шкале. */
+    CARD_NOT_ON_NAVES_SCALE,
+
+    /** Окно навеса сейчас не открыто либо ход не за этим игроком. */
+    NOT_IN_HANGING_WINDOW
 }

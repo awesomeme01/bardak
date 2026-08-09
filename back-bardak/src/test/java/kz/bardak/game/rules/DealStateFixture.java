@@ -26,6 +26,8 @@ final class DealStateFixture {
     private List<Integer> exitOrder = List.of();
     private boolean anyCardBeatenThisRound;
     private boolean anyPileDiscarded;
+    private HangingWindow hangingWindow;
+    private long rngSeed = 42L;
 
     static DealStateFixture aDeal() {
         return new DealStateFixture();
@@ -41,9 +43,18 @@ final class DealStateFixture {
     }
 
     DealStateFixture withPlayerOutOfDeal(final int seatNo) {
-        final PlayerState player = player(seatNo);
-        return withPlayer(seatNo,
-                new PlayerState(seatNo, player.hand(), player.faceDownCard(), false));
+        return withPlayer(seatNo, player(seatNo).leftDeal());
+    }
+
+    /** Уровень по шкале навесов: -1 — навесов не было, 0 — навешена шестёрка, и так далее. */
+    DealStateFixture withNavesLevel(final int seatNo, final int level) {
+        return withPlayer(seatNo, player(seatNo).withNavesLevel(level));
+    }
+
+    DealStateFixture withHangingWindow(final HangingWindow window) {
+        this.hangingWindow = window;
+        this.phase = DealPhase.HANGING;
+        return this;
     }
 
     DealStateFixture withEmptyDeck() {
@@ -132,7 +143,7 @@ final class DealStateFixture {
     DealState build() {
         return new DealState(phase, trump, deck, players, table, roundStarterSeat,
                 attackRightSeat, defenderSeat, passedSeats, exitOrder,
-                anyCardBeatenThisRound, anyPileDiscarded);
+                anyCardBeatenThisRound, anyPileDiscarded, hangingWindow, rngSeed, 0);
     }
 
     private PlayerState player(final int seatNo) {

@@ -3,6 +3,7 @@ package kz.bardak.game.rules;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
  * Снимок раздачи — всё, что нужно правилам, и ничего больше. Неизменяемый: движок работает
@@ -25,6 +26,10 @@ import java.util.Objects;
  *                               (§2.2, ADR-031)
  * @param anyPileDiscarded   в этой раздаче уже уходили карты в отбой — от этого зависит
  *                           потолок атаки, а не от стола (§1.5, ADR-023)
+ * @param hangingWindow      открытое окно навеса или {@code null}, если окна нет (§2.3)
+ * @param rngSeed            под-seed раздачи: всё случайное выводится из него (§6)
+ * @param diceRolls          сколько бросков кости уже случилось в раздаче — чтобы два спора
+ *                           подряд не давали одинаковый результат
  */
 public record DealState(
         DealPhase phase,
@@ -38,7 +43,10 @@ public record DealState(
         List<Integer> passedSeats,
         List<Integer> exitOrder,
         boolean anyCardBeatenThisRound,
-        boolean anyPileDiscarded) {
+        boolean anyPileDiscarded,
+        HangingWindow hangingWindow,
+        long rngSeed,
+        int diceRolls) {
 
     public DealState {
         Objects.requireNonNull(phase, "phase");
@@ -117,12 +125,16 @@ public record DealState(
         return passedSeats.contains(seatNo);
     }
 
+    public Optional<HangingWindow> hanging() {
+        return Optional.ofNullable(hangingWindow);
+    }
+
     public Builder toBuilder() {
         return new Builder(this);
     }
 
     /**
-     * Точечное изменение снимка. Нужен потому, что запись из двенадцати частей неудобно
+     * Точечное изменение снимка. Нужен потому, что запись из пятнадцати частей неудобно
      * пересобирать целиком ради одного изменившегося поля.
      */
     public static final class Builder {
@@ -139,6 +151,9 @@ public record DealState(
         private List<Integer> exitOrder;
         private boolean anyCardBeatenThisRound;
         private boolean anyPileDiscarded;
+        private HangingWindow hangingWindow;
+        private long rngSeed;
+        private int diceRolls;
 
         private Builder(final DealState state) {
             this.phase = state.phase;
@@ -153,6 +168,9 @@ public record DealState(
             this.exitOrder = state.exitOrder;
             this.anyCardBeatenThisRound = state.anyCardBeatenThisRound;
             this.anyPileDiscarded = state.anyPileDiscarded;
+            this.hangingWindow = state.hangingWindow;
+            this.rngSeed = state.rngSeed;
+            this.diceRolls = state.diceRolls;
         }
 
         public Builder phase(final DealPhase value) {
@@ -222,10 +240,25 @@ public record DealState(
             return this;
         }
 
+        public Builder hangingWindow(final HangingWindow value) {
+            this.hangingWindow = value;
+            return this;
+        }
+
+        public Builder rngSeed(final long value) {
+            this.rngSeed = value;
+            return this;
+        }
+
+        public Builder diceRolls(final int value) {
+            this.diceRolls = value;
+            return this;
+        }
+
         public DealState build() {
             return new DealState(phase, trump, deck, players, table, roundStarterSeat,
                     attackRightSeat, defenderSeat, passedSeats, exitOrder,
-                    anyCardBeatenThisRound, anyPileDiscarded);
+                    anyCardBeatenThisRound, anyPileDiscarded, hangingWindow, rngSeed, diceRolls);
         }
     }
 }

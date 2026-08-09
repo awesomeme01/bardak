@@ -11,7 +11,7 @@ import java.util.Objects;
  */
 public sealed interface DealCommand
         permits DealCommand.Attack, DealCommand.Defend, DealCommand.Transfer,
-        DealCommand.Pass, DealCommand.Take {
+        DealCommand.Pass, DealCommand.Take, DealCommand.HangCard, DealCommand.HangSkip {
 
     int seatNo();
 
@@ -52,5 +52,20 @@ public sealed interface DealCommand
 
     /** «Взял» — защищающийся забирает стол в руку. */
     record Take(int seatNo) implements DealCommand {
+    }
+
+    /**
+     * «Навесить» — заявка в открытом окне (§2.3). Карта называется сразу: иначе после
+     * броска кости победитель мог бы передумать, а заявка должна быть обязательством.
+     */
+    record HangCard(int seatNo, Card card) implements DealCommand {
+
+        public HangCard {
+            Objects.requireNonNull(card, "card");
+        }
+    }
+
+    /** «Пропустить» — навес всегда выбор, даже когда карта есть. */
+    record HangSkip(int seatNo) implements DealCommand {
     }
 }

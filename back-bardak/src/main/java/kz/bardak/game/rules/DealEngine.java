@@ -16,16 +16,24 @@ public final class DealEngine {
 
     private final RulesConfig config;
     private final MoveRules moveRules;
+    private final HangingRules hangingRules;
     private final AttackOrderPolicy attackOrder;
+    private final DiceResolver dice;
 
-    public DealEngine(final RulesConfig config, final AttackOrderPolicy attackOrder) {
+    public DealEngine(final RulesConfig config, final AttackOrderPolicy attackOrder, final DiceResolver dice) {
         this.config = Objects.requireNonNull(config, "config");
         this.attackOrder = Objects.requireNonNull(attackOrder, "attackOrder");
+        this.dice = Objects.requireNonNull(dice, "dice");
         this.moveRules = new MoveRules(config);
+        this.hangingRules = new HangingRules(config);
     }
 
     public static DealEngine withDefaults() {
-        return new DealEngine(RulesConfig.defaults(), new AttackOrderPolicy.BardakStrictNeighbours());
+        return of(RulesConfig.defaults());
+    }
+
+    public static DealEngine of(final RulesConfig config) {
+        return new DealEngine(config, new AttackOrderPolicy.BardakStrictNeighbours(), new DiceResolver.Seeded());
     }
 
     public MoveResult apply(final DealState state, final DealCommand command) {
@@ -40,6 +48,8 @@ public final class DealEngine {
             case DealCommand.Transfer transfer -> applyTransfer(state, transfer);
             case DealCommand.Pass pass -> applyPass(state, pass);
             case DealCommand.Take take -> applyTake(state, take);
+            case DealCommand.HangCard hang -> applyHangCard(state, hang);
+            case DealCommand.HangSkip skip -> applyHangSkip(state, skip);
         };
     }
 
@@ -167,10 +177,151 @@ public final class DealEngine {
         final List<Card> taken = state.tableCards();
         final List<Card> hand = new ArrayList<>(state.defender().hand());
         hand.addAll(taken);
-        final PlayerState defender = new PlayerState(state.defenderSeat(), List.copyOf(hand),
-                state.defender().faceDownCard(), true);
+        final PlayerState defender = state.defender().withHand(List.copyOf(hand));
         events.add(new DealEvent.CardsTaken(state.defenderSeat(), taken));
-        return finishRound(state.toBuilder().player(defender).build(), true, events);
+        return openHangingWindow(state.toBuilder().player(defender).build(), events);
+    }
+
+    /**
+     * ⭐ Окно навеса открывается на взявшего — и только сейчас, когда состав его руки уже
+     * окончателен (§2.3, ADR-038). Если нужной карты нет ни у кого, окно не открывается
+     * вовсе: навес просто не происходит.
+     */
+    private DealState openHangingWindow(final DealState state, final List<DealEvent> events) {
+        if (!config.navesEnabled()) {
+            return finishRound(state, true, events);
+        }
+        final int victim = state.defenderSeat();
+        final List<Integer> holders = hangingRules.seatsHoldingFlyingCard(state, victim);
+        if (holders.isEmpty()) {
+            return finishRound(state, true, events);
+        }
+        events.add(new DealEvent.HangingWindowOpened(victim));
+        return state.toBuilder()
+                .phase(DealPhase.HANGING)
+                .hangingWindow(HangingWindow.open(victim, steps(state, victim, holders),
+                        hangingRules.isEveryClaimantHanging(state, victim)))
+                .build();
+    }
+
+    /**
+     * Ступени права. При джокере и при уникальном отстающем ступень одна — право сразу
+     * у всех. В обычном случае их три: атаковавший, поддержавший и все остальные наравне
+     * (§2.3).
+     */
+    private List<List<Integer>> steps(final DealState state, final int victim, final List<Integer> holders) {
+        if (hangingRules.isRightEqualForAll(state, victim)) {
+            return List.of(holders);
+        }
+        final List<Integer> priority = hangingRules.priorityOrder(state, victim);
+        final List<List<Integer>> steps = new ArrayList<>();
+        for (int tier = 0; tier < 2 && tier < priority.size(); tier++) {
+            final int seat = priority.get(tier);
+            if (holders.contains(seat)) {
+                steps.add(List.of(seat));
+            }
+        }
+        final List<Integer> rest = holders.stream()
+                .filter(seat -> priority.indexOf(seat) >= 2)
+                .toList();
+        if (!rest.isEmpty()) {
+            steps.add(rest);
+        }
+        return List.copyOf(steps);
+    }
+
+    private MoveResult applyHangCard(final DealState state, final DealCommand.HangCard command) {
+        final HangingWindow window = state.hangingWindow();
+        if (state.phase() != DealPhase.HANGING || window == null
+                || !window.isSeatOnCurrentStep(command.seatNo())) {
+            return MoveResult.rejected(RejectionReason.NOT_IN_HANGING_WINDOW);
+        }
+        final MoveVerdict verdict = hangingRules.canHang(state, command.seatNo(),
+                window.victimSeat(), command.card());
+        if (verdict instanceof MoveVerdict.Rejected rejected) {
+            return MoveResult.rejected(rejected.reason());
+        }
+        final List<DealEvent> events = new ArrayList<>();
+        final HangingWindow claimed = window.withClaim(new HangClaim(command.seatNo(), command.card()));
+        return MoveResult.applied(advanceWindow(state.toBuilder().hangingWindow(claimed).build(), events), events);
+    }
+
+    private MoveResult applyHangSkip(final DealState state, final DealCommand.HangSkip command) {
+        final HangingWindow window = state.hangingWindow();
+        if (state.phase() != DealPhase.HANGING || window == null
+                || !window.isSeatOnCurrentStep(command.seatNo())) {
+            return MoveResult.rejected(RejectionReason.NOT_IN_HANGING_WINDOW);
+        }
+        final List<DealEvent> events = new ArrayList<>();
+        final HangingWindow declined = window.withDecline(command.seatNo());
+        return MoveResult.applied(advanceWindow(state.toBuilder().hangingWindow(declined).build(), events), events);
+    }
+
+    /**
+     * Ступень исчерпана — разрешаем её. Заявок нет: право уходит дальше по очереди, а если
+     * очередь кончилась — окно закрывается без навеса.
+     */
+    private DealState advanceWindow(final DealState state, final List<DealEvent> events) {
+        final HangingWindow window = state.hangingWindow();
+        if (!window.isStepComplete()) {
+            return state;
+        }
+        if (window.claims().isEmpty()) {
+            if (window.hasNextStep()) {
+                return state.toBuilder().hangingWindow(window.nextStep()).build();
+            }
+            return closeWindow(state, events);
+        }
+        return closeWindow(applyClaims(state, window, events), events);
+    }
+
+    /**
+     * ⭐ Уровень поднимается ровно на одну ступень за окно, сколько бы карт в слот ни ушло
+     * (§2.3). При правиле отстающего навешивают все заявившиеся; в остальных случаях —
+     * один, и спор решается костью, а не тем, кто успел (ADR-029).
+     */
+    private DealState applyClaims(final DealState state, final HangingWindow window,
+                                  final List<DealEvent> events) {
+        final List<HangClaim> winners = selectWinners(state, window, events);
+        DealState current = state;
+        for (final HangClaim claim : winners) {
+            current = current.toBuilder()
+                    .player(current.playerAt(claim.seatNo()).withoutCard(claim.card()))
+                    .build();
+            current = current.toBuilder()
+                    .player(current.playerAt(window.victimSeat()).withHungCard(claim.card()))
+                    .build();
+            events.add(new DealEvent.CardHung(claim.seatNo(), window.victimSeat(), claim.card()));
+        }
+        final int level = current.playerAt(window.victimSeat()).navesLevel() + 1;
+        events.add(new DealEvent.NavesLevelChanged(window.victimSeat(), level));
+        return current.toBuilder()
+                .player(current.playerAt(window.victimSeat()).withNavesLevel(level))
+                .build();
+    }
+
+    private List<HangClaim> selectWinners(final DealState state, final HangingWindow window,
+                                          final List<DealEvent> events) {
+        if (window.everyClaimantHangs()) {
+            return window.claims();
+        }
+        if (window.claims().size() == 1) {
+            return window.claims();
+        }
+        final List<Integer> participants = window.claims().stream().map(HangClaim::seatNo).toList();
+        final int winner = dice.winnerAmong(participants, state.rngSeed(), state.diceRolls());
+        events.add(new DealEvent.DiceRolled(winner, participants));
+        return window.claims().stream().filter(claim -> claim.seatNo() == winner).toList();
+    }
+
+    private DealState closeWindow(final DealState state, final List<DealEvent> events) {
+        final HangingWindow window = state.hangingWindow();
+        events.add(new DealEvent.HangingWindowClosed(window.victimSeat()));
+        final int rolls = state.diceRolls() + (window.claims().size() > 1 ? 1 : 0);
+        return finishRound(state.toBuilder()
+                .hangingWindow(null)
+                .diceRolls(rolls)
+                .build(), true, events);
     }
 
     /**
@@ -215,9 +366,7 @@ public final class DealEngine {
             final List<Card> hand = new ArrayList<>(player.hand());
             hand.addAll(drawn);
             events.add(new DealEvent.CardsDrawn(seat, List.copyOf(drawn)));
-            current = current.toBuilder()
-                    .player(new PlayerState(seat, List.copyOf(hand), player.faceDownCard(), player.inDeal()))
-                    .build();
+            current = current.toBuilder().player(player.withHand(List.copyOf(hand))).build();
         }
         return current.toBuilder().deck(List.copyOf(deck)).build();
     }
@@ -262,9 +411,7 @@ public final class DealEngine {
             }
             exitOrder.add(seat);
             events.add(new DealEvent.PlayerLeftDeal(seat));
-            current = current.toBuilder()
-                    .player(new PlayerState(seat, player.hand(), player.faceDownCard(), false))
-                    .build();
+            current = current.toBuilder().player(player.leftDeal()).build();
         }
         return current.toBuilder().exitOrder(List.copyOf(exitOrder)).build();
     }
@@ -304,12 +451,10 @@ public final class DealEngine {
                                  final List<DealEvent> events) {
         final PlayerState player = state.playerAt(seatNo);
         if (player.holdsInHand(card)) {
-            final List<Card> hand = new ArrayList<>(player.hand());
-            hand.remove(card);
-            return new PlayerState(seatNo, List.copyOf(hand), player.faceDownCard(), player.inDeal());
+            return player.withoutCard(card);
         }
         events.add(new DealEvent.FaceDownRevealed(seatNo, card));
-        return new PlayerState(seatNo, player.hand(), null, player.inDeal());
+        return player.withFaceDownRevealed();
     }
 
     /**
