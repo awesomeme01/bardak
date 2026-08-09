@@ -214,7 +214,7 @@ ADR-002. Причины:
 | `HIDDEN_CARD_REVEALED` | ⭐ `{seatNo, cardCode}` — скрытая карта открыта | Всем |
 | `TRUMP_CHANGED` | ⭐ `{newTrumpSuit, cardCode, toSeat}` — открылся потайной козырь | Всем |
 | `PLAYER_OUT` | `{seatNo, place}` | Всем |
-| `HANGING_STARTED` | `{targetSeat, canHangSeat, requiredRank, deadlineTs}` | Всем |
+| `HANGING_STARTED` | `{targetSeat, canHangSeat, requiredRank, openToAll, deadlineTs}` | Всем |
 | `CARD_HUNG` | ⭐ `{fromSeat, toSeat, cardCode, navesLevelAfter}` | Всем |
 | `HANGING_SKIPPED` | `{seatNo, nextCanHangSeat}` — отказался, право дальше | Всем |
 | `JOKER_HUNG` | ⭐ `{seatNo}` — джокер в слоте; **ещё не проигрыш**, можно снять выходом первым | Всем |
@@ -338,6 +338,10 @@ Payload содержит только номер места. Какая имен
         │
         └─ никто не навесил → фаза закрывается, идём в REFILL
 ```
+
+`openToAll` в `HANGING_STARTED` поднимается, когда приоритет не действует: жертва —
+отстающий (§2.3) или навешивается джокер. Тогда `canHangSeat` не заполнен, и заявку может
+прислать любой; спор за джокер разрешается броском кости.
 
 Если навешен джокер, дополнительно приходит `JOKER_HUNG {seatNo}`. Это **не объявление
 проигрыша**: игрок, вышедший первым в этой же раздаче, снимает джокер и продолжает играть
