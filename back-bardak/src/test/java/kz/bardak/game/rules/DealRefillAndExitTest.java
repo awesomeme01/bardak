@@ -154,7 +154,8 @@ class DealRefillAndExitTest {
                 .withHand(0, ACE_CLUBS)
                 .build();
 
-        final MoveResult result = engine.apply(state, new DealCommand.Take(1));
+        final DealState announced = applied(engine.apply(state, new DealCommand.Take(1)));
+        final MoveResult result = engine.apply(announced, new DealCommand.Pass(0));
 
         final DealState next = applied(result);
         assertThat(next.playerAt(1).hand()).containsExactly(SEVEN_DIAMONDS);

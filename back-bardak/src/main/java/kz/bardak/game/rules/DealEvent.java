@@ -60,6 +60,13 @@ public sealed interface DealEvent {
         }
     }
 
+    /**
+     * «Беру» объявлено. Отдельное событие от {@link CardsTaken}: между ними подкидывающие
+     * ещё докидывают карты (ADR-038), и на клиенте это разные моменты.
+     */
+    record TakeAnnounced(int seatNo) implements DealEvent {
+    }
+
     /** «Взял»: защищающийся забрал стол в руку. */
     record CardsTaken(int seatNo, List<Card> cards) implements DealEvent {
 

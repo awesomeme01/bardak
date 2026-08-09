@@ -57,7 +57,7 @@ public final class DealEngine {
         return MoveResult.applied(state.toBuilder()
                 .player(player)
                 .table(List.copyOf(table))
-                .phase(DealPhase.DEFEND)
+                .phase(state.phase() == DealPhase.TAKING ? DealPhase.TAKING : DealPhase.DEFEND)
                 .build(), events);
     }
 
@@ -131,8 +131,11 @@ public final class DealEngine {
             events.add(new DealEvent.AttackRightMoved(next.getAsInt()));
             return MoveResult.applied(afterPass.toBuilder()
                     .attackRightSeat(next.getAsInt())
-                    .phase(unbeatenRemain(afterPass.table()) ? DealPhase.DEFEND : DealPhase.ATTACK)
+                    .phase(nextPhaseAfterPass(afterPass))
                     .build(), events);
+        }
+        if (afterPass.phase() == DealPhase.TAKING) {
+            return MoveResult.applied(collectTable(afterPass, events), events);
         }
         if (unbeatenRemain(afterPass.table())) {
             return MoveResult.applied(afterPass.toBuilder().phase(DealPhase.DEFEND).build(), events);
@@ -141,19 +144,33 @@ public final class DealEngine {
         return MoveResult.applied(finishRound(afterPass, false, events), events);
     }
 
+    /**
+     * «Беру» раунд не закрывает (ADR-038): подкидывающие докидывают карты, пока не спасуют,
+     * и только тогда стол уезжает в руку. Потолком остаётся лимит раунда — рука взявшего
+     * больше ничего не ограничивает, он всё равно заберёт всё.
+     */
     private MoveResult applyTake(final DealState state, final DealCommand.Take command) {
-        if (state.defenderSeat() != command.seatNo()) {
+        if (state.defenderSeat() != command.seatNo() || state.phase() == DealPhase.TAKING) {
             return MoveResult.rejected(RejectionReason.NOT_YOUR_TURN);
         }
+        final List<DealEvent> events = new ArrayList<>();
+        events.add(new DealEvent.TakeAnnounced(command.seatNo()));
+        final DealState taking = state.toBuilder().phase(DealPhase.TAKING).build();
+        if (attackOrder.nextAttacker(taking).isPresent()) {
+            return MoveResult.applied(taking, events);
+        }
+        return MoveResult.applied(collectTable(taking, events), events);
+    }
+
+    /** Стол уезжает в руку взявшему, и раунд закрывается. */
+    private DealState collectTable(final DealState state, final List<DealEvent> events) {
         final List<Card> taken = state.tableCards();
         final List<Card> hand = new ArrayList<>(state.defender().hand());
         hand.addAll(taken);
         final PlayerState defender = new PlayerState(state.defenderSeat(), List.copyOf(hand),
                 state.defender().faceDownCard(), true);
-
-        final List<DealEvent> events = new ArrayList<>();
-        events.add(new DealEvent.CardsTaken(command.seatNo(), taken));
-        return MoveResult.applied(finishRound(state.toBuilder().player(defender).build(), true, events), events);
+        events.add(new DealEvent.CardsTaken(state.defenderSeat(), taken));
+        return finishRound(state.toBuilder().player(defender).build(), true, events);
     }
 
     /**
@@ -293,6 +310,17 @@ public final class DealEngine {
         }
         events.add(new DealEvent.FaceDownRevealed(seatNo, card));
         return new PlayerState(seatNo, player.hand(), null, player.inDeal());
+    }
+
+    /**
+     * Фаза после паса, когда право ушло дальше. Объявленное «беру» переживает пас: пока
+     * подкидывающие не закончатся, раунд остаётся в {@link DealPhase#TAKING}.
+     */
+    private DealPhase nextPhaseAfterPass(final DealState state) {
+        if (state.phase() == DealPhase.TAKING) {
+            return DealPhase.TAKING;
+        }
+        return unbeatenRemain(state.table()) ? DealPhase.DEFEND : DealPhase.ATTACK;
     }
 
     private boolean unbeatenRemain(final List<TableSlot> table) {

@@ -33,6 +33,9 @@ public enum RejectionReason {
     /** Карта не бьёт указанную цель (§1.1.1). */
     CARD_DOES_NOT_BEAT,
 
+    /** Защищающийся уже объявил «беру» — отбиваться и переводить поздно (ADR-038). */
+    DEFENDER_ALREADY_TOOK,
+
     /** Переводы выключены в конфиге стола. */
     TRANSFERS_DISABLED,
 

@@ -178,9 +178,30 @@ class DealEngineTest {
         assertThat(next.table()).hasSize(1);
     }
 
-    @DisplayName("Should move the whole table into the hand When the defender takes")
+    @DisplayName("Should keep the round alive for follow-up cards When the defender announces a take")
     @Test
-    void shouldMoveTheWholeTableIntoTheHandWhenTheDefenderTakes() {
+    void shouldKeepTheRoundAliveForFollowUpCardsWhenTheDefenderAnnouncesATake() {
+        final DealState state = aDeal()
+                .withEmptyDeck()
+                .withPhase(DealPhase.DEFEND)
+                .withAttackCards(SEVEN_DIAMONDS)
+                .withHand(0, SEVEN_CLUBS)
+                .withHand(1, KING_CLUBS)
+                .withHand(2, SEVEN_SPADES)
+                .build();
+
+        final MoveResult result = engine.apply(state, new DealCommand.Take(1));
+
+        final DealState next = applied(result);
+        assertThat(next.phase()).isEqualTo(DealPhase.TAKING);
+        assertThat(next.table()).hasSize(1);
+        assertThat(next.playerAt(1).hand()).containsExactly(KING_CLUBS);
+        assertThat(events(result)).containsExactly(new DealEvent.TakeAnnounced(1));
+    }
+
+    @DisplayName("Should move the whole table into the hand When every attacker passed after the take")
+    @Test
+    void shouldMoveTheWholeTableIntoTheHandWhenEveryAttackerPassedAfterTheTake() {
         final DealState state = aDeal()
                 .withEmptyDeck()
                 .withPhase(DealPhase.DEFEND)
@@ -191,13 +212,107 @@ class DealEngineTest {
                 .withHand(2, SEVEN_SPADES)
                 .build();
 
-        final MoveResult result = engine.apply(state, new DealCommand.Take(1));
+        final DealState announced = applied(engine.apply(state, new DealCommand.Take(1)));
+        final DealState afterFirstPass = applied(engine.apply(announced, new DealCommand.Pass(0)));
+        final MoveResult result = engine.apply(afterFirstPass, new DealCommand.Pass(2));
 
         final DealState next = applied(result);
         assertThat(next.playerAt(1).hand())
                 .containsExactly(KING_CLUBS, SEVEN_DIAMONDS, NINE_DIAMONDS, SEVEN_CLUBS);
         assertThat(next.table()).isEmpty();
         assertThat(next.anyPileDiscarded()).isFalse();
+    }
+
+    @DisplayName("Should let attackers keep adding cards When the take has been announced")
+    @Test
+    void shouldLetAttackersKeepAddingCardsWhenTheTakeHasBeenAnnounced() {
+        final DealState state = aDeal()
+                .withEmptyDeck()
+                .withPhase(DealPhase.DEFEND)
+                .withAttackCards(SEVEN_DIAMONDS)
+                .withHand(0, SEVEN_CLUBS)
+                .withHand(1, KING_CLUBS)
+                .withHand(2, SEVEN_SPADES)
+                .build();
+
+        final DealState announced = applied(engine.apply(state, new DealCommand.Take(1)));
+        final DealState next = applied(engine.apply(announced, new DealCommand.Attack(0, SEVEN_CLUBS)));
+
+        assertThat(next.phase()).isEqualTo(DealPhase.TAKING);
+        assertThat(next.attackCardCount()).isEqualTo(2);
+    }
+
+    @DisplayName("Should ignore the taker's hand size When cards are added after the take")
+    @Test
+    void shouldIgnoreTheTakersHandSizeWhenCardsAreAddedAfterTheTake() {
+        final DealState state = aDeal()
+                .withEmptyDeck()
+                .withPhase(DealPhase.DEFEND)
+                .withAttackCards(SEVEN_DIAMONDS)
+                .withHand(0, SEVEN_CLUBS)
+                .withHand(1)
+                .withHand(2, SEVEN_SPADES)
+                .build();
+
+        assertThat(state.defender().defendableCards(true)).isZero();
+
+        final DealState announced = applied(engine.apply(state, new DealCommand.Take(1)));
+
+        assertThat(engine.apply(announced, new DealCommand.Attack(0, SEVEN_CLUBS)).isApplied()).isTrue();
+    }
+
+    @DisplayName("Should still cap the follow-up cards at the round limit When the take has been announced")
+    @Test
+    void shouldStillCapTheFollowUpCardsAtTheRoundLimitWhenTheTakeHasBeenAnnounced() {
+        final RulesConfig config = RulesConfig.defaults();
+        final DealStateFixture fixture = aDeal().withEmptyDeck().withPhase(DealPhase.DEFEND);
+        for (int index = 0; index < config.maxAttackFirstRound(); index++) {
+            fixture.withAttackCards(PipCard.of(Rank.values()[index], Suit.DIAMONDS));
+        }
+        final DealState state = fixture
+                .withHand(0, PipCard.of(Rank.SIX, Suit.HEARTS))
+                .withHand(1, KING_CLUBS)
+                .build();
+
+        final DealState announced = applied(engine.apply(state, new DealCommand.Take(1)));
+
+        assertThat(engine.apply(announced, new DealCommand.Attack(0, PipCard.of(Rank.SIX, Suit.HEARTS))))
+                .isEqualTo(MoveResult.rejected(RejectionReason.ATTACK_LIMIT_REACHED));
+    }
+
+    @DisplayName("Should refuse a defence When the take has already been announced")
+    @Test
+    void shouldRefuseADefenceWhenTheTakeHasAlreadyBeenAnnounced() {
+        final DealState state = aDeal()
+                .withEmptyDeck()
+                .withPhase(DealPhase.DEFEND)
+                .withAttackCards(SEVEN_DIAMONDS)
+                .withHand(0, SEVEN_CLUBS)
+                .withHand(1, NINE_DIAMONDS)
+                .build();
+
+        final DealState announced = applied(engine.apply(state, new DealCommand.Take(1)));
+
+        assertThat(engine.apply(announced, new DealCommand.Defend(1, NINE_DIAMONDS, SEVEN_DIAMONDS)))
+                .isEqualTo(MoveResult.rejected(RejectionReason.DEFENDER_ALREADY_TOOK));
+    }
+
+    @DisplayName("Should refuse a transfer When the take has already been announced")
+    @Test
+    void shouldRefuseATransferWhenTheTakeHasAlreadyBeenAnnounced() {
+        final DealState state = aDeal()
+                .withEmptyDeck()
+                .withPhase(DealPhase.DEFEND)
+                .withAttackCards(SEVEN_DIAMONDS)
+                .withHand(0, ACE_CLUBS)
+                .withHand(1, SEVEN_CLUBS)
+                .withHand(2, KING_CLUBS, SEVEN_SPADES)
+                .build();
+
+        final DealState announced = applied(engine.apply(state, new DealCommand.Take(1)));
+
+        assertThat(engine.apply(announced, new DealCommand.Transfer(1, SEVEN_CLUBS)))
+                .isEqualTo(MoveResult.rejected(RejectionReason.DEFENDER_ALREADY_TOOK));
     }
 
     @DisplayName("Should skip the defender in the next round When the defender took the table")
@@ -212,7 +327,9 @@ class DealEngineTest {
                 .withHand(2, SEVEN_SPADES)
                 .build();
 
-        final DealState next = applied(engine.apply(state, new DealCommand.Take(1)));
+        final DealState announced = applied(engine.apply(state, new DealCommand.Take(1)));
+        final DealState afterFirstPass = applied(engine.apply(announced, new DealCommand.Pass(0)));
+        final DealState next = applied(engine.apply(afterFirstPass, new DealCommand.Pass(2)));
 
         assertThat(next.roundStarterSeat()).isEqualTo(2);
         assertThat(next.defenderSeat()).isZero();

@@ -19,6 +19,10 @@ public final class MoveRules {
 
     /**
      * Можно ли положить карту в атаку — первой картой раунда или подкидом (§1.5, §2.1).
+     *
+     * <p>⭐ После объявленного «беру» (фаза {@link DealPhase#TAKING}) подкидывание
+     * продолжается, но потолком остаётся только лимит раунда: рука взявшего больше ничего
+     * не ограничивает — он всё равно забирает стол (ADR-038).
      */
     public MoveVerdict canAttack(final DealState state, final int seatNo, final Card card) {
         Objects.requireNonNull(state, "state");
@@ -36,6 +40,9 @@ public final class MoveRules {
         if (!state.table().isEmpty() && !state.hasRankOnTable(card)) {
             return MoveVerdict.rejected(RejectionReason.RANK_NOT_ON_TABLE);
         }
+        if (state.phase() == DealPhase.TAKING) {
+            return MoveVerdict.allowed();
+        }
         if (state.unbeatenCount() + 1 > state.defender().defendableCards(state.isDeckEmpty())) {
             return MoveVerdict.rejected(RejectionReason.DEFENDER_HAS_TOO_FEW_CARDS);
         }
@@ -52,6 +59,9 @@ public final class MoveRules {
         Objects.requireNonNull(target, "target");
         if (state.defenderSeat() != seatNo) {
             return MoveVerdict.rejected(RejectionReason.NOT_YOUR_TURN);
+        }
+        if (state.phase() == DealPhase.TAKING) {
+            return MoveVerdict.rejected(RejectionReason.DEFENDER_ALREADY_TOOK);
         }
         final MoveVerdict holding = canPlayFromHand(state, seatNo, card);
         if (!holding.isAllowed()) {
@@ -85,6 +95,9 @@ public final class MoveRules {
         }
         if (state.defenderSeat() != seatNo) {
             return MoveVerdict.rejected(RejectionReason.NOT_YOUR_TURN);
+        }
+        if (state.phase() == DealPhase.TAKING) {
+            return MoveVerdict.rejected(RejectionReason.DEFENDER_ALREADY_TOOK);
         }
         final MoveVerdict holding = canPlayFromHand(state, seatNo, card);
         if (!holding.isAllowed()) {
