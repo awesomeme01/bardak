@@ -2,6 +2,7 @@ package kz.bardak.game.rules;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
  * Что произошло в раздаче. Партия хранится последовательностью событий (ADR-004), поэтому
@@ -11,6 +12,17 @@ import java.util.Objects;
 public sealed interface DealEvent {
 
     int seatNo();
+
+    /**
+     * ⭐ Кому событие видно, если не всем. Пусто — событие публичное.
+     *
+     * <p>Единственный приватный случай — вскрытие скрытой карты: она уходит в руку
+     * владельца и дальше играется как обычная, а чужую руку не видит никто (§1.8).
+     * Остальные узнают только то, что видно в проекции: скрытой карты у него больше нет.
+     */
+    default Optional<Integer> privateToSeat() {
+        return Optional.empty();
+    }
 
     record CardAttacked(int seatNo, Card card) implements DealEvent {
 
@@ -35,13 +47,20 @@ public sealed interface DealEvent {
     }
 
     /**
-     * ⭐ Скрытая карта вскрыта. Открытие необратимо и от исхода хода не зависит (§1.8):
-     * событие есть даже тогда, когда сам ход потом окажется отклонён.
+     * ⭐ Скрытая карта вскрыта — <b>событие только для владельца</b>. Карта переходит
+     * в его руку, и дальше он играет ею как обычной; соперники её не видят (§1.8).
+     * Открытие необратимо и от исхода хода не зависит: событие есть даже тогда, когда
+     * ход этой картой не прошёл.
      */
     record FaceDownRevealed(int seatNo, Card card) implements DealEvent {
 
         public FaceDownRevealed {
             Objects.requireNonNull(card, "card");
+        }
+
+        @Override
+        public Optional<Integer> privateToSeat() {
+            return Optional.of(seatNo);
         }
     }
 
