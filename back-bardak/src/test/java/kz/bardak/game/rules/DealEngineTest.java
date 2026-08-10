@@ -135,6 +135,56 @@ class DealEngineTest {
                 .isEqualTo(MoveResult.rejected(RejectionReason.NOT_YOUR_TURN));
     }
 
+    @DisplayName("Should let a passed player transfer again When the chain comes back around")
+    @Test
+    void shouldLetAPassedPlayerTransferAgainWhenTheChainComesBackAround() {
+        final Card sevenHearts = PipCard.of(Rank.SEVEN, Suit.HEARTS);
+        final DealState state = aDeal()
+                .withPhase(DealPhase.DEFEND)
+                .withAttackCards(SEVEN_DIAMONDS)
+                .withHand(0, sevenHearts, ACE_CLUBS, KING_CLUBS, PipCard.of(Rank.QUEEN, Suit.CLUBS),
+                        PipCard.of(Rank.EIGHT, Suit.CLUBS))
+                .withHand(1, SEVEN_CLUBS, PipCard.of(Rank.NINE, Suit.CLUBS),
+                        PipCard.of(Rank.TEN, Suit.CLUBS), PipCard.of(Rank.JACK, Suit.CLUBS),
+                        PipCard.of(Rank.KING, Suit.SPADES))
+                .withHand(2, SEVEN_SPADES, PipCard.of(Rank.NINE, Suit.HEARTS),
+                        PipCard.of(Rank.TEN, Suit.HEARTS), PipCard.of(Rank.JACK, Suit.HEARTS),
+                        PipCard.of(Rank.QUEEN, Suit.HEARTS))
+                .build();
+
+        final DealState afterPass = applied(engine.apply(state, new DealCommand.Pass(0)));
+        assertThat(afterPass.hasPassed(0)).isTrue();
+
+        final DealState toSeatTwo = applied(engine.apply(afterPass, new DealCommand.Transfer(1, SEVEN_CLUBS)));
+        assertThat(toSeatTwo.defenderSeat()).isEqualTo(2);
+
+        final DealState backToSeatZero =
+                applied(engine.apply(toSeatTwo, new DealCommand.Transfer(2, SEVEN_SPADES)));
+
+        assertThat(backToSeatZero.defenderSeat()).isZero();
+        assertThat(backToSeatZero.hasPassed(0)).isFalse();
+        assertThat(engine.apply(backToSeatZero, new DealCommand.Transfer(0, sevenHearts)).isApplied())
+                .isTrue();
+    }
+
+    @DisplayName("Should force a defence When the whole rank is already on the table")
+    @Test
+    void shouldForceADefenceWhenTheWholeRankIsAlreadyOnTheTable() {
+        final DealState state = aDeal()
+                .withPhase(DealPhase.DEFEND)
+                .withDefenderAt(1)
+                .withAttackCards(SEVEN_DIAMONDS, SEVEN_CLUBS, SEVEN_SPADES,
+                        PipCard.of(Rank.SEVEN, Suit.HEARTS))
+                .withHand(1, NINE_DIAMONDS, PipCard.of(Rank.NINE, Suit.CLUBS),
+                        PipCard.of(Rank.NINE, Suit.HEARTS), PipCard.of(Rank.NINE, Suit.SPADES))
+                .build();
+
+        assertThat(engine.apply(state, new DealCommand.Transfer(1, NINE_DIAMONDS)))
+                .isEqualTo(MoveResult.rejected(RejectionReason.TRANSFER_RANK_MISMATCH));
+        assertThat(engine.apply(state, new DealCommand.Defend(1, NINE_DIAMONDS, SEVEN_DIAMONDS)).isApplied())
+                .isTrue();
+    }
+
     @DisplayName("Should close the round as beaten When the last attacker passes and nothing is unbeaten")
     @Test
     void shouldCloseTheRoundAsBeatenWhenTheLastAttackerPassesAndNothingIsUnbeaten() {
