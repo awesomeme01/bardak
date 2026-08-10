@@ -26,13 +26,46 @@ public final class Dealer {
     }
 
     /**
+     * Сколько раз подряд можно пересдать, прежде чем сдаться. Практический предохранитель:
+     * вероятность десяти пересдач подряд исчезающе мала, а бесконечный цикл в движке — нет.
+     */
+    private static final int MAX_RESHUFFLES = 10;
+
+    /**
      * Новая раздача.
+     *
+     * <p>⭐ Если козырной масти не оказалось ни у кого, раздача <b>пересдаётся</b> (OQ-22):
+     * первый ход определяется младшим козырем, и без козырей на руках определять его
+     * не из чего. Пересдача идёт от производного seed и остаётся воспроизводимой.
      *
      * @param navesLevels уровни игроков по местам — переносятся между раздачами
      * @param dealSeed    под-seed раздачи, производный от seed матча (§6)
      */
     public DealState startDeal(final List<Integer> navesLevels, final long dealSeed) {
         Objects.requireNonNull(navesLevels, "navesLevels");
+        long seed = dealSeed;
+        for (int attempt = 0; attempt < MAX_RESHUFFLES; attempt++) {
+            final DealState deal = dealOnce(navesLevels, seed);
+            if (!deal.hasTrump() || hasAnyTrumpInHands(deal)) {
+                return deal;
+            }
+            seed = reshuffleSeed(seed, attempt);
+        }
+        return dealOnce(navesLevels, seed);
+    }
+
+    /** Козырь есть хоть у кого-то — иначе первый ход определять не из чего. */
+    public boolean hasAnyTrumpInHands(final DealState deal) {
+        return deal.players().stream()
+                .anyMatch(player -> lowestTrumpRank(player, deal.trump()).isPresent());
+    }
+
+    /** Seed пересдачи: другой расклад, но по-прежнему производный от seed матча (§6). */
+    public long reshuffleSeed(final long seed, final int attempt) {
+        return seed * 31L + attempt + 1;
+    }
+
+    private DealState dealOnce(final List<Integer> navesLevels, final long dealSeed) {
         final int playerCount = navesLevels.size();
         final List<Card> deck = new ArrayList<>(deckFactory.buildShuffled(playerCount, dealSeed));
         final List<PlayerState> players = dealHands(deck, navesLevels);
@@ -61,8 +94,8 @@ public final class Dealer {
      * Кому ходить первым: обладателю <b>младшего козыря</b> (§1.2). Правило одно и то же
      * в каждой раздаче матча — проигравший прошлую преимуществ не получает.
      *
-     * <p>Если козырей нет ни у кого, ходит место 0: спецификация такой случай не
-     * описывает, а решение нужно — см. OQ-22.
+     * <p>Козырей нет ни у кого — до этого метода дело не доходит: такая раздача
+     * пересдаётся (OQ-22).
      */
     private int firstMoveSeat(final List<PlayerState> players, final Trump trump) {
         Rank lowest = null;

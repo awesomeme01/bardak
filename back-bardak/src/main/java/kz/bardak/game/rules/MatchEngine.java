@@ -59,10 +59,26 @@ public final class MatchEngine {
             return MatchResult.rejected(rejected.reason());
         }
         final MoveResult.Applied applied = (MoveResult.Applied) moveResult;
-        if (applied.state().phase() != DealPhase.DEAL_OVER) {
-            return MatchResult.applied(state.toBuilder().deal(applied.state()).build(), applied.events());
+        if (applied.state().phase() == DealPhase.DEAL_OVER) {
+            return closeDeal(state, applied);
         }
-        return closeDeal(state, applied);
+        return MatchResult.applied(state.toBuilder()
+                .deal(reshuffleIfNobodyHasTrump(state, applied.state()))
+                .build(), applied.events());
+    }
+
+    /**
+     * ⭐ Козырь могли назвать костью — и назвать масть, которой нет ни у кого (§1.2).
+     * Тогда первый ход определять не из чего, и раздача пересдаётся, как и при козыре
+     * с нижней карты (OQ-22).
+     */
+    private DealState reshuffleIfNobodyHasTrump(final MatchState state, final DealState deal) {
+        if (!deal.hasTrump() || deal.phase() != DealPhase.ATTACK || !deal.table().isEmpty()
+                || dealer.hasAnyTrumpInHands(deal)) {
+            return deal;
+        }
+        return dealer.startDeal(state.navesLevels(),
+                dealer.reshuffleSeed(dealSeed(state.matchSeed(), state.dealNo()), 0));
     }
 
     /**

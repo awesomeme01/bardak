@@ -94,6 +94,29 @@ class DealerTest {
         assertThat(deal.defenderSeat()).isEqualTo((deal.roundStarterSeat() + 1) % deal.players().size());
     }
 
+    @DisplayName("Should always leave a trump in somebody's hand When a deal is dealt")
+    @ParameterizedTest
+    @ValueSource(ints = {2, 3, 4, 5})
+    void shouldAlwaysLeaveATrumpInSomebodysHandWhenADealIsDealt(final int playerCount) {
+        for (long seed = 1; seed <= 60; seed++) {
+            final DealState deal = dealer.startDeal(freshLevels(playerCount), seed);
+            if (deal.hasTrump()) {
+                assertThat(dealer.hasAnyTrumpInHands(deal))
+                        .withFailMessage("seed %d: козыря нет ни у кого, раздача не пересдалась", seed)
+                        .isTrue();
+            }
+        }
+    }
+
+    @DisplayName("Should reshuffle deterministically When the same seed is dealt twice")
+    @Test
+    void shouldReshuffleDeterministicallyWhenTheSameSeedIsDealtTwice() {
+        final long seed = 3L;
+
+        assertThat(dealer.startDeal(freshLevels(2), seed).players())
+                .isEqualTo(dealer.startDeal(freshLevels(2), seed).players());
+    }
+
     @DisplayName("Should open the dice phase When the bottom card is a joker")
     @Test
     void shouldOpenTheDicePhaseWhenTheBottomCardIsAJoker() {
