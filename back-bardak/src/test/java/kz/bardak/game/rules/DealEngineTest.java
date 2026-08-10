@@ -353,10 +353,12 @@ class DealEngineTest {
                 .withHand(1, ACE_CLUBS)
                 .build();
 
-        final MoveResult result = engine.apply(state, new DealCommand.Attack(0, SEVEN_DIAMONDS));
+        final MoveResult result = engine.apply(state, new DealCommand.RevealFaceDown(0));
 
         final DealState next = applied(result);
         assertThat(next.playerAt(0).hasFaceDownCard()).isFalse();
+        assertThat(next.table()).singleElement()
+                .satisfies(slot -> assertThat(slot.attack()).isEqualTo(SEVEN_DIAMONDS));
         assertThat(events(result)).containsExactly(
                 new DealEvent.FaceDownRevealed(0, SEVEN_DIAMONDS),
                 new DealEvent.CardAttacked(0, SEVEN_DIAMONDS));

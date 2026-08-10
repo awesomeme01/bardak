@@ -11,7 +11,8 @@ import java.util.Objects;
  */
 public sealed interface DealCommand
         permits DealCommand.Attack, DealCommand.Defend, DealCommand.Transfer,
-        DealCommand.Pass, DealCommand.Take, DealCommand.HangCard, DealCommand.HangSkip {
+        DealCommand.Pass, DealCommand.Take, DealCommand.HangCard, DealCommand.HangSkip,
+        DealCommand.ChooseTrump, DealCommand.RevealFaceDown, DealCommand.RevealFaceDownToDefend {
 
     int seatNo();
 
@@ -67,5 +68,33 @@ public sealed interface DealCommand
 
     /** «Пропустить» — навес всегда выбор, даже когда карта есть. */
     record HangSkip(int seatNo) implements DealCommand {
+    }
+
+    /**
+     * ⭐ Вскрыть скрытую карту и пойти ею (§1.8). Карта не называется: игрок сам её не
+     * видит (ADR-026). Вскрытие необратимо и происходит даже тогда, когда ход ею не
+     * проходит по рангу, — тогда карта просто остаётся в руке.
+     */
+    record RevealFaceDown(int seatNo) implements DealCommand {
+    }
+
+    /** То же для защиты: вскрыть скрытую карту и попробовать побить ею цель. */
+    record RevealFaceDownToDefend(int seatNo, Card target) implements DealCommand {
+
+        public RevealFaceDownToDefend {
+            Objects.requireNonNull(target, "target");
+        }
+    }
+
+    /**
+     * ⭐ Победитель кости называет козырную масть, когда нижней картой колоды оказался
+     * джокер (§1.2). Это команда, а не вычисление: победитель именно <b>выбирает</b>,
+     * глядя в свои карты, и может назвать масть, которой у него нет.
+     */
+    record ChooseTrump(int seatNo, Suit suit) implements DealCommand {
+
+        public ChooseTrump {
+            Objects.requireNonNull(suit, "suit");
+        }
     }
 }

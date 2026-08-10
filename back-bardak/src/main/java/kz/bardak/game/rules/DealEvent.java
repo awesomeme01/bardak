@@ -86,6 +86,14 @@ public sealed interface DealEvent {
     record PlayerLeftDeal(int seatNo) implements DealEvent {
     }
 
+    /** Победитель кости назвал козырную масть (§1.2). */
+    record TrumpChosen(int seatNo, Suit suit) implements DealEvent {
+
+        public TrumpChosen {
+            Objects.requireNonNull(suit, "suit");
+        }
+    }
+
     /** Окно навеса открылось на взявшего карты (§2.3). */
     record HangingWindowOpened(int seatNo) implements DealEvent {
     }

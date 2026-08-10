@@ -188,46 +188,57 @@ class AttackLegalityTest {
         assertThat(moveRules.canAttack(state, 0, sevenClubs)).isEqualTo(MoveVerdict.allowed());
     }
 
-    @DisplayName("Should allow attacking with the face-down card When the deck is empty and the hand is spent")
+    @DisplayName("Should allow revealing the face-down card When the deck is empty and the hand is spent")
     @Test
-    void shouldAllowAttackingWithTheFaceDownCardWhenTheDeckIsEmptyAndTheHandIsSpent() {
-        final Card faceDown = PipCard.of(Rank.KING, Suit.SPADES);
+    void shouldAllowRevealingTheFaceDownCardWhenTheDeckIsEmptyAndTheHandIsSpent() {
         final DealState state = aDeal()
                 .withEmptyDeck()
-                .withFaceDownCard(0, faceDown)
+                .withFaceDownCard(0, PipCard.of(Rank.KING, Suit.SPADES))
                 .withHand(1, PipCard.of(Rank.ACE, Suit.CLUBS))
                 .build();
 
-        assertThat(moveRules.canAttack(state, 0, faceDown)).isEqualTo(MoveVerdict.allowed());
+        assertThat(moveRules.canRevealFaceDown(state, 0)).isEqualTo(MoveVerdict.allowed());
     }
 
-    @DisplayName("Should reject playing the face-down card When ordinary cards are still in hand")
+    @DisplayName("Should reject revealing the face-down card When ordinary cards are still in hand")
     @Test
-    void shouldRejectPlayingTheFaceDownCardWhenOrdinaryCardsAreStillInHand() {
-        final Card faceDown = PipCard.of(Rank.KING, Suit.SPADES);
+    void shouldRejectRevealingTheFaceDownCardWhenOrdinaryCardsAreStillInHand() {
         final DealState state = aDeal()
                 .withEmptyDeck()
                 .withHand(0, PipCard.of(Rank.SIX, Suit.CLUBS))
-                .withFaceDownCard(0, faceDown)
+                .withFaceDownCard(0, PipCard.of(Rank.KING, Suit.SPADES))
                 .withHand(1, PipCard.of(Rank.ACE, Suit.CLUBS))
                 .build();
 
-        assertThat(moveRules.canAttack(state, 0, faceDown))
+        assertThat(moveRules.canRevealFaceDown(state, 0))
                 .isEqualTo(MoveVerdict.rejected(RejectionReason.FACE_DOWN_CARD_NOT_PLAYABLE));
     }
 
-    @DisplayName("Should reject playing the face-down card When the deck still has cards")
+    @DisplayName("Should reject revealing the face-down card When the deck still has cards")
     @Test
-    void shouldRejectPlayingTheFaceDownCardWhenTheDeckStillHasCards() {
-        final Card faceDown = PipCard.of(Rank.KING, Suit.SPADES);
+    void shouldRejectRevealingTheFaceDownCardWhenTheDeckStillHasCards() {
         final DealState state = aDeal()
                 .withDeckOf(2)
+                .withFaceDownCard(0, PipCard.of(Rank.KING, Suit.SPADES))
+                .withHand(1, PipCard.of(Rank.ACE, Suit.CLUBS))
+                .build();
+
+        assertThat(moveRules.canRevealFaceDown(state, 0))
+                .isEqualTo(MoveVerdict.rejected(RejectionReason.FACE_DOWN_CARD_NOT_PLAYABLE));
+    }
+
+    @DisplayName("Should refuse to name the face-down card When a player tries to play it directly")
+    @Test
+    void shouldRefuseToNameTheFaceDownCardWhenAPlayerTriesToPlayItDirectly() {
+        final Card faceDown = PipCard.of(Rank.KING, Suit.SPADES);
+        final DealState state = aDeal()
+                .withEmptyDeck()
                 .withFaceDownCard(0, faceDown)
                 .withHand(1, PipCard.of(Rank.ACE, Suit.CLUBS))
                 .build();
 
         assertThat(moveRules.canAttack(state, 0, faceDown))
-                .isEqualTo(MoveVerdict.rejected(RejectionReason.FACE_DOWN_CARD_NOT_PLAYABLE));
+                .isEqualTo(MoveVerdict.rejected(RejectionReason.CARD_NOT_IN_HAND));
     }
 
     @DisplayName("Should allow attacking with a joker When the joker starts the round")

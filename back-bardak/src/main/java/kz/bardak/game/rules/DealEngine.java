@@ -50,7 +50,105 @@ public final class DealEngine {
             case DealCommand.Take take -> applyTake(state, take);
             case DealCommand.HangCard hang -> applyHangCard(state, hang);
             case DealCommand.HangSkip skip -> applyHangSkip(state, skip);
+            case DealCommand.ChooseTrump choose -> applyChooseTrump(state, choose);
+            case DealCommand.RevealFaceDown reveal -> applyRevealFaceDown(state, reveal);
+            case DealCommand.RevealFaceDownToDefend reveal -> applyRevealToDefend(state, reveal);
         };
+    }
+
+    /**
+     * Козырь разыгран костью: победитель называет масть — любую из четырёх, в том числе
+     * ту, которой у него на руках нет (§1.2). Сам джокер остаётся лежать нижней картой.
+     */
+    private MoveResult applyChooseTrump(final DealState state, final DealCommand.ChooseTrump command) {
+        if (state.phase() != DealPhase.DICE) {
+            return MoveResult.rejected(RejectionReason.TRUMP_NOT_IN_DISPUTE);
+        }
+        if (state.attackRightSeat() != command.seatNo()) {
+            return MoveResult.rejected(RejectionReason.NOT_YOUR_TURN);
+        }
+        final Trump trump = Trump.of(command.suit());
+        final int starter = lowestTrumpSeat(state, trump);
+        return MoveResult.applied(state.toBuilder()
+                .trump(trump)
+                .phase(DealPhase.ATTACK)
+                .roundStarterSeat(starter)
+                .attackRightSeat(starter)
+                .defenderSeat(state.nextActiveSeatAfter(starter))
+                .build(), List.of(new DealEvent.TrumpChosen(command.seatNo(), command.suit())));
+    }
+
+    /** Первый ход — у обладателя младшего козыря (§1.2), уже по выбранной масти. */
+    private int lowestTrumpSeat(final DealState state, final Trump trump) {
+        Rank lowest = null;
+        int starter = 0;
+        for (final PlayerState player : state.players()) {
+            for (final Card card : player.hand()) {
+                if (card instanceof PipCard pip && pip.suit() == trump.suit()
+                        && (lowest == null || lowest.isHigherThan(pip.rank()))) {
+                    lowest = pip.rank();
+                    starter = player.seatNo();
+                }
+            }
+        }
+        return starter;
+    }
+
+    /**
+     * ⭐ Вскрытие скрытой карты (§1.8). Команда не называет карту — игрок её не видит,
+     * и назвать не может (ADR-026).
+     *
+     * <p>Вскрытие <b>необратимо и не зависит от исхода хода</b>: если открытая карта не
+     * вписалась в атаку по рангу, ход ею не проходит, но карта уже в руке. Поэтому команда
+     * не отклоняется — она применяется, просто с разным результатом.
+     */
+    private MoveResult applyRevealFaceDown(final DealState state, final DealCommand.RevealFaceDown command) {
+        final MoveVerdict allowed = moveRules.canRevealFaceDown(state, command.seatNo());
+        if (allowed instanceof MoveVerdict.Rejected rejected) {
+            return MoveResult.rejected(rejected.reason());
+        }
+        final Card card = state.playerAt(command.seatNo()).faceDownCard();
+        final DealState revealed = revealInHand(state, command.seatNo(), card);
+        final List<DealEvent> events = new ArrayList<>();
+        events.add(new DealEvent.FaceDownRevealed(command.seatNo(), card));
+
+        final MoveResult attack = applyAttack(revealed, new DealCommand.Attack(command.seatNo(), card));
+        if (attack instanceof MoveResult.Applied applied) {
+            events.addAll(applied.events());
+            return MoveResult.applied(applied.state(), events);
+        }
+        return MoveResult.applied(revealed, events);
+    }
+
+    /** То же для защиты: карта вскрывается, а дальше либо бьёт цель, либо остаётся в руке. */
+    private MoveResult applyRevealToDefend(final DealState state,
+                                           final DealCommand.RevealFaceDownToDefend command) {
+        final MoveVerdict allowed = moveRules.canRevealFaceDown(state, command.seatNo());
+        if (allowed instanceof MoveVerdict.Rejected rejected) {
+            return MoveResult.rejected(rejected.reason());
+        }
+        final Card card = state.playerAt(command.seatNo()).faceDownCard();
+        final DealState revealed = revealInHand(state, command.seatNo(), card);
+        final List<DealEvent> events = new ArrayList<>();
+        events.add(new DealEvent.FaceDownRevealed(command.seatNo(), card));
+
+        final MoveResult defence = applyDefend(revealed,
+                new DealCommand.Defend(command.seatNo(), card, command.target()));
+        if (defence instanceof MoveResult.Applied applied) {
+            events.addAll(applied.events());
+            return MoveResult.applied(applied.state(), events);
+        }
+        return MoveResult.applied(revealed, events);
+    }
+
+    /** Скрытая карта переезжает в руку. Обратного пути нет ни в одном сценарии (§1.8). */
+    private DealState revealInHand(final DealState state, final int seatNo, final Card card) {
+        final PlayerState player = state.playerAt(seatNo);
+        final List<Card> hand = new ArrayList<>(player.hand());
+        hand.add(card);
+        return state.toBuilder()
+                .player(player.withFaceDownRevealed().withHand(List.copyOf(hand)))
+                .build();
     }
 
     private MoveResult applyAttack(final DealState state, final DealCommand.Attack command) {
@@ -129,6 +227,9 @@ public final class DealEngine {
         if (state.attackRightSeat() != command.seatNo() || state.hasPassed(command.seatNo())) {
             return MoveResult.rejected(RejectionReason.NOT_YOUR_TURN);
         }
+        if (state.table().isEmpty() && state.playerAt(command.seatNo()).canPlayFaceDown(state.isDeckEmpty())) {
+            return MoveResult.rejected(RejectionReason.MUST_REVEAL_FACE_DOWN);
+        }
         final List<Integer> passed = new ArrayList<>(state.passedSeats());
         passed.add(command.seatNo());
         final DealState afterPass = state.toBuilder().passedSeats(List.copyOf(passed)).build();
@@ -151,7 +252,7 @@ public final class DealEngine {
             return MoveResult.applied(afterPass.toBuilder().phase(DealPhase.DEFEND).build(), events);
         }
         events.add(new DealEvent.RoundBeaten(afterPass.defenderSeat(), afterPass.tableCards()));
-        return MoveResult.applied(finishRound(afterPass, false, events), events);
+        return MoveResult.applied(finishRound(clearTable(afterPass, true), false, events), events);
     }
 
     /**
@@ -162,6 +263,9 @@ public final class DealEngine {
     private MoveResult applyTake(final DealState state, final DealCommand.Take command) {
         if (state.defenderSeat() != command.seatNo() || state.phase() == DealPhase.TAKING) {
             return MoveResult.rejected(RejectionReason.NOT_YOUR_TURN);
+        }
+        if (state.table().isEmpty()) {
+            return MoveResult.rejected(RejectionReason.NOTHING_TO_TAKE);
         }
         final List<DealEvent> events = new ArrayList<>();
         events.add(new DealEvent.TakeAnnounced(command.seatNo()));
@@ -179,7 +283,7 @@ public final class DealEngine {
         hand.addAll(taken);
         final PlayerState defender = state.defender().withHand(List.copyOf(hand));
         events.add(new DealEvent.CardsTaken(state.defenderSeat(), taken));
-        return openHangingWindow(state.toBuilder().player(defender).build(), events);
+        return openHangingWindow(clearTable(state.toBuilder().player(defender).build(), false), events);
     }
 
     /**
@@ -332,12 +436,7 @@ public final class DealEngine {
      * <p>🟨 Навесы (§2.3) вклиниваются сюда после «взял» и появятся в M5.
      */
     private DealState finishRound(final DealState state, final boolean taken, final List<DealEvent> events) {
-        final DealState cleared = state.toBuilder()
-                .lastAttackCards(state.table().stream().map(TableSlot::attack).toList())
-                .table(List.of())
-                .anyPileDiscarded(state.anyPileDiscarded() || !taken)
-                .build();
-        final DealState refilled = refill(cleared, events);
+        final DealState refilled = refill(state, events);
         final DealState afterExits = markExits(refilled, events);
         if (afterExits.playersInDeal() <= 1) {
             final int loser = lastPlayerInDeal(afterExits);
@@ -345,6 +444,22 @@ public final class DealEngine {
             return afterExits.toBuilder().phase(DealPhase.DEAL_OVER).build();
         }
         return startNextRound(afterExits, taken);
+    }
+
+    /**
+     * ⭐ Стол уезжает со стола ровно в тот момент, когда раунд закрылся, — в отбой или
+     * в руку. Раньше это делалось в конце закрытия, и между «взял» и очисткой успевало
+     * вклиниться окно навеса: карты одновременно лежали и в руке взявшего, и на столе.
+     *
+     * <p>Заодно запоминается состав последней атаки: он нужен для степеней проигрыша
+     * и после очистки его уже не восстановить (§0.3).
+     */
+    private DealState clearTable(final DealState state, final boolean discarded) {
+        return state.toBuilder()
+                .lastAttackCards(state.table().stream().map(TableSlot::attack).toList())
+                .table(List.of())
+                .anyPileDiscarded(state.anyPileDiscarded() || discarded)
+                .build();
     }
 
     /**

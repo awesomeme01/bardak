@@ -10,7 +10,10 @@ import java.util.Optional;
  * как {@code apply(state, command) -> (newState, events)}.
  *
  * @param phase              фаза автомата раздачи (§4.2)
- * @param trump              козырь и вытекающая защищённая масть (§1.1.1)
+ * @param trump              козырь и вытекающая защищённая масть (§1.1.1). {@code null}
+ *                           только в фазах {@link DealPhase#DEALING} и
+ *                           {@link DealPhase#DICE}: нижней картой оказался джокер, и масть
+ *                           ещё не названа (§1.2)
  * @param deck               остаток колоды: индекс 0 — верх, последняя карта — потайной
  *                           козырь (§1.9)
  * @param players            игроки по местам; индекс списка равен {@code seatNo}
@@ -54,13 +57,17 @@ public record DealState(
 
     public DealState {
         Objects.requireNonNull(phase, "phase");
-        Objects.requireNonNull(trump, "trump");
         deck = List.copyOf(Objects.requireNonNull(deck, "deck"));
         players = List.copyOf(Objects.requireNonNull(players, "players"));
         table = List.copyOf(Objects.requireNonNull(table, "table"));
         passedSeats = List.copyOf(Objects.requireNonNull(passedSeats, "passedSeats"));
         exitOrder = List.copyOf(Objects.requireNonNull(exitOrder, "exitOrder"));
         lastAttackCards = List.copyOf(Objects.requireNonNull(lastAttackCards, "lastAttackCards"));
+    }
+
+    /** Козырь назван. В фазе выбора масти его ещё нет (§1.2). */
+    public boolean hasTrump() {
+        return trump != null;
     }
 
     public boolean isDeckEmpty() {

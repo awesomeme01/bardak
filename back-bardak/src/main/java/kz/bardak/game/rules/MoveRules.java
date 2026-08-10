@@ -129,18 +129,24 @@ public final class MoveRules {
     }
 
     /**
-     * Держит ли игрок эту карту и вправе ли ею играть. Скрытая карта — особый случай:
-     * она играется, только когда колода пуста и обычных карт не осталось (§1.8).
+     * Держит ли игрок эту карту.
+     *
+     * <p>⭐ Скрытую карту назвать по имени нельзя, даже свою: её <b>не видит никто, включая
+     * владельца</b> (ADR-026). Разрешить это означало бы дать клиенту перебором выяснить
+     * карту по ответам движка. Скрытая карта играется отдельной командой, которая её
+     * сначала вскрывает (§1.8).
      */
     private MoveVerdict canPlayFromHand(final DealState state, final int seatNo, final Card card) {
-        final PlayerState player = state.playerAt(seatNo);
-        if (player.holdsInHand(card)) {
+        if (state.playerAt(seatNo).holdsInHand(card)) {
             return MoveVerdict.allowed();
         }
-        if (player.faceDown().filter(card::equals).isEmpty()) {
-            return MoveVerdict.rejected(RejectionReason.CARD_NOT_IN_HAND);
-        }
-        if (!player.canPlayFaceDown(state.isDeckEmpty())) {
+        return MoveVerdict.rejected(RejectionReason.CARD_NOT_IN_HAND);
+    }
+
+    /** Можно ли вообще вскрыть скрытую карту: колода пуста и обычных карт не осталось (§1.8). */
+    public MoveVerdict canRevealFaceDown(final DealState state, final int seatNo) {
+        Objects.requireNonNull(state, "state");
+        if (!state.playerAt(seatNo).canPlayFaceDown(state.isDeckEmpty())) {
             return MoveVerdict.rejected(RejectionReason.FACE_DOWN_CARD_NOT_PLAYABLE);
         }
         return MoveVerdict.allowed();

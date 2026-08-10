@@ -117,7 +117,7 @@ public final class DealScoring {
         final List<PlayerOutcome> outcomes = new ArrayList<>();
         for (final PlayerState player : state.players()) {
             final int seat = player.seatNo();
-            final int level = Math.max(levels.get(seat), NavesScale.NO_NAVES);
+            final int level = clampToScale(levels.get(seat));
             final boolean stillFinished = config.navesScale().isFinished(level);
             final LossDegree degree = stillFinished && gameLosers.contains(seat)
                     ? degreeFor(state, player, seat == dealLoser)
@@ -125,6 +125,16 @@ public final class DealScoring {
             outcomes.add(new PlayerOutcome(seat, player.navesLevel(), level, degree));
         }
         return List.copyOf(outcomes);
+    }
+
+    /**
+     * ⭐ Границы шкалы. Нижняя описана явно — «летит 6», ступени «5» нет (§0.1). Верхняя
+     * в правилах не названа, потому что джокер заканчивает матч, — но она есть: игрок,
+     * которому навесили джокер посреди раздачи, доигрывает её (ADR-019) и может вдобавок
+     * проиграть раздачу. Ступени выше джокера не существует, лишний {@code +1} пропадает.
+     */
+    private int clampToScale(final int level) {
+        return Math.min(Math.max(level, NavesScale.NO_NAVES), config.navesScale().jokerLevel());
     }
 
     /**

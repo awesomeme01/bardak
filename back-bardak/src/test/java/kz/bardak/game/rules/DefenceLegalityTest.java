@@ -115,33 +115,62 @@ class DefenceLegalityTest {
                 .isEqualTo(MoveVerdict.rejected(RejectionReason.CARD_DOES_NOT_BEAT));
     }
 
-    @DisplayName("Should allow defending with the face-down card When the deck is empty and the hand is spent")
+    @DisplayName("Should beat the attack with the revealed card When the deck is empty and the hand is spent")
     @Test
-    void shouldAllowDefendingWithTheFaceDownCardWhenTheDeckIsEmptyAndTheHandIsSpent() {
+    void shouldBeatTheAttackWithTheRevealedCardWhenTheDeckIsEmptyAndTheHandIsSpent() {
         final Card attack = PipCard.of(Rank.SEVEN, Suit.DIAMONDS);
         final Card faceDown = PipCard.of(Rank.NINE, Suit.DIAMONDS);
         final DealState state = aDeal()
                 .withEmptyDeck()
+                .withPhase(DealPhase.DEFEND)
                 .withAttackCards(attack)
                 .withFaceDownCard(1, faceDown)
                 .build();
 
-        assertThat(moveRules.canDefend(state, 1, faceDown, attack)).isEqualTo(MoveVerdict.allowed());
+        final MoveResult result = DealEngine.withDefaults()
+                .apply(state, new DealCommand.RevealFaceDownToDefend(1, attack));
+
+        assertThat(result).isInstanceOf(MoveResult.Applied.class);
+        final DealState next = ((MoveResult.Applied) result).state();
+        assertThat(next.playerAt(1).hasFaceDownCard()).isFalse();
+        assertThat(next.table()).singleElement()
+                .satisfies(slot -> assertThat(slot.defenceCard()).contains(faceDown));
     }
 
-    @DisplayName("Should reject defending with the face-down card When the deck is not empty")
+    @DisplayName("Should keep the revealed card in hand When it does not beat the attack")
     @Test
-    void shouldRejectDefendingWithTheFaceDownCardWhenTheDeckIsNotEmpty() {
-        final Card attack = PipCard.of(Rank.SEVEN, Suit.DIAMONDS);
-        final Card faceDown = PipCard.of(Rank.NINE, Suit.DIAMONDS);
+    void shouldKeepTheRevealedCardInHandWhenItDoesNotBeatTheAttack() {
+        final Card attack = PipCard.of(Rank.NINE, Suit.DIAMONDS);
+        final Card faceDown = PipCard.of(Rank.SEVEN, Suit.DIAMONDS);
         final DealState state = aDeal()
-                .withDeckOf(3)
+                .withEmptyDeck()
+                .withPhase(DealPhase.DEFEND)
                 .withAttackCards(attack)
                 .withFaceDownCard(1, faceDown)
                 .build();
 
-        assertThat(moveRules.canDefend(state, 1, faceDown, attack))
-                .isEqualTo(MoveVerdict.rejected(RejectionReason.FACE_DOWN_CARD_NOT_PLAYABLE));
+        final MoveResult result = DealEngine.withDefaults()
+                .apply(state, new DealCommand.RevealFaceDownToDefend(1, attack));
+
+        final DealState next = ((MoveResult.Applied) result).state();
+        assertThat(next.playerAt(1).hasFaceDownCard()).isFalse();
+        assertThat(next.playerAt(1).hand()).containsExactly(faceDown);
+        assertThat(next.table()).singleElement().satisfies(slot -> assertThat(slot.isBeaten()).isFalse());
+    }
+
+    @DisplayName("Should reject revealing the face-down card When the deck is not empty")
+    @Test
+    void shouldRejectRevealingTheFaceDownCardWhenTheDeckIsNotEmpty() {
+        final Card attack = PipCard.of(Rank.SEVEN, Suit.DIAMONDS);
+        final DealState state = aDeal()
+                .withDeckOf(3)
+                .withPhase(DealPhase.DEFEND)
+                .withAttackCards(attack)
+                .withFaceDownCard(1, PipCard.of(Rank.NINE, Suit.DIAMONDS))
+                .build();
+
+        assertThat(DealEngine.withDefaults().apply(state, new DealCommand.RevealFaceDownToDefend(1, attack)))
+                .isEqualTo(MoveResult.rejected(RejectionReason.FACE_DOWN_CARD_NOT_PLAYABLE));
     }
 
     @DisplayName("Should allow beating a spade with a higher spade When spades are protected")
