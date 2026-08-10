@@ -27,6 +27,7 @@ final class DealStateFixture {
     private boolean anyCardBeatenThisRound;
     private boolean anyPileDiscarded;
     private HangingWindow hangingWindow;
+    private List<Card> lastAttackCards = List.of();
     private long rngSeed = 42L;
 
     static DealStateFixture aDeal() {
@@ -35,11 +36,13 @@ final class DealStateFixture {
 
     /** Карты в руке игрока на указанном месте; остальные поля игрока не трогаются. */
     DealStateFixture withHand(final int seatNo, final Card... cards) {
-        return withPlayer(seatNo, PlayerState.of(seatNo, Arrays.asList(cards), player(seatNo).faceDownCard()));
+        return withPlayer(seatNo, player(seatNo).withHand(Arrays.asList(cards)));
     }
 
     DealStateFixture withFaceDownCard(final int seatNo, final Card card) {
-        return withPlayer(seatNo, PlayerState.of(seatNo, player(seatNo).hand(), card));
+        final PlayerState player = player(seatNo);
+        return withPlayer(seatNo, new PlayerState(seatNo, player.hand(), card, player.inDeal(),
+                player.navesLevel(), player.hungCards(), player.jokerHangerSeat()));
     }
 
     DealStateFixture withPlayerOutOfDeal(final int seatNo) {
@@ -49,6 +52,29 @@ final class DealStateFixture {
     /** Уровень по шкале навесов: -1 — навесов не было, 0 — навешена шестёрка, и так далее. */
     DealStateFixture withNavesLevel(final int seatNo, final int level) {
         return withPlayer(seatNo, player(seatNo).withNavesLevel(level));
+    }
+
+    /** Порядок выхода из раздачи: первым в списке — вышедший первым (§0.1). */
+    DealStateFixture withExitOrder(final int... seats) {
+        final List<Integer> order = new ArrayList<>();
+        for (final int seat : seats) {
+            order.add(seat);
+        }
+        this.exitOrder = List.copyOf(order);
+        return this;
+    }
+
+    /** Состав последней атаки раздачи — по нему считаются восьмёрки (§0.3). */
+    DealStateFixture withLastAttack(final Card... cards) {
+        this.lastAttackCards = List.of(cards);
+        return this;
+    }
+
+    /** Джокер навешен жертве конкретным игроком — он получит −1, если жертва проиграет. */
+    DealStateFixture withJokerHungBy(final int victimSeat, final int hangerSeat) {
+        return withPlayer(victimSeat, player(victimSeat)
+                .withNavesLevel(NavesScale.full().jokerLevel())
+                .withHungCard(new JokerCard(hangerSeat + 1), hangerSeat));
     }
 
     DealStateFixture withHangingWindow(final HangingWindow window) {
@@ -143,7 +169,7 @@ final class DealStateFixture {
     DealState build() {
         return new DealState(phase, trump, deck, players, table, roundStarterSeat,
                 attackRightSeat, defenderSeat, passedSeats, exitOrder,
-                anyCardBeatenThisRound, anyPileDiscarded, hangingWindow, rngSeed, 0);
+                anyCardBeatenThisRound, anyPileDiscarded, hangingWindow, lastAttackCards, rngSeed, 0);
     }
 
     private PlayerState player(final int seatNo) {

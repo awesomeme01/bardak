@@ -23,6 +23,8 @@ import java.util.Optional;
  * @param inDeal       игрок ещё в раздаче — не вышел и не выбыл
  * @param navesLevel   уровень по шкале навесов; {@link NavesScale#NO_NAVES} — навесов не было
  * @param hungCards    карты, навешенные ему в этой раздаче; видны всем (§2.3)
+ * @param jokerHangerSeat кто навесил ему джокер, {@link #NOBODY} — никто. Нужен в конце
+ *                     раздачи: добивший получает {@code −1} за каждого добитого (§0.4)
  */
 public record PlayerState(
         int seatNo,
@@ -30,7 +32,11 @@ public record PlayerState(
         Card faceDownCard,
         boolean inDeal,
         int navesLevel,
-        List<Card> hungCards) {
+        List<Card> hungCards,
+        int jokerHangerSeat) {
+
+    /** Джокер никем не навешен — либо его нет, либо он получен через {@code +1} (§0.3). */
+    public static final int NOBODY = -1;
 
     public PlayerState {
         if (seatNo < 0) {
@@ -41,7 +47,7 @@ public record PlayerState(
     }
 
     public static PlayerState of(final int seatNo, final List<Card> hand, final Card faceDownCard) {
-        return new PlayerState(seatNo, hand, faceDownCard, true, NavesScale.NO_NAVES, List.of());
+        return new PlayerState(seatNo, hand, faceDownCard, true, NavesScale.NO_NAVES, List.of(), NOBODY);
     }
 
     /** Счёт для добора: скрытая карта в него не входит (§1.8). */
@@ -81,7 +87,7 @@ public record PlayerState(
     }
 
     public PlayerState withHand(final List<Card> value) {
-        return new PlayerState(seatNo, value, faceDownCard, inDeal, navesLevel, hungCards);
+        return new PlayerState(seatNo, value, faceDownCard, inDeal, navesLevel, hungCards, jokerHangerSeat);
     }
 
     /** Карта сыграна из руки. */
@@ -93,21 +99,26 @@ public record PlayerState(
 
     /** Скрытая карта вскрыта — переход односторонний (§1.8). */
     public PlayerState withFaceDownRevealed() {
-        return new PlayerState(seatNo, hand, null, inDeal, navesLevel, hungCards);
+        return new PlayerState(seatNo, hand, null, inDeal, navesLevel, hungCards, jokerHangerSeat);
     }
 
     public PlayerState leftDeal() {
-        return new PlayerState(seatNo, hand, faceDownCard, false, navesLevel, hungCards);
+        return new PlayerState(seatNo, hand, faceDownCard, false, navesLevel, hungCards, jokerHangerSeat);
     }
 
     public PlayerState withNavesLevel(final int value) {
-        return new PlayerState(seatNo, hand, faceDownCard, inDeal, value, hungCards);
+        return new PlayerState(seatNo, hand, faceDownCard, inDeal, value, hungCards, jokerHangerSeat);
     }
 
-    /** Карта уходит из чужой руки в этот слот и выбывает из игры до конца раздачи (§2.3). */
-    public PlayerState withHungCard(final Card card) {
+    /**
+     * Карта уходит из чужой руки в этот слот и выбывает из игры до конца раздачи (§2.3).
+     * Для джокера запоминается навесивший: в конце раздачи он получит {@code −1}, если
+     * жертва проиграет (§0.4).
+     */
+    public PlayerState withHungCard(final Card card, final int hangerSeat) {
         final List<Card> slot = new ArrayList<>(hungCards);
         slot.add(Objects.requireNonNull(card, "card"));
-        return new PlayerState(seatNo, hand, faceDownCard, inDeal, navesLevel, List.copyOf(slot));
+        return new PlayerState(seatNo, hand, faceDownCard, inDeal, navesLevel, List.copyOf(slot),
+                card instanceof JokerCard ? hangerSeat : jokerHangerSeat);
     }
 }

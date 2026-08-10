@@ -289,7 +289,7 @@ public final class DealEngine {
                     .player(current.playerAt(claim.seatNo()).withoutCard(claim.card()))
                     .build();
             current = current.toBuilder()
-                    .player(current.playerAt(window.victimSeat()).withHungCard(claim.card()))
+                    .player(current.playerAt(window.victimSeat()).withHungCard(claim.card(), claim.seatNo()))
                     .build();
             events.add(new DealEvent.CardHung(claim.seatNo(), window.victimSeat(), claim.card()));
         }
@@ -333,6 +333,7 @@ public final class DealEngine {
      */
     private DealState finishRound(final DealState state, final boolean taken, final List<DealEvent> events) {
         final DealState cleared = state.toBuilder()
+                .lastAttackCards(state.table().stream().map(TableSlot::attack).toList())
                 .table(List.of())
                 .anyPileDiscarded(state.anyPileDiscarded() || !taken)
                 .build();

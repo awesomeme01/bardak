@@ -27,6 +27,9 @@ import java.util.Optional;
  * @param anyPileDiscarded   в этой раздаче уже уходили карты в отбой — от этого зависит
  *                           потолок атаки, а не от стола (§1.5, ADR-023)
  * @param hangingWindow      открытое окно навеса или {@code null}, если окна нет (§2.3)
+ * @param lastAttackCards    состав последней атаки раздачи. ⭐ Нужен для степеней проигрыша:
+ *                           считаются восьмёрки в том, что было выложено, а не в том, что
+ *                           попало игроку в руку (§0.3)
  * @param rngSeed            под-seed раздачи: всё случайное выводится из него (§6)
  * @param diceRolls          сколько бросков кости уже случилось в раздаче — чтобы два спора
  *                           подряд не давали одинаковый результат
@@ -45,6 +48,7 @@ public record DealState(
         boolean anyCardBeatenThisRound,
         boolean anyPileDiscarded,
         HangingWindow hangingWindow,
+        List<Card> lastAttackCards,
         long rngSeed,
         int diceRolls) {
 
@@ -56,6 +60,7 @@ public record DealState(
         table = List.copyOf(Objects.requireNonNull(table, "table"));
         passedSeats = List.copyOf(Objects.requireNonNull(passedSeats, "passedSeats"));
         exitOrder = List.copyOf(Objects.requireNonNull(exitOrder, "exitOrder"));
+        lastAttackCards = List.copyOf(Objects.requireNonNull(lastAttackCards, "lastAttackCards"));
     }
 
     public boolean isDeckEmpty() {
@@ -152,6 +157,7 @@ public record DealState(
         private boolean anyCardBeatenThisRound;
         private boolean anyPileDiscarded;
         private HangingWindow hangingWindow;
+        private List<Card> lastAttackCards;
         private long rngSeed;
         private int diceRolls;
 
@@ -169,6 +175,7 @@ public record DealState(
             this.anyCardBeatenThisRound = state.anyCardBeatenThisRound;
             this.anyPileDiscarded = state.anyPileDiscarded;
             this.hangingWindow = state.hangingWindow;
+            this.lastAttackCards = state.lastAttackCards;
             this.rngSeed = state.rngSeed;
             this.diceRolls = state.diceRolls;
         }
@@ -245,6 +252,11 @@ public record DealState(
             return this;
         }
 
+        public Builder lastAttackCards(final List<Card> value) {
+            this.lastAttackCards = value;
+            return this;
+        }
+
         public Builder rngSeed(final long value) {
             this.rngSeed = value;
             return this;
@@ -258,7 +270,8 @@ public record DealState(
         public DealState build() {
             return new DealState(phase, trump, deck, players, table, roundStarterSeat,
                     attackRightSeat, defenderSeat, passedSeats, exitOrder,
-                    anyCardBeatenThisRound, anyPileDiscarded, hangingWindow, rngSeed, diceRolls);
+                    anyCardBeatenThisRound, anyPileDiscarded, hangingWindow, lastAttackCards,
+                    rngSeed, diceRolls);
         }
     }
 }
