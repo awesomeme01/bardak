@@ -1,7 +1,7 @@
 <script>
     import {onMount} from 'svelte';
     import {loadProfile, logout} from '../stores/auth.svelte.js';
-    import {lobby} from '../stores/lobby.svelte.js';
+    import {leaveTable as forgetTable, lobby} from '../stores/lobby.svelte.js';
     import Lobby from './Lobby.svelte';
     import TableRoom from './TableRoom.svelte';
 
@@ -32,7 +32,7 @@
 </section>
 
 {#if lobby.current}
-    <TableRoom onExit={() => {}}/>
+    <TableRoom info={lobby.current} onExit={forgetTable}/>
 {:else}
     <Lobby onEnter={() => {}}/>
 {/if}

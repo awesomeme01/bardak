@@ -1,68 +1,67 @@
 <script>
     import {onDestroy, onMount} from 'svelte';
-    import {applyTableEvent, leaveTable, lobby} from '../stores/lobby.svelte.js';
-    import {WsClient} from '../net/ws-client.js';
+    import GameTable from './GameTable.svelte';
+    import {enterTable, leaveTable, setReady, startMatch, table} from '../stores/table.svelte.js';
 
-    let {onExit} = $props();
+    let {info, onExit} = $props();
 
-    let status = $state('idle');
     let ready = $state(false);
-    let client = null;
 
-    const table = $derived(lobby.current);
-    const everyoneReady = $derived(
-        table && table.seats.length >= 2 && table.seats.every((seat) => seat.ready));
+    // ⭐ Считаем по живому состоянию из стора, а не по снимку из REST: снимок сделан
+    // в момент входа и про соседа, севшего секунду назад, ничего не знает.
+    const seats = $derived(table.info?.seats ?? info.seats ?? []);
+    const everyoneReady = $derived(seats.length >= 2 && seats.every((seat) => seat.ready));
 
-    onMount(() => {
-        client = new WsClient({
-            onStatus: (next) => (status = next),
-            onEvent: applyTableEvent,
-        });
-        client.connect().then(() => client.send('TABLE_JOIN', {}, table.id));
-    });
-
-    onDestroy(() => client?.close());
+    onMount(() => enterTable(info));
+    onDestroy(() => leaveTable());
 
     function toggleReady() {
         ready = !ready;
-        client?.send('TABLE_READY', {ready}, table.id);
+        setReady(ready);
     }
 
     function exit() {
-        client?.send('TABLE_LEAVE', {}, table.id);
-        client?.close();
         leaveTable();
         onExit();
     }
 </script>
 
-<section class="card">
-    <h2>{table.name}</h2>
-    <p>Код приглашения: <code>{table.code}</code> · <span class="badge {status === 'open' ? 'badge-ok' : 'badge-wait'}">{status}</span></p>
+{#if table.notice}
+    <p class="badge badge-warn">{table.notice}</p>
+{/if}
 
-    <ul class="seats">
-        {#each Array(table.maxPlayers) as _, seatNo}
-            {@const seat = table.seats.find((candidate) => candidate.seatNo === seatNo)}
-            <li>
-                <span class="seat-no">{seatNo + 1}</span>
-                {#if seat}
-                    <span class:offline={!seat.online}>{seat.displayName}</span>
-                    <span class="badge {seat.ready ? 'badge-ok' : 'badge-wait'}">
-                        {seat.ready ? 'готов' : 'ждёт'}
-                    </span>
-                {:else}
-                    <span class="empty">свободно</span>
-                {/if}
-            </li>
-        {/each}
-    </ul>
+{#if table.game}
+    <GameTable/>
+    <div class="row"><button type="button" onclick={exit}>Выйти из-за стола</button></div>
+{:else}
+    <section class="card">
+        <h2>{info.name}</h2>
+        <p>
+            Код приглашения: <code>{info.code}</code> ·
+            <span class="badge {table.status === 'open' ? 'badge-ok' : 'badge-wait'}">{table.status}</span>
+        </p>
 
-    {#if everyoneReady}
-        <p class="badge badge-ok">Все готовы — можно начинать (матч подключим на M4)</p>
-    {/if}
+        <ul class="seats">
+            {#each Array(info.maxPlayers) as _, seatNo}
+                {@const seat = seats.find((s) => s.seatNo === seatNo)}
+                <li>
+                    <span class="seat-no">{seatNo + 1}</span>
+                    {#if seat}
+                        <span class:offline={!seat.online}>{seat.displayName}</span>
+                        <span class="badge {seat.ready ? 'badge-ok' : 'badge-wait'}">
+                            {seat.ready ? 'готов' : 'ждёт'}
+                        </span>
+                    {:else}
+                        <span class="empty">свободно</span>
+                    {/if}
+                </li>
+            {/each}
+        </ul>
 
-    <div class="row">
-        <button type="button" onclick={toggleReady}>{ready ? 'Я не готов' : 'Я готов'}</button>
-        <button type="button" onclick={exit}>Выйти из-за стола</button>
-    </div>
-</section>
+        <div class="row">
+            <button type="button" onclick={toggleReady}>{ready ? 'Я не готов' : 'Я готов'}</button>
+            <button type="button" onclick={startMatch} disabled={!everyoneReady}>Начать матч</button>
+            <button type="button" onclick={exit}>Выйти из-за стола</button>
+        </div>
+    </section>
+{/if}

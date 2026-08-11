@@ -202,3 +202,42 @@ form select {
     background: #131a24;
     color: inherit;
 }
+
+/* Игровой стол */
+.hand, .table-slots {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin: 0.5rem 0;
+}
+
+.card-face {
+    width: 72px;
+    height: 104px;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #0f141b;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    font-size: 0.8rem;
+    color: var(--text);
+}
+
+button.card-face { cursor: pointer; transition: transform 0.1s, border-color 0.15s; }
+button.card-face:hover { transform: translateY(-4px); border-color: #4c8dff; }
+.card-face.selected { border-color: #4c8dff; transform: translateY(-6px); }
+.card-face img { width: 100%; height: 100%; object-fit: contain; }
+.card-face.small { width: 42px; height: 60px; }
+
+/* Пара «атака — чем бита»: защита ложится поверх со сдвигом, как на настоящем столе. */
+.slot { position: relative; padding-right: 18px; }
+.slot .card-face.small { position: absolute; left: 22px; top: 26px; }
+.slot.targetable .card-face { border-color: #4c8dff; box-shadow: 0 0 0 2px rgba(76, 141, 255, 0.35); }
+
+.naves { display: inline-flex; align-items: center; gap: 0.3rem; }
+.muted { color: var(--muted); }
+ul.seats li.current { border-left: 2px solid #4c8dff; padding-left: 0.5rem; }
+.badge-warn { background: rgba(210, 153, 34, 0.2); color: #d29922; }
