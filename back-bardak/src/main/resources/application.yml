@@ -52,6 +52,12 @@ bardak:
     # Регистрация закрытая: игра для узкого круга, а эндпоинт торчит наружу.
     invite-codes: ${BARDAK_INVITE_CODES:bardak-2026}
 
+  game:
+    # Времена стола из §5.1–5.2 правил. Таймер хода при отключении игрока
+    # останавливается, а не перезапускается.
+    turn-timeout: 30s
+    disconnect-grace: 60s
+
   frontend:
     path: ../front-bardak/dist/
   assets:

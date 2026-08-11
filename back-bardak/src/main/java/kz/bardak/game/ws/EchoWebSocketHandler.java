@@ -136,7 +136,9 @@ public class EchoWebSocketHandler extends TextWebSocketHandler {
         sessions.remove(session.getId());
         UUID tableId = sessionTables.remove(session.getId());
         if (tableId != null) {
-            lobbyCommands.onDisconnect(tableId, (UUID) userOf(session));
+            UUID userId = (UUID) userOf(session);
+            gameCommands.onDisconnect(tableId, userId);
+            lobbyCommands.onDisconnect(tableId, userId);
         }
         log.info("WS отключён: id={}, статус={}, осталось сессий={}",
                 session.getId(), status.getCode(), sessions.size());
