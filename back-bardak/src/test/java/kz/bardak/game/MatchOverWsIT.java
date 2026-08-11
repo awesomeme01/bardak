@@ -82,7 +82,14 @@ class MatchOverWsIT {
         assertThat(hostState.get("myHand")).hasSize(6);
         assertThat(guestState.get("myHand")).hasSize(6);
         assertThat(hostState.get("mySeat").asInt()).isNotEqualTo(guestState.get("mySeat").asInt());
-        assertThat(hostState.get("trumpSuit").asText()).isNotBlank();
+
+        // ⭐ Козыря может ещё не быть: если нижней картой колоды выпал джокер, масть
+        // разыгрывается костью (§1.2), и до выбора поля trumpSuit в проекции нет вообще.
+        if ("DICE".equals(hostState.get("phase").asText())) {
+            assertThat(hostState.has("trumpSuit")).isFalse();
+        } else {
+            assertThat(hostState.get("trumpSuit").asText()).isNotBlank();
+        }
 
         // ⭐ Ни одна карта из руки соседа не должна встречаться в моей проекции.
         final List<String> hostHand = cards(hostState.get("myHand"));
