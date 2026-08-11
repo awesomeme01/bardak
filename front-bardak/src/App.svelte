@@ -13,7 +13,7 @@
 
 <header>
     <h1>Bardak</h1>
-    <p class="stage">M3 — лобби и столы</p>
+    <p class="stage">M6 — история и рейтинг</p>
 </header>
 
 <main>

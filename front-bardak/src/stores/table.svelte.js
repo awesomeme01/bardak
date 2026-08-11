@@ -24,6 +24,7 @@ export const table = $state({
     manifest: {},      // код карты → URL картинки
     status: 'idle',    // состояние сокета
     notice: null,      // пауза, отмена, таймаут — то, что нужно показать человеком
+    result: null,      // итог матча: места, уровни, дельта рейтинга
     lastSeq: 0,
 });
 
@@ -33,6 +34,7 @@ export async function enterTable(info) {
     table.info = info;
     table.game = null;
     table.notice = null;
+    table.result = null;
     table.manifest = await loadManifest(info.cardSetId);
 
     client = new WsClient({
@@ -60,6 +62,8 @@ export function setReady(ready) {
 }
 
 export function startMatch() {
+    table.result = null;
+    table.game = null;
     client?.send('MATCH_START', {}, table.info.id);
 }
 
@@ -93,6 +97,11 @@ function onEnvelope(envelope) {
             break;
         case 'MATCH_RESUMED':
             table.notice = null;
+            break;
+        case 'MATCH_OVER':
+            // ⭐ Итог приходит один раз и остаётся на экране: снимок состояния сюда
+            // не годится — после матча стол уже пуст, а посмотреть, кто чем кончил, надо.
+            table.result = envelope.payload;
             break;
         case 'MATCH_ABORTED':
             table.notice = 'Матч отменён: игрок не вернулся';

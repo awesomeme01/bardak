@@ -1,6 +1,7 @@
 <script>
     import {onDestroy, onMount} from 'svelte';
     import GameTable from './GameTable.svelte';
+    import MatchResult from './MatchResult.svelte';
     import {enterTable, leaveTable, setReady, startMatch, table} from '../stores/table.svelte.js';
 
     let {info, onExit} = $props();
@@ -30,7 +31,10 @@
     <p class="badge badge-warn">{table.notice}</p>
 {/if}
 
-{#if table.game}
+{#if table.result}
+    <MatchResult onClose={() => (table.result = null)}/>
+    <div class="row"><button type="button" onclick={exit}>Выйти из-за стола</button></div>
+{:else if table.game}
     <GameTable/>
     <div class="row"><button type="button" onclick={exit}>Выйти из-за стола</button></div>
 {:else}

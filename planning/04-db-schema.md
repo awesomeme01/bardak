@@ -233,7 +233,7 @@ create table deals (
     id           uuid primary key,
     match_id     uuid not null references matches(id) on delete cascade,
     deal_no      smallint not null,          -- 1, 2, 3, ... внутри матча
-    trump_suit   varchar(2),                 -- 'S'|'H'|'D'|'C'
+    trump_suit   varchar(16),                -- имя масти движка: 'SPADES', 'HEARTS', …
     started_at   timestamptz not null default now(),
     finished_at  timestamptz,
     loser_seat   smallint,                   -- «дурак» этой раздачи
@@ -245,7 +245,7 @@ create table deals (
 create table deal_results (
     deal_id            uuid not null references deals(id) on delete cascade,
     seat_no            smallint not null,
-    place              smallint,       -- порядок выхода; null = проиграл раздачу
+    place              smallint,       -- порядок выхода; оставшийся с картами — последний
     hung_cards         jsonb not null default '[]'::jsonb,  -- что навесили картами
     naves_level_before varchar(2),
     naves_level_after  varchar(2),
@@ -271,12 +271,17 @@ create table deal_results (
 
 ```json
 [
-  {"reason": "HUNG",           "by": 2, "card": "7-clubs", "to": "7"},
-  {"reason": "LOST_DEAL",      "delta": 1,  "to": "8"},
-  {"reason": "FINISHED_FIRST", "delta": -1, "to": "7"},
-  {"reason": "KILLED_LOSER",   "delta": -1, "victim": 3, "to": "6"}
+  {"reason": "LOST_DEAL",         "amount": 1},
+  {"reason": "FIRST_OUT",         "amount": -1},
+  {"reason": "FINISHED_OPPONENT", "amount": -1},
+  {"reason": "SCALE_LIMIT",       "amount": 1}
 ]
 ```
+
+Причины перечислены в `LevelChangeReason`. ⭐ `SCALE_LIMIT` — упор в край шкалы: ступени ниже
+«летит 6» и выше джокера не существует, и без этой строки слагаемые не сходились бы с итогом.
+Само навешивание сдвигом не считается: оно меняет уровень по ходу раздачи и видно в логе
+событий (`CARD_HUNG`), а здесь — только подсчёт итога (`03-domain-rules.md` §0.1).
 
 Без этого разбор спорной ситуации превращается в гадание — особенно вокруг
 `KILLED_LOSER`, где `−1` прилетает за чужой проигрыш.
@@ -352,10 +357,25 @@ create table rating_history (
     deviation_after numeric(8,2) not null,
     place           smallint not null,
     players_count   smallint not null,
-    created_at      timestamptz not null default now()
+    season_id       uuid references seasons(id),   -- null = матч сыгран вне сезонов
+    created_at      timestamptz not null default now(),
+    unique (user_id, match_id)                     -- матч закрывается ровно один раз
 );
 create index idx_rating_history_user_time on rating_history(user_id, created_at desc);
+
+create table seasons (
+    id         uuid primary key,
+    name       varchar(64) not null,
+    started_at timestamptz not null default now(),
+    closed_at  timestamptz,
+    created_at timestamptz not null default now()
+);
+-- ⭐ Открытый сезон ровно один: частичный уникальный индекс не даёт открыть второй.
+create unique index idx_seasons_single_open on seasons (closed_at) where closed_at is null;
 ```
+
+⭐ `unique (user_id, match_id)` — не украшение, а защита от двойного начисления: повторно
+закрытый матч раздул бы рейтинг, а починить это потом можно только руками и на глаз.
 
 Считается **по матчу**, не по раздаче: рейтинговое событие — получение кем-то джокера и
 счёта. Отменённые матчи сюда не попадают вообще.
@@ -370,11 +390,11 @@ Glicko-2 / OpenSkill не должен требовать миграции с п
 | Версия | Что |
 |---|---|
 | `V1__users_and_auth.sql` | `users`, `refresh_tokens` |
-| `V2__card_sets_and_themes.sql` | `card_sets`, `card_assets`, `table_themes` + дефолтный набор |
-| `V3__tables.sql` | `game_tables`, `table_players` |
-| `V4__matches_and_deals.sql` | `matches`, `match_players`, `deals`, `deal_results` |
-| `V5__match_events.sql` | `match_events`, `match_snapshots` |
-| `V6__rating.sql` | `user_rating`, `rating_history` |
+| `V2__lobby_tables_and_card_sets.sql` | `card_sets`, `card_assets`, `table_themes`, `game_tables`, `table_players` + дефолтный набор |
+| `V3__matches_and_event_log.sql` | `matches`, `match_players`, `deals`, `deal_results`, `match_events`, `match_snapshots` |
+| `V4__event_visibility.sql` | `match_events.private_to_seat` |
+| `V5__rating_and_seasons.sql` | `user_rating`, `rating_history`, `seasons` |
+| `V6__deal_trump_suit_width.sql` | `deals.trump_suit` под имя масти |
 
 ---
 
@@ -388,5 +408,6 @@ Glicko-2 / OpenSkill не должен требовать миграции с п
 - ✅ `loss_type` становится перечислением: `ROYAL`, `SUPER_MEGA_SUCK`, `SUPER_MEGA_FAIL`,
   `SUPER_FAIL`, `FAIL` (§0.3). Ничьей нет — в каждой раздаче ровно один проигравший
   (ADR-033).
-- ⬜ Таблица `seasons` (id, начало, конец, статус) и ссылка на сезон в рейтинге — сезоны
-  закрываются вручную (ADR-037).
+- ✅ Таблица `seasons` и `rating_history.season_id` заведены (V5). Открытый сезон ровно один —
+  частичный уникальный индекс по `closed_at is null`; закрытие и открытие следующего идут
+  одним действием (ADR-037, ADR-043).
