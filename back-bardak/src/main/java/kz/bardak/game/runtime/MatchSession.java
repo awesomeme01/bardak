@@ -24,15 +24,21 @@ import kz.bardak.game.rules.StateProjection;
 public final class MatchSession {
 
     private final UUID tableId;
+    private final UUID matchId;
     private final List<UUID> seatUsers;
     private final MatchEngine engine;
     private final StateProjection projection;
 
     private MatchState state;
 
-    public MatchSession(final UUID tableId, final List<UUID> seatUsers, final MatchEngine engine,
-                        final StateProjection projection, final MatchState state) {
+    /** Сквозной номер события по матчу. Живёт на потоке стола, поэтому просто int. */
+    private int lastSeq;
+
+    public MatchSession(final UUID tableId, final UUID matchId, final List<UUID> seatUsers,
+                        final MatchEngine engine, final StateProjection projection,
+                        final MatchState state) {
         this.tableId = Objects.requireNonNull(tableId, "tableId");
+        this.matchId = Objects.requireNonNull(matchId, "matchId");
         this.seatUsers = List.copyOf(Objects.requireNonNull(seatUsers, "seatUsers"));
         this.engine = Objects.requireNonNull(engine, "engine");
         this.projection = Objects.requireNonNull(projection, "projection");
@@ -41,6 +47,22 @@ public final class MatchSession {
 
     public UUID tableId() {
         return tableId;
+    }
+
+    public UUID matchId() {
+        return matchId;
+    }
+
+    public int lastSeq() {
+        return lastSeq;
+    }
+
+    public int nextSeq() {
+        return lastSeq + 1;
+    }
+
+    public void lastSeq(final int value) {
+        this.lastSeq = value;
     }
 
     public MatchState state() {

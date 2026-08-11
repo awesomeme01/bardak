@@ -14,6 +14,8 @@ import kz.bardak.game.rules.DiceResolver;
 import kz.bardak.game.rules.MatchEngine;
 import kz.bardak.game.rules.RulesConfig;
 import kz.bardak.game.rules.StateProjection;
+import kz.bardak.history.MatchLog;
+import kz.bardak.history.domain.MatchRecord;
 import kz.bardak.lobby.LobbyService;
 import kz.bardak.lobby.domain.GameTable;
 import kz.bardak.lobby.domain.TablePlayer;
@@ -35,12 +37,15 @@ public class MatchService {
     private static final Logger log = LoggerFactory.getLogger(MatchService.class);
 
     private final LobbyService lobby;
+    private final MatchLog matchLog;
     private final RulesConfigCodec rulesCodec;
     private final Map<UUID, MatchSession> sessions = new ConcurrentHashMap<>();
     private final SecureRandom secureRandom = new SecureRandom();
 
-    public MatchService(final LobbyService lobby, final ObjectMapper objectMapper) {
+    public MatchService(final LobbyService lobby, final MatchLog matchLog,
+                        final ObjectMapper objectMapper) {
         this.lobby = Objects.requireNonNull(lobby, "lobby");
+        this.matchLog = Objects.requireNonNull(matchLog, "matchLog");
         this.rulesCodec = new RulesConfigCodec(objectMapper);
     }
 
@@ -74,7 +79,12 @@ public class MatchService {
         // матч воспроизводится по паре «seed + последовательность команд».
         final long matchSeed = secureRandom.nextLong();
 
-        final MatchSession session = new MatchSession(tableId, seatUsers, engine,
+        // ⭐ rules_snapshot обязателен: правила стола могут поменяться, а матч должен
+        // остаться интерпретируемым ровно по тем, по которым игрался.
+        final MatchRecord record = matchLog.startMatch(tableId, seatUsers.size(), matchSeed,
+                table.rulesConfig());
+
+        final MatchSession session = new MatchSession(tableId, record.id(), seatUsers, engine,
                 new StateProjection(config, new kz.bardak.game.rules.DealEngine(config,
                         new AttackOrderPolicy.BardakStrictNeighbours(), new DiceResolver.Seeded())),
                 engine.startMatch(seatUsers.size(), matchSeed));

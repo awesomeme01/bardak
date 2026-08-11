@@ -19,6 +19,7 @@ import kz.bardak.game.runtime.TableRuntime;
 import kz.bardak.game.rules.DealCommand;
 import kz.bardak.game.rules.DealEvent;
 import kz.bardak.game.rules.MatchResult;
+import kz.bardak.history.MatchLog;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -40,13 +41,16 @@ public class GameCommandHandler {
             "TRANSFER", "HANG_CARD", "HANG_SKIP", "CHOOSE_TRUMP", "REVEAL_FACE_DOWN", "STATE_REQUEST");
 
     private final MatchService matches;
+    private final MatchLog matchLog;
     private final TableRegistry registry;
     private final UserRepository users;
     private final ObjectMapper objectMapper;
 
-    public GameCommandHandler(final MatchService matches, final TableRegistry registry,
-                              final UserRepository users, final ObjectMapper objectMapper) {
+    public GameCommandHandler(final MatchService matches, final MatchLog matchLog,
+                              final TableRegistry registry, final UserRepository users,
+                              final ObjectMapper objectMapper) {
         this.matches = Objects.requireNonNull(matches, "matches");
+        this.matchLog = Objects.requireNonNull(matchLog, "matchLog");
         this.registry = Objects.requireNonNull(registry, "registry");
         this.users = Objects.requireNonNull(users, "users");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
@@ -92,10 +96,20 @@ public class GameCommandHandler {
             final MatchResult result = session.apply(move);
 
             if (result instanceof MatchResult.Rejected rejected) {
+                // Отклонённая попытка — часть истории стола, хотя состояние не меняет (§2.1).
+                matchLog.appendRejected(session.matchId(), session.nextSeq(),
+                        session.state().dealNo(), seatNo, command.type(), rejected.reason().name());
+                session.lastSeq(session.nextSeq());
                 sender.accept(serialize(error(command, rejected.reason().name(), "Ход отклонён")));
                 return;
             }
-            broadcast(runtime, session, ((MatchResult.Applied) result).events());
+            final List<DealEvent> events = ((MatchResult.Applied) result).events();
+            // ⭐ Сначала лог, потом рассылка (ADR-004): иначе после падения между ними
+            // клиенты видели бы ход, которого в истории нет.
+            session.lastSeq(matchLog.append(session.matchId(), session.nextSeq(),
+                    session.state().dealNo(), events));
+            matchLog.dealsPlayed(session.matchId(), session.state().results().size());
+            broadcast(runtime, session, events);
         } catch (final ApiException e) {
             sender.accept(serialize(error(command, e.code(), e.getMessage())));
         } catch (final IllegalArgumentException e) {
