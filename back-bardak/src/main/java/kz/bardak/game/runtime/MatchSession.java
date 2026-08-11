@@ -1,5 +1,6 @@
 package kz.bardak.game.runtime;
 
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -34,6 +35,16 @@ public final class MatchSession {
     /** Сквозной номер события по матчу. Живёт на потоке стола, поэтому просто int. */
     private int lastSeq;
 
+    /**
+     * ⭐ Уже применённые команды.
+     *
+     * <p>Клиент переотправляет команду после разрыва — он не знает, дошла ли предыдущая.
+     * Без дедупликации ход применился бы дважды: карта ушла бы со стола дважды или пас
+     * закрыл бы чужой раунд. Помним последние {@value #REMEMBERED_COMMANDS} — этого
+     * с запасом хватает на любую очередь переотправки, а расти бесконечно набору незачем.
+     */
+    private final LinkedHashSet<String> appliedCommands = new LinkedHashSet<>();
+
     public MatchSession(final UUID tableId, final UUID matchId, final List<UUID> seatUsers,
                         final MatchEngine engine, final StateProjection projection,
                         final MatchState state) {
@@ -45,8 +56,27 @@ public final class MatchSession {
         this.state = Objects.requireNonNull(state, "state");
     }
 
+    private static final int REMEMBERED_COMMANDS = 200;
+
     public UUID tableId() {
         return tableId;
+    }
+
+    /** Команда с этим идентификатором уже применялась. */
+    public boolean alreadyApplied(final String commandId) {
+        return commandId != null && appliedCommands.contains(commandId);
+    }
+
+    public void remember(final String commandId) {
+        if (commandId == null) {
+            return;
+        }
+        appliedCommands.add(commandId);
+        final var iterator = appliedCommands.iterator();
+        while (appliedCommands.size() > REMEMBERED_COMMANDS && iterator.hasNext()) {
+            iterator.next();
+            iterator.remove();
+        }
     }
 
     public UUID matchId() {

@@ -41,7 +41,8 @@ public class GameCommandHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GameCommandHandler.class);
     private static final List<String> COMMANDS = List.of("MATCH_START", "PLAY_CARD", "PASS", "TAKE",
-            "TRANSFER", "HANG_CARD", "HANG_SKIP", "CHOOSE_TRUMP", "REVEAL_FACE_DOWN", "STATE_REQUEST");
+            "TRANSFER", "HANG_CARD", "HANG_SKIP", "CHOOSE_TRUMP", "REVEAL_FACE_DOWN", "STATE_REQUEST",
+            "RESYNC");
 
     private final MatchService matches;
     private final MatchLog matchLog;
@@ -92,6 +93,15 @@ public class GameCommandHandler {
                     new ApiException(org.springframework.http.HttpStatus.CONFLICT, "NO_MATCH",
                             "За этим столом матч не идёт"));
 
+            if ("RESYNC".equals(command.type())) {
+                runtime.subscribe(userId, sender);
+                resync(session, userId, sender, command);
+                if (session.seatOf(userId).isPresent()) {
+                    resumeAfterReconnect(runtime, session);
+                }
+                return;
+            }
+
             if ("STATE_REQUEST".equals(command.type())) {
                 runtime.subscribe(userId, sender);
                 sender.accept(serialize(stateSync(session, userId)));
@@ -101,11 +111,19 @@ public class GameCommandHandler {
                 return;
             }
 
+            // ⭐ Клиент переотправляет команду после разрыва: он не знает, дошла ли она.
+            // Повтор не применяем, но состояние отдаём — иначе он останется в неведении.
+            if (session.alreadyApplied(command.id())) {
+                sender.accept(serialize(stateSync(session, userId)));
+                return;
+            }
+
             final int seatNo = session.seatOf(userId).orElseThrow(() ->
                     new ApiException(org.springframework.http.HttpStatus.FORBIDDEN, "NOT_A_PLAYER",
                             "Ты не играешь за этим столом"));
             final DealCommand move = GameProtocol.toCommand(command.type(), seatNo, payloadOf(command));
             final MatchResult result = session.apply(move);
+            session.remember(command.id());
 
             if (result instanceof MatchResult.Rejected rejected) {
                 // Отклонённая попытка — часть истории стола, хотя состояние не меняет (§2.1).
@@ -130,6 +148,36 @@ public class GameCommandHandler {
         } catch (final RuntimeException e) {
             log.error("Игровая команда {} за столом {} упала", command.type(), tableId, e);
             sender.accept(serialize(error(command, "INTERNAL_ERROR", "Что-то пошло не так")));
+        }
+    }
+
+    /**
+     * Догнать пропущенное после разрыва.
+     *
+     * <p>⭐ События берутся из лога, но <b>уже отфильтрованные по видимости</b>: сырой лог
+     * содержит скрытую информацию и наружу не отдаётся никогда. Следом уходит полный
+     * снимок — так клиент сходится, даже если пропустил больше, чем помнит сервер.
+     */
+    private void resync(final MatchSession session, final UUID userId, final Consumer<String> sender,
+                        final Envelope command) {
+        final int seat = session.seatOf(userId).orElse(-1);
+        final int lastSeq = command.payload() == null ? 0
+                : command.payload().path("lastSeq").asInt(0);
+        if (seat >= 0) {
+            for (final var missed : matchLog.since(session.matchId(), lastSeq, seat)) {
+                sender.accept(serialize(new Envelope(Envelope.PROTOCOL_VERSION, null, missed.type(),
+                        session.tableId().toString(), missed.seq(),
+                        java.time.Instant.now().toEpochMilli(), readPayload(missed.payload()))));
+            }
+        }
+        sender.accept(serialize(stateSync(session, userId)));
+    }
+
+    private com.fasterxml.jackson.databind.JsonNode readPayload(final String payload) {
+        try {
+            return objectMapper.readTree(payload);
+        } catch (final com.fasterxml.jackson.core.JsonProcessingException e) {
+            return objectMapper.createObjectNode();
         }
     }
 
@@ -216,11 +264,14 @@ public class GameCommandHandler {
      */
     private void broadcast(final TableRuntime runtime, final MatchSession session,
                            final List<DealEvent> events) {
+        final int firstSeq = session.lastSeq() - events.size() + 1;
         for (final UUID player : session.players()) {
+            int seq = firstSeq;
             for (final DealEvent event : events) {
                 if (isVisibleTo(event, session, player)) {
-                    runtime.sendTo(player, serialize(eventMessage(session, event)));
+                    runtime.sendTo(player, serialize(eventMessage(session, event, seq)));
                 }
+                seq++;
             }
             runtime.sendTo(player, serialize(stateSync(session, player)));
         }
@@ -239,8 +290,13 @@ public class GameCommandHandler {
                 objectMapper.valueToTree(dto));
     }
 
-    private Envelope eventMessage(final MatchSession session, final DealEvent event) {
-        return Envelope.event(GameProtocol.eventType(event), null, session.tableId().toString(),
+    /**
+     * ⭐ Событие уходит с номером: по нему клиент понимает, что пропустил, и просит `RESYNC`.
+     * Номер сквозной по матчу, а не по раздаче — счётчик у клиента один.
+     */
+    private Envelope eventMessage(final MatchSession session, final DealEvent event, final int seq) {
+        return new Envelope(Envelope.PROTOCOL_VERSION, null, GameProtocol.eventType(event),
+                session.tableId().toString(), seq, java.time.Instant.now().toEpochMilli(),
                 objectMapper.valueToTree(GameProtocol.toEventPayload(event)));
     }
 

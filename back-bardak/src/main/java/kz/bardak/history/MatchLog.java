@@ -61,7 +61,8 @@ public class MatchLog {
         int seq = firstSeq;
         for (final DealEvent event : dealEvents) {
             events.save(new MatchEventRecord(matchId, seq, dealNo, GameProtocol.eventType(event),
-                    event.seatNo(), asJson(GameProtocol.toEventPayload(event))));
+                    event.seatNo(), asJson(GameProtocol.toEventPayload(event)),
+                    event.privateToSeat().orElse(null)));
             seq++;
         }
         return seq - 1;
@@ -74,8 +75,24 @@ public class MatchLog {
     @Transactional
     public void appendRejected(final UUID matchId, final int seq, final int dealNo, final int actorSeat,
                                final String commandType, final String reason) {
+        // Попытку видит только тот, кто её сделал: остальным полагается лишь факт
+        // и рубашка (§2.1), а какая именно карта — не покидает сервер.
         events.save(new MatchEventRecord(matchId, seq, dealNo, "MOVE_REJECTED", actorSeat,
-                asJson(Map.of("command", commandType, "reason", reason))));
+                asJson(Map.of("command", commandType, "reason", reason)), actorSeat));
+    }
+
+    /**
+     * События, пропущенные клиентом, — уже отфильтрованные по видимости.
+     *
+     * <p>⭐ Сырой лог наружу не отдаётся никогда: в нём лежит скрытая информация. Фильтр
+     * идёт по записанной вместе с событием видимости, а не по пересчёту правил — иначе
+     * правило жило бы в двух местах и однажды разошлось.
+     */
+    @Transactional(readOnly = true)
+    public List<MatchEventRecord> since(final UUID matchId, final int lastSeq, final int seatNo) {
+        return events.findByMatchIdAndSeqGreaterThanOrderBySeqAsc(matchId, lastSeq).stream()
+                .filter(event -> event.isVisibleTo(seatNo))
+                .toList();
     }
 
     @Transactional
