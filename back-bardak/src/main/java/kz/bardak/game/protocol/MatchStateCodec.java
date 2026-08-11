@@ -9,6 +9,8 @@ import java.util.List;
 import java.util.Objects;
 import kz.bardak.game.rules.Card;
 import kz.bardak.game.rules.DealOutcome;
+import kz.bardak.game.rules.LevelChange;
+import kz.bardak.game.rules.LevelChangeReason;
 import kz.bardak.game.rules.DealPhase;
 import kz.bardak.game.rules.DealState;
 import kz.bardak.game.rules.HangClaim;
@@ -210,13 +212,26 @@ public final class MatchStateCodec {
         for (final DealOutcome outcome : results) {
             final ObjectNode node = objectMapper.createObjectNode();
             node.put("dealLoserSeat", outcome.dealLoserSeat());
+            if (outcome.trumpSuit() != null) {
+                node.put("trumpSuit", outcome.trumpSuit().name());
+            }
+            node.set("lastAttackCards", cardArray(outcome.lastAttackCards()));
             final ArrayNode players = objectMapper.createArrayNode();
             for (final PlayerOutcome player : outcome.players()) {
                 final ObjectNode playerNode = objectMapper.createObjectNode()
                         .put("seatNo", player.seatNo())
                         .put("levelBefore", player.levelBefore())
-                        .put("levelAfter", player.levelAfter());
+                        .put("levelAfter", player.levelAfter())
+                        .put("place", player.place());
                 player.degree().ifPresent(degree -> playerNode.put("lossDegree", degree.name()));
+                playerNode.set("hungCards", cardArray(player.hungCards()));
+                final ArrayNode changes = objectMapper.createArrayNode();
+                for (final LevelChange change : player.changes()) {
+                    changes.add(objectMapper.createObjectNode()
+                            .put("reason", change.reason().name())
+                            .put("amount", change.amount()));
+                }
+                playerNode.set("changes", changes);
                 players.add(playerNode);
             }
             node.set("players", players);
@@ -230,12 +245,21 @@ public final class MatchStateCodec {
         for (final JsonNode node : array) {
             final List<PlayerOutcome> players = new ArrayList<>();
             for (final JsonNode player : node.get("players")) {
+                final List<LevelChange> changes = new ArrayList<>();
+                for (final JsonNode change : player.get("changes")) {
+                    changes.add(new LevelChange(
+                            LevelChangeReason.valueOf(change.get("reason").asText()),
+                            change.get("amount").asInt()));
+                }
                 players.add(new PlayerOutcome(player.get("seatNo").asInt(),
                         player.get("levelBefore").asInt(), player.get("levelAfter").asInt(),
                         player.hasNonNull("lossDegree")
-                                ? LossDegree.valueOf(player.get("lossDegree").asText()) : null));
+                                ? LossDegree.valueOf(player.get("lossDegree").asText()) : null,
+                        player.get("place").asInt(), cardList(player.get("hungCards")), changes));
             }
-            results.add(new DealOutcome(players, node.get("dealLoserSeat").asInt()));
+            results.add(new DealOutcome(players, node.get("dealLoserSeat").asInt(),
+                    node.hasNonNull("trumpSuit") ? Suit.valueOf(node.get("trumpSuit").asText()) : null,
+                    cardList(node.get("lastAttackCards"))));
         }
         return results;
     }

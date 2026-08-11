@@ -21,7 +21,9 @@ import kz.bardak.game.runtime.TableRegistry;
 import kz.bardak.game.runtime.TableRuntime;
 import kz.bardak.game.rules.DealCommand;
 import kz.bardak.game.rules.DealEvent;
+import kz.bardak.game.rules.DealOutcome;
 import kz.bardak.game.rules.MatchResult;
+import kz.bardak.history.DealHistory;
 import kz.bardak.history.MatchLog;
 import kz.bardak.lobby.LobbyService;
 import kz.bardak.rating.MatchResultService;
@@ -48,6 +50,7 @@ public class GameCommandHandler {
 
     private final MatchService matches;
     private final MatchLog matchLog;
+    private final DealHistory dealHistory;
     private final MatchResultService results;
     private final LobbyService lobby;
     private final TableRegistry registry;
@@ -57,12 +60,14 @@ public class GameCommandHandler {
     private final GameProperties properties;
 
     public GameCommandHandler(final MatchService matches, final MatchLog matchLog,
+                              final DealHistory dealHistory,
                               final MatchResultService results, final LobbyService lobby,
                               final TableRegistry registry, final UserRepository users,
                               final ObjectMapper objectMapper, final TurnClock clock,
                               final GameProperties properties) {
         this.matches = Objects.requireNonNull(matches, "matches");
         this.matchLog = Objects.requireNonNull(matchLog, "matchLog");
+        this.dealHistory = Objects.requireNonNull(dealHistory, "dealHistory");
         this.results = Objects.requireNonNull(results, "results");
         this.lobby = Objects.requireNonNull(lobby, "lobby");
         this.clock = Objects.requireNonNull(clock, "clock");
@@ -126,6 +131,7 @@ public class GameCommandHandler {
                 return;
             }
 
+            final int dealsBefore = session.state().results().size();
             final int seatNo = session.seatOf(userId).orElseThrow(() ->
                     new ApiException(org.springframework.http.HttpStatus.FORBIDDEN, "NOT_A_PLAYER",
                             "Ты не играешь за этим столом"));
@@ -147,6 +153,7 @@ public class GameCommandHandler {
             session.lastSeq(matchLog.append(session.matchId(), session.nextSeq(),
                     session.state().dealNo(), events));
             matchLog.dealsPlayed(session.matchId(), session.state().results().size());
+            recordFinishedDeals(session, dealsBefore);
             saveSnapshot(session);
             broadcast(runtime, session, events);
             restartTurnClock(runtime, session);
@@ -158,6 +165,21 @@ public class GameCommandHandler {
         } catch (final RuntimeException e) {
             log.error("Игровая команда {} за столом {} упала", command.type(), tableId, e);
             sender.accept(serialize(error(command, "INTERNAL_ERROR", "Что-то пошло не так")));
+        }
+    }
+
+    /**
+     * Записать раздачу, если этот ход её закрыл.
+     *
+     * <p>⭐ Ходом раздача заканчивается сразу вместе со следующей сдачей: движок собирает
+     * колоду заново, и сыгранной раздачи в состоянии больше нет. Поэтому история пишется
+     * здесь и сейчас, из итога, а не откладывается на конец матча.
+     */
+    private void recordFinishedDeals(final MatchSession session, final int dealsBefore) {
+        final List<DealOutcome> played = session.state().results();
+        for (int index = dealsBefore; index < played.size(); index++) {
+            dealHistory.record(session.matchId(), index + 1, played.get(index),
+                    session.config().navesScale());
         }
     }
 
@@ -260,10 +282,13 @@ public class GameCommandHandler {
     /** Ход не сделан за отведённое время — сервер делает самое безобидное действие (§5.1). */
     private void applyTimeout(final TableRuntime runtime, final MatchSession session) {
         TimeoutPolicy.autoActionFor(session.state().deal()).ifPresent(auto -> {
+            final int dealsBefore = session.state().results().size();
             final MatchResult result = session.apply(auto);
             if (result instanceof MatchResult.Applied applied) {
                 session.lastSeq(matchLog.append(session.matchId(), session.nextSeq(),
                         session.state().dealNo(), applied.events()));
+                matchLog.dealsPlayed(session.matchId(), session.state().results().size());
+                recordFinishedDeals(session, dealsBefore);
                 saveSnapshot(session);
                 runtime.broadcast(serialize(Envelope.event("TURN_TIMEOUT", null,
                         session.tableId().toString(),

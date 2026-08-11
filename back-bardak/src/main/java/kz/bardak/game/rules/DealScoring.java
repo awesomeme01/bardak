@@ -41,12 +41,14 @@ public final class DealScoring {
         Objects.requireNonNull(state, "state");
         final int dealLoser = dealLoserSeat(state);
         final Map<Integer, Integer> levels = startingLevels(state);
+        final Map<Integer, List<LevelChange>> changes = new HashMap<>();
 
-        applyAutomaticShifts(state, levels, dealLoser);
+        applyAutomaticShifts(state, levels, changes, dealLoser);
         final List<Integer> gameLosers = gameLosers(state, levels);
-        applyFinisherRewards(state, levels, gameLosers);
+        applyFinisherRewards(state, levels, changes, gameLosers);
 
-        return new DealOutcome(outcomes(state, levels, dealLoser, gameLosers), dealLoser);
+        return new DealOutcome(outcomes(state, levels, changes, dealLoser, gameLosers), dealLoser,
+                state.hasTrump() ? state.trump().suit() : null, state.lastAttackCards());
     }
 
     /** «Дурак» раздачи — единственный, у кого остались карты (§0.2). */
@@ -71,9 +73,19 @@ public final class DealScoring {
      * Сдвиги суммируются и друг друга не заменяют.
      */
     private void applyAutomaticShifts(final DealState state, final Map<Integer, Integer> levels,
+                                      final Map<Integer, List<LevelChange>> changes,
                                       final int dealLoser) {
-        levels.merge(dealLoser, 1, Integer::sum);
-        firstOut(state).ifPresent(seat -> levels.merge(seat, -1, Integer::sum));
+        shift(levels, changes, dealLoser, 1, LevelChangeReason.LOST_DEAL);
+        firstOut(state).ifPresent(seat ->
+                shift(levels, changes, seat, -1, LevelChangeReason.FIRST_OUT));
+    }
+
+    private void shift(final Map<Integer, Integer> levels,
+                       final Map<Integer, List<LevelChange>> changes, final int seat,
+                       final int amount, final LevelChangeReason reason) {
+        levels.merge(seat, amount, Integer::sum);
+        changes.computeIfAbsent(seat, key -> new ArrayList<>())
+                .add(new LevelChange(reason, amount));
     }
 
     private java.util.Optional<Integer> firstOut(final DealState state) {
@@ -99,11 +111,12 @@ public final class DealScoring {
      * джокер снимается, и проигравшим он уже не считается.
      */
     private void applyFinisherRewards(final DealState state, final Map<Integer, Integer> levels,
+                                      final Map<Integer, List<LevelChange>> changes,
                                       final List<Integer> gameLosers) {
         for (final int loser : gameLosers) {
             final int finisher = state.playerAt(loser).jokerHangerSeat();
             if (finisher != PlayerState.NOBODY) {
-                levels.merge(finisher, -1, Integer::sum);
+                shift(levels, changes, finisher, -1, LevelChangeReason.FINISHED_OPPONENT);
             }
         }
     }
@@ -113,18 +126,36 @@ public final class DealScoring {
      * на проходе 3 могла снять джокер с того, кто попал в список на проходе 2.
      */
     private List<PlayerOutcome> outcomes(final DealState state, final Map<Integer, Integer> levels,
+                                         final Map<Integer, List<LevelChange>> changes,
                                          final int dealLoser, final List<Integer> gameLosers) {
         final List<PlayerOutcome> outcomes = new ArrayList<>();
         for (final PlayerState player : state.players()) {
             final int seat = player.seatNo();
-            final int level = clampToScale(levels.get(seat));
+            final int raw = levels.get(seat);
+            final int level = clampToScale(raw);
             final boolean stillFinished = config.navesScale().isFinished(level);
             final LossDegree degree = stillFinished && gameLosers.contains(seat)
                     ? degreeFor(state, player, seat == dealLoser)
                     : null;
-            outcomes.add(new PlayerOutcome(seat, player.navesLevel(), level, degree));
+            final List<LevelChange> seatChanges =
+                    new ArrayList<>(changes.getOrDefault(seat, List.of()));
+            if (level != raw) {
+                // Упёрлись в край шкалы: без этой строки слагаемые не сходились бы с итогом.
+                seatChanges.add(new LevelChange(LevelChangeReason.SCALE_LIMIT, level - raw));
+            }
+            outcomes.add(new PlayerOutcome(seat, player.navesLevel(), level, degree,
+                    placeOf(state, seat), player.hungCards(), List.copyOf(seatChanges)));
         }
         return List.copyOf(outcomes);
+    }
+
+    /**
+     * Место в раздаче: кто раньше вышел, тот выше. Оставшийся с картами — последний,
+     * и это единственное место, которое в правилах названо прямо (§0.2).
+     */
+    private int placeOf(final DealState state, final int seat) {
+        final int exited = state.exitOrder().indexOf(seat);
+        return exited >= 0 ? exited + 1 : state.players().size();
     }
 
     /**

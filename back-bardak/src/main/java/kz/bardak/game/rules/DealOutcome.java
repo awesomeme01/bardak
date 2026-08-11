@@ -12,13 +12,24 @@ import java.util.Optional;
  * игроков заканчивают игру с джокером и различаются степенью. Главный проигравший — тот,
  * у кого степень тяжелее.
  *
- * @param players       итоги по всем местам, в порядке мест
- * @param dealLoserSeat кто остался с картами — «дурак» раздачи
+ * @param players         итоги по всем местам, в порядке мест
+ * @param dealLoserSeat   кто остался с картами — «дурак» раздачи
+ * @param trumpSuit       козырь этой раздачи; {@code null} — раздача кончилась, не начавшись
+ * @param lastAttackCards состав последней атаки: от него зависят степени {@code ROYAL}
+ *                        и {@code SUPER_MEGA_SUCK} (§0.3), и после подсчёта его больше
+ *                        негде взять
  */
-public record DealOutcome(List<PlayerOutcome> players, int dealLoserSeat) {
+public record DealOutcome(List<PlayerOutcome> players, int dealLoserSeat, Suit trumpSuit,
+                          List<Card> lastAttackCards) {
 
     public DealOutcome {
         players = List.copyOf(Objects.requireNonNull(players, "players"));
+        lastAttackCards = List.copyOf(Objects.requireNonNull(lastAttackCards, "lastAttackCards"));
+    }
+
+    /** Итог без обстановки раздачи — так его собирают тесты. */
+    public DealOutcome(final List<PlayerOutcome> players, final int dealLoserSeat) {
+        this(players, dealLoserSeat, null, List.of());
     }
 
     public PlayerOutcome forSeat(final int seatNo) {

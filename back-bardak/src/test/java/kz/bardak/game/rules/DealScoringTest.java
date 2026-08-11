@@ -323,6 +323,65 @@ class DealScoringTest {
         assertThat(outcome.forSeat(2).shift()).isZero();
     }
 
+    @DisplayName("Should explain both shifts separately When a player loses and finishes somebody")
+    @Test
+    void shouldExplainBothShiftsSeparatelyWhenAPlayerLosesAndFinishesSomebody() {
+        // Место 1 проиграло раздачу (+1) и добило место 2 джокером (−1): сумма нулевая,
+        // и по одному только уровню обе причины были бы неразличимы.
+        final DealOutcome outcome = scoring.score(aDeal()
+                .withPhase(DealPhase.DEAL_OVER)
+                .withEmptyDeck()
+                .withPlayerOutOfDeal(0)
+                .withNavesLevel(1, 3)
+                .withJokerHungBy(2, 1)
+                .withExitOrder(0)
+                .build());
+
+        assertThat(outcome.forSeat(1).shift()).isZero();
+        assertThat(outcome.forSeat(1).changes()).containsExactly(
+                new LevelChange(LevelChangeReason.LOST_DEAL, 1),
+                new LevelChange(LevelChangeReason.FINISHED_OPPONENT, -1));
+    }
+
+    @DisplayName("Should record the scale limit When the floor swallows a step")
+    @Test
+    void shouldRecordTheScaleLimitWhenTheFloorSwallowsAStep() {
+        final DealOutcome outcome = scoring.score(finishedDeal()
+                .withExitOrder(0, 2)
+                .build());
+
+        // «Летит 6» — нижняя ступень: −1 отсюда некуда, и это должно быть видно в истории.
+        assertThat(outcome.forSeat(0).changes()).containsExactly(
+                new LevelChange(LevelChangeReason.FIRST_OUT, -1),
+                new LevelChange(LevelChangeReason.SCALE_LIMIT, 1));
+    }
+
+    @DisplayName("Should place the players by their exit order When the deal ends")
+    @Test
+    void shouldPlaceThePlayersByTheirExitOrderWhenTheDealEnds() {
+        final DealOutcome outcome = scoring.score(finishedDeal()
+                .withExitOrder(2, 0)
+                .build());
+
+        assertThat(outcome.forSeat(2).place()).isEqualTo(1);
+        assertThat(outcome.forSeat(0).place()).isEqualTo(2);
+        // Оставшийся с картами — последний, в порядке выхода его нет вовсе.
+        assertThat(outcome.forSeat(1).place()).isEqualTo(3);
+    }
+
+    @DisplayName("Should carry the last attack and the trump When the deal is scored")
+    @Test
+    void shouldCarryTheLastAttackAndTheTrumpWhenTheDealIsScored() {
+        final DealOutcome outcome = scoring.score(finishedDeal()
+                .withExitOrder(0, 2)
+                .withLastAttack(EIGHT_DIAMONDS, NINE_CLUBS)
+                .build());
+
+        // ⭐ После подсчёта раздача исчезает, поэтому обстановку обязан нести итог.
+        assertThat(outcome.lastAttackCards()).containsExactly(EIGHT_DIAMONDS, NINE_CLUBS);
+        assertThat(outcome.trumpSuit()).isNotNull();
+    }
+
     /** Раздача закончилась: карты остались у места 1, остальные вышли. */
     private static DealStateFixture finishedDeal() {
         return aDeal()
