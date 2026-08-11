@@ -13,7 +13,7 @@
 
 <header>
     <h1>Bardak</h1>
-    <p class="stage">M2 — вход и сессия</p>
+    <p class="stage">M3 — лобби и столы</p>
 </header>
 
 <main>

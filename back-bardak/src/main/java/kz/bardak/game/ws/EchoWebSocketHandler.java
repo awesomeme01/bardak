@@ -13,7 +13,9 @@ import org.springframework.web.socket.handler.TextWebSocketHandler;
 
 import java.io.IOException;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import kz.bardak.lobby.ws.LobbyCommandHandler;
 
 /**
  * M1: эхо-обработчик. Никакой игровой логики — только проверка того, что конверт
@@ -48,10 +50,15 @@ public class EchoWebSocketHandler extends TextWebSocketHandler {
     private static final int SEND_TIME_LIMIT_MS = 10_000;
 
     private final ObjectMapper objectMapper;
+    private final LobbyCommandHandler lobbyCommands;
     private final Map<String, WebSocketSession> sessions = new ConcurrentHashMap<>();
 
-    public EchoWebSocketHandler(ObjectMapper objectMapper) {
+    /** Где сидит соединение: нужно, чтобы при обрыве отписать игрока от его стола. */
+    private final Map<String, UUID> sessionTables = new ConcurrentHashMap<>();
+
+    public EchoWebSocketHandler(ObjectMapper objectMapper, LobbyCommandHandler lobbyCommands) {
         this.objectMapper = objectMapper;
+        this.lobbyCommands = lobbyCommands;
     }
 
     @Override
@@ -95,6 +102,16 @@ public class EchoWebSocketHandler extends TextWebSocketHandler {
             return;
         }
 
+        if (lobbyCommands.handles(incoming.type())) {
+            if (incoming.tableId() != null) {
+                sessionTables.put(session.getId(), UUID.fromString(incoming.tableId()));
+            }
+            // Отправляем уже сериализованную строку: рассылка стола не должна знать
+            // ни про сессии, ни про Jackson.
+            lobbyCommands.handle(incoming, (UUID) userOf(session), event -> sendRaw(out, event));
+            return;
+        }
+
         // M1: всё остальное возвращаем как есть — это и есть эхо.
         ObjectNode payload = objectMapper.createObjectNode();
         payload.put("echoOf", incoming.type());
@@ -105,6 +122,10 @@ public class EchoWebSocketHandler extends TextWebSocketHandler {
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
         sessions.remove(session.getId());
+        UUID tableId = sessionTables.remove(session.getId());
+        if (tableId != null) {
+            lobbyCommands.onDisconnect(tableId, (UUID) userOf(session));
+        }
         log.info("WS отключён: id={}, статус={}, осталось сессий={}",
                 session.getId(), status.getCode(), sessions.size());
     }
@@ -119,6 +140,14 @@ public class EchoWebSocketHandler extends TextWebSocketHandler {
                 .put("code", code)
                 .put("message", message);
         return Envelope.event("ERROR", commandId, null, payload);
+    }
+
+    private void sendRaw(WebSocketSession session, String message) {
+        try {
+            session.sendMessage(new TextMessage(message));
+        } catch (IOException e) {
+            log.warn("Не удалось отправить событие в сессию {}: {}", session.getId(), e.getMessage());
+        }
     }
 
     private void send(WebSocketSession session, Envelope envelope) {

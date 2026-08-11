@@ -1,7 +1,9 @@
 <script>
     import {onMount} from 'svelte';
-    import {loadProfile, logout, session} from '../stores/auth.svelte.js';
-    import Connection from './Connection.svelte';
+    import {loadProfile, logout} from '../stores/auth.svelte.js';
+    import {lobby} from '../stores/lobby.svelte.js';
+    import Lobby from './Lobby.svelte';
+    import TableRoom from './TableRoom.svelte';
 
     let profile = $state(null);
     let error = $state(null);
@@ -29,4 +31,8 @@
     </div>
 </section>
 
-<Connection/>
+{#if lobby.current}
+    <TableRoom onExit={() => {}}/>
+{:else}
+    <Lobby onEnter={() => {}}/>
+{/if}

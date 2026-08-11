@@ -154,3 +154,51 @@ form input:focus-visible {
 form .row {
     margin-top: 0.25rem;
 }
+
+/* Лобби и комната ожидания */
+ul.tables, ul.seats {
+    list-style: none;
+    margin: 0.5rem 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+ul.seats li {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+}
+
+.seat-no {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.6rem;
+    height: 1.6rem;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    font-size: 0.8rem;
+    color: var(--muted);
+}
+
+.empty { color: var(--muted); }
+.offline { opacity: 0.5; }
+
+label.inline {
+    flex-direction: row;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+label.inline input { flex: 0 0 auto; }
+
+form select {
+    font: inherit;
+    padding: 0.5rem 0.6rem;
+    border-radius: 0.4rem;
+    border: 1px solid #2b3444;
+    background: #131a24;
+    color: inherit;
+}
