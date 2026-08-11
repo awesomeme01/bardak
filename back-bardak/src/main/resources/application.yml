@@ -58,6 +58,11 @@ bardak:
     turn-timeout: 30s
     disconnect-grace: 60s
 
+  rating:
+    # Сезон закрывается вручную (ADR-037), и делать это вправе не каждый. Ролей в системе
+    # нет: список логинов дешевле роли, пока административное действие ровно одно.
+    season-admins: ${BARDAK_SEASON_ADMINS:}
+
   frontend:
     path: ../front-bardak/dist/
   assets:

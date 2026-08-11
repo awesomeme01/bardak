@@ -7,4 +7,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface MatchRecordRepository extends JpaRepository<MatchRecord, UUID> {
 
     List<MatchRecord> findByTableIdOrderByStartedAtDesc(UUID tableId);
+
+    List<MatchRecord> findByIdInOrderByStartedAtDesc(List<UUID> ids);
 }

@@ -82,6 +82,14 @@ public class RatingHistoryEntry {
         return ratingAfter;
     }
 
+    public UUID matchId() {
+        return matchId;
+    }
+
+    public int playersCount() {
+        return playersCount;
+    }
+
     public int place() {
         return place;
     }

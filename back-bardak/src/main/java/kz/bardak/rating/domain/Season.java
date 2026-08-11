@@ -19,7 +19,8 @@ public class Season {
     @Column(nullable = false)
     private String name;
 
-    @Column(name = "started_at", nullable = false, updatable = false, insertable = false)
+    /** Дата начала проставляется кодом: её показывают сразу после открытия сезона. */
+    @Column(name = "started_at", nullable = false, updatable = false)
     private Instant startedAt;
 
     @Column(name = "closed_at")
@@ -29,12 +30,29 @@ public class Season {
         // для JPA
     }
 
+    /** Новый открытый сезон. */
+    public static Season open(final UUID id, final String name, final Instant now) {
+        final Season season = new Season();
+        season.id = Objects.requireNonNull(id, "id");
+        season.name = Objects.requireNonNull(name, "name");
+        season.startedAt = Objects.requireNonNull(now, "now");
+        return season;
+    }
+
     public UUID id() {
         return id;
     }
 
     public String name() {
         return name;
+    }
+
+    public Instant startedAt() {
+        return startedAt;
+    }
+
+    public Instant closedAt() {
+        return closedAt;
     }
 
     public boolean isOpen() {

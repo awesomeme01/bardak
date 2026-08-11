@@ -91,6 +91,30 @@ public class MatchRecord {
         return rngSeed;
     }
 
+    public int playersCount() {
+        return playersCount;
+    }
+
+    public String rulesSnapshot() {
+        return rulesSnapshot;
+    }
+
+    public Instant startedAt() {
+        return startedAt;
+    }
+
+    public Instant finishedAt() {
+        return finishedAt;
+    }
+
+    public UUID loserUserId() {
+        return loserUserId;
+    }
+
+    public String abortReason() {
+        return abortReason;
+    }
+
     public void dealsPlayed(final int value) {
         this.dealsPlayed = (short) value;
     }

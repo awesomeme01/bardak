@@ -88,6 +88,10 @@ public class MatchEventRecord {
         return privateToSeat == null || privateToSeat == seatNo;
     }
 
+    public Integer actorSeat() {
+        return actorSeat == null ? null : actorSeat.intValue();
+    }
+
     public Integer dealNo() {
         return dealNo == null ? null : dealNo.intValue();
     }
