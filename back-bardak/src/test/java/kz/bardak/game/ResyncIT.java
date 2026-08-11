@@ -46,6 +46,9 @@ class ResyncIT {
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
+    /** Пересдача после кости может снова начаться с кости — но не бесконечно. */
+    private static final int DICE_ATTEMPTS = 5;
+
     @Container
     @ServiceConnection
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16-alpine");
@@ -95,7 +98,7 @@ class ResyncIT {
         final WebSocketSession returned = connect(match.otherToken(), back);
         sendWithId(returned, "resync-1", "RESYNC", match.tableId(), Map.of("lastSeq", 0));
 
-        final List<JsonNode> caughtUp = drain(back, 3);
+        final List<JsonNode> caughtUp = drain(back, 8);
         assertThat(caughtUp).anySatisfy(message ->
                 assertThat(message.path("type").asText()).isEqualTo("CARD_ATTACKED"));
         assertThat(caughtUp).anySatisfy(message -> {
@@ -119,7 +122,7 @@ class ResyncIT {
         final WebSocketSession returned = connect(match.otherToken(), back);
         sendWithId(returned, "resync-2", "RESYNC", match.tableId(), Map.of("lastSeq", 0));
 
-        final List<JsonNode> caughtUp = drain(back, 2);
+        final List<JsonNode> caughtUp = drain(back, 8);
         final List<String> hostHand = cards(match.attackerState().get("myHand"));
         for (final JsonNode message : caughtUp) {
             assertThat(message.toString())
@@ -143,13 +146,13 @@ class ResyncIT {
         final BlockingQueue<String> ownInbox = new LinkedBlockingQueue<>();
         final WebSocketSession own = connect(match.otherToken(), ownInbox);
         sendWithId(own, "resync-own", "RESYNC", match.tableId(), Map.of("lastSeq", 0));
-        assertThat(drain(ownInbox, 4)).anySatisfy(message ->
+        assertThat(drain(ownInbox, 8)).anySatisfy(message ->
                 assertThat(message.path("type").asText()).isEqualTo("MOVE_REJECTED"));
 
         // ...а сосед — нет: наружу уходит только факт и рубашка, но не через чужой догон.
         sendWithId(match.attackerSocket(), "resync-other", "RESYNC", match.tableId(),
                 Map.of("lastSeq", 0));
-        assertThat(drain(match.attackerInbox(), 4)).noneSatisfy(message ->
+        assertThat(drain(match.attackerInbox(), 8)).noneSatisfy(message ->
                 assertThat(message.path("type").asText()).isEqualTo("MOVE_REJECTED"));
 
         own.close();
@@ -172,14 +175,22 @@ class ResyncIT {
         throw new AssertionError("У атакующего нет ни одного разрешённого хода");
     }
 
+    /**
+     * Всё, что пришло клиенту, но не больше {@code expected}.
+     *
+     * <p>Сколько именно сообщений придёт, тест знать не может: раздача могла начаться
+     * с кости, и тогда перед ходом идёт ещё и выбор козыря. Поэтому ждём не количество,
+     * а тишину: пауза без сообщений означает, что сервер всё сказал.
+     */
     private List<JsonNode> drain(final BlockingQueue<String> inbox, final int expected) throws Exception {
         final List<JsonNode> messages = new ArrayList<>();
         final long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
         while (messages.size() < expected && System.nanoTime() < deadline) {
-            final String raw = inbox.poll(1, TimeUnit.SECONDS);
-            if (raw != null) {
-                messages.add(JSON.readTree(raw));
+            final String raw = inbox.poll(1500, TimeUnit.MILLISECONDS);
+            if (raw == null) {
+                break;
             }
+            messages.add(JSON.readTree(raw));
         }
         return messages;
     }
@@ -216,37 +227,68 @@ class ResyncIT {
         Thread.sleep(400);
         sendWithId(hostSocket, "start", "MATCH_START", tableId, null);
 
-        final JsonNode hostState = awaitState(hostInbox);
-        sendWithId(guestSocket, "st", "STATE_REQUEST", tableId, null);
-        final JsonNode guestState = awaitState(guestInbox);
+        Match match = whoAttacks(tableId, hostSocket, hostInbox, hostToken, guestSocket,
+                guestInbox, guestToken, 0);
 
-        // Ходит тот, у кого младший козырь: кто именно — решает сдача.
-        final boolean hostAttacks = hostState.get("canAttackSeat").asInt()
-                == hostState.get("mySeat").asInt();
-        final Match match = hostAttacks
-                ? new Match(tableId, hostSocket, hostInbox, hostState, guestSocket, guestToken)
-                : new Match(tableId, guestSocket, guestInbox, guestState, hostSocket, hostToken);
-        return resolveDice(match);
+        // ⭐ Раздача может начаться с кости: нижней картой колоды выпал джокер, и масть
+        // козыря разыгрывается (§1.2). До её выбора разрешённых ходов нет вообще, а после
+        // выбора первый ход достаётся тому, у кого младший козырь, — то есть, возможно,
+        // другому игроку. Сдача случайна, поэтому тест обязан пройти этот шаг сам: иначе
+        // он падает примерно раз в восемь прогонов и выглядит как поломка ресинка.
+        for (int attempt = 0; attempt < DICE_ATTEMPTS
+                && "DICE".equals(match.attackerState().path("phase").asText()); attempt++) {
+            chooseTrump(match, attempt);
+            match = whoAttacks(tableId, hostSocket, hostInbox, hostToken, guestSocket,
+                    guestInbox, guestToken, attempt + 1);
+        }
+        return match;
     }
 
-    /**
-     * ⭐ Раздача может начаться с кости: если нижней картой колоды выпал джокер, масть
-     * козыря разыгрывается, и до её выбора никаких ходов нет вообще (§1.2). Сдача случайна,
-     * поэтому тест обязан пройти этот шаг сам — иначе он падает примерно раз в восемь
-     * прогонов и выглядит как поломка ресинка.
-     */
-    private Match resolveDice(final Match match) throws Exception {
-        if (!"DICE".equals(match.attackerState().path("phase").asText())) {
-            return match;
-        }
+    /** Масть по кости названа не наугад: берётся то, что предложил сервер. */
+    private void chooseTrump(final Match match, final int attempt) throws Exception {
         for (final JsonNode action : match.attackerState().get("availableActions")) {
             if ("CHOOSE_TRUMP".equals(action.get("type").asText())) {
-                sendWithId(match.attackerSocket(), "dice", "CHOOSE_TRUMP", match.tableId(),
-                        Map.of("suit", action.get("payload").get("suit").asText()));
-                return match.withState(awaitState(match.attackerInbox()));
+                sendWithId(match.attackerSocket(), "dice-" + attempt, "CHOOSE_TRUMP",
+                        match.tableId(), Map.of("suit", action.get("payload").get("suit").asText()));
+                return;
             }
         }
         throw new AssertionError("Козырь разыгрывается костью, но выбрать масть некому");
+    }
+
+    /** Перечитать оба состояния и собрать стол вокруг того, кто ходит. */
+    private Match whoAttacks(final String tableId, final WebSocketSession hostSocket,
+                             final BlockingQueue<String> hostInbox,
+                             final String hostToken, final WebSocketSession guestSocket,
+                             final BlockingQueue<String> guestInbox, final String guestToken,
+                             final int round) throws Exception {
+        sendWithId(hostSocket, "st-h-" + round, "STATE_REQUEST", tableId, null);
+        sendWithId(guestSocket, "st-g-" + round, "STATE_REQUEST", tableId, null);
+        final JsonNode hostState = latestState(hostInbox);
+        final JsonNode guestState = latestState(guestInbox);
+
+        return hostState.get("canAttackSeat").asInt() == hostState.get("mySeat").asInt()
+                ? new Match(tableId, hostSocket, hostInbox, hostState, guestSocket, guestToken)
+                : new Match(tableId, guestSocket, guestInbox, guestState, hostSocket, hostToken);
+    }
+
+    /**
+     * ⭐ Самое свежее состояние, а очередь при этом опустошается.
+     *
+     * <p>Снимок приходит после каждого применённого хода, и на подготовке их накапливается
+     * несколько. Оставить лишние в очереди — значит, что первый же {@code awaitState}
+     * в самом тесте вернёт вчерашний снимок, и тест будет проверять не то, что проверяет.
+     */
+    private JsonNode latestState(final BlockingQueue<String> inbox) throws Exception {
+        JsonNode latest = awaitState(inbox);
+        for (String raw = inbox.poll(300, TimeUnit.MILLISECONDS); raw != null;
+             raw = inbox.poll(300, TimeUnit.MILLISECONDS)) {
+            final JsonNode envelope = JSON.readTree(raw);
+            if ("STATE_SYNC".equals(envelope.path("type").asText())) {
+                latest = envelope.get("payload");
+            }
+        }
+        return latest;
     }
 
     private void sendWithId(final WebSocketSession socket, final String id, final String type,
@@ -297,10 +339,6 @@ class ResyncIT {
     private record Match(String tableId, WebSocketSession attackerSocket,
                          BlockingQueue<String> attackerInbox, JsonNode attackerState,
                          WebSocketSession otherSocket, String otherToken) {
-
-        Match withState(final JsonNode state) {
-            return new Match(tableId, attackerSocket, attackerInbox, state, otherSocket, otherToken);
-        }
 
         void close() throws Exception {
             attackerSocket.close();
