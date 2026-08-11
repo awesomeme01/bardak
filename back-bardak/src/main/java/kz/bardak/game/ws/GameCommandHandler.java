@@ -139,6 +139,7 @@ public class GameCommandHandler {
             session.lastSeq(matchLog.append(session.matchId(), session.nextSeq(),
                     session.state().dealNo(), events));
             matchLog.dealsPlayed(session.matchId(), session.state().results().size());
+            saveSnapshot(session);
             broadcast(runtime, session, events);
             restartTurnClock(runtime, session);
         } catch (final ApiException e) {
@@ -149,6 +150,12 @@ public class GameCommandHandler {
             log.error("Игровая команда {} за столом {} упала", command.type(), tableId, e);
             sender.accept(serialize(error(command, "INTERNAL_ERROR", "Что-то пошло не так")));
         }
+    }
+
+    /** Снимок состояния после хода: из него матч поднимется, если сервер перезапустят. */
+    private void saveSnapshot(final MatchSession session) {
+        matchLog.snapshot(session.matchId(), session.lastSeq(),
+                matches.stateCodec().encode(session.state()));
     }
 
     /**
@@ -208,6 +215,7 @@ public class GameCommandHandler {
             if (result instanceof MatchResult.Applied applied) {
                 session.lastSeq(matchLog.append(session.matchId(), session.nextSeq(),
                         session.state().dealNo(), applied.events()));
+                saveSnapshot(session);
                 runtime.broadcast(serialize(Envelope.event("TURN_TIMEOUT", null,
                         session.tableId().toString(),
                         objectMapper.createObjectNode().put("seatNo", auto.seatNo()))));

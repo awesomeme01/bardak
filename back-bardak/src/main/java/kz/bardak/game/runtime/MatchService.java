@@ -14,6 +14,7 @@ import kz.bardak.game.rules.DiceResolver;
 import kz.bardak.game.rules.MatchEngine;
 import kz.bardak.game.rules.RulesConfig;
 import kz.bardak.game.rules.StateProjection;
+import kz.bardak.game.protocol.MatchStateCodec;
 import kz.bardak.history.MatchLog;
 import kz.bardak.history.domain.MatchRecord;
 import kz.bardak.lobby.LobbyService;
@@ -39,6 +40,7 @@ public class MatchService {
     private final LobbyService lobby;
     private final MatchLog matchLog;
     private final RulesConfigCodec rulesCodec;
+    private final MatchStateCodec stateCodec;
     private final Map<UUID, MatchSession> sessions = new ConcurrentHashMap<>();
     private final SecureRandom secureRandom = new SecureRandom();
 
@@ -47,10 +49,48 @@ public class MatchService {
         this.lobby = Objects.requireNonNull(lobby, "lobby");
         this.matchLog = Objects.requireNonNull(matchLog, "matchLog");
         this.rulesCodec = new RulesConfigCodec(objectMapper);
+        this.stateCodec = new MatchStateCodec(objectMapper);
+    }
+
+    public MatchStateCodec stateCodec() {
+        return stateCodec;
     }
 
     public Optional<MatchSession> find(final UUID tableId) {
-        return Optional.ofNullable(sessions.get(tableId));
+        return Optional.ofNullable(sessions.get(tableId)).or(() -> restore(tableId));
+    }
+
+    /**
+     * ⭐ Поднять матч из снимка после рестарта.
+     *
+     * <p>В памяти матча нет, а в базе он числится идущим — значит, сервер перезапускали.
+     * Игроки за столом ничего об этом знать не должны: они переподключатся и продолжат
+     * с того же места (ADR-004).
+     */
+    private Optional<MatchSession> restore(final UUID tableId) {
+        return matchLog.activeMatchFor(tableId).flatMap(record ->
+                matchLog.latestSnapshot(record.id()).map(snapshot -> {
+                    final GameTable table = lobby.byId(tableId);
+                    final RulesConfig config = rulesCodec.parse(table.rulesConfig());
+                    final MatchSession session = new MatchSession(tableId, record.id(),
+                            lobby.seats(tableId).stream().map(TablePlayer::userId).toList(),
+                            engineFor(config), projectionFor(config),
+                            stateCodec.decode(snapshot.state()));
+                    session.lastSeq(snapshot.seq());
+                    sessions.put(tableId, session);
+                    log.info("Матч за столом {} поднят из снимка на seq={}", tableId, snapshot.seq());
+                    return session;
+                }));
+    }
+
+    private MatchEngine engineFor(final RulesConfig config) {
+        return new MatchEngine(config, new AttackOrderPolicy.BardakStrictNeighbours(),
+                new DiceResolver.Seeded());
+    }
+
+    private StateProjection projectionFor(final RulesConfig config) {
+        return new StateProjection(config, new kz.bardak.game.rules.DealEngine(config,
+                new AttackOrderPolicy.BardakStrictNeighbours(), new DiceResolver.Seeded()));
     }
 
     /**
@@ -73,8 +113,7 @@ public class MatchService {
                 .toList();
 
         final RulesConfig config = rulesCodec.parse(table.rulesConfig());
-        final MatchEngine engine = new MatchEngine(config,
-                new AttackOrderPolicy.BardakStrictNeighbours(), new DiceResolver.Seeded());
+        final MatchEngine engine = engineFor(config);
         // ⭐ Seed матча из SecureRandom, а дальше всё случайное выводится из него (§6):
         // матч воспроизводится по паре «seed + последовательность команд».
         final long matchSeed = secureRandom.nextLong();
@@ -85,9 +124,7 @@ public class MatchService {
                 table.rulesConfig());
 
         final MatchSession session = new MatchSession(tableId, record.id(), seatUsers, engine,
-                new StateProjection(config, new kz.bardak.game.rules.DealEngine(config,
-                        new AttackOrderPolicy.BardakStrictNeighbours(), new DiceResolver.Seeded())),
-                engine.startMatch(seatUsers.size(), matchSeed));
+                projectionFor(config), engine.startMatch(seatUsers.size(), matchSeed));
 
         sessions.put(tableId, session);
         lobby.startMatch(tableId);

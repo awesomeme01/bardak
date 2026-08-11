@@ -13,6 +13,8 @@ import kz.bardak.history.domain.MatchEventRecord;
 import kz.bardak.history.domain.MatchEventRepository;
 import kz.bardak.history.domain.MatchRecord;
 import kz.bardak.history.domain.MatchRecordRepository;
+import kz.bardak.history.domain.MatchSnapshotRecord;
+import kz.bardak.history.domain.MatchSnapshotRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -31,13 +33,16 @@ public class MatchLog {
 
     private final MatchRecordRepository matches;
     private final MatchEventRepository events;
+    private final MatchSnapshotRepository snapshots;
     private final ObjectMapper objectMapper;
     private final Clock clock;
 
     public MatchLog(final MatchRecordRepository matches, final MatchEventRepository events,
-                    final ObjectMapper objectMapper, final Clock clock) {
+                    final MatchSnapshotRepository snapshots, final ObjectMapper objectMapper,
+                    final Clock clock) {
         this.matches = Objects.requireNonNull(matches, "matches");
         this.events = Objects.requireNonNull(events, "events");
+        this.snapshots = Objects.requireNonNull(snapshots, "snapshots");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
         this.clock = Objects.requireNonNull(clock, "clock");
     }
@@ -93,6 +98,31 @@ public class MatchLog {
         return events.findByMatchIdAndSeqGreaterThanOrderBySeqAsc(matchId, lastSeq).stream()
                 .filter(event -> event.isVisibleTo(seatNo))
                 .toList();
+    }
+
+    /**
+     * Сохранить снимок состояния.
+     *
+     * <p>⚠️ Схема допускает снимок «раз в N событий», мы пишем его <b>после каждого хода</b>.
+     * Причина: движок применяет команды, а не события, и проиграть лог поверх старого
+     * снимка нечем — значит, всё после снимка было бы потеряно. Состояние одной раздачи
+     * — это сорок с небольшим карт, и точность здесь дешевле экономии байтов.
+     */
+    @Transactional
+    public void snapshot(final UUID matchId, final int seq, final String state) {
+        snapshots.save(new MatchSnapshotRecord(matchId, seq, state));
+    }
+
+    @Transactional(readOnly = true)
+    public java.util.Optional<MatchSnapshotRecord> latestSnapshot(final UUID matchId) {
+        return snapshots.findFirstByMatchIdOrderBySeqDesc(matchId);
+    }
+
+    @Transactional(readOnly = true)
+    public java.util.Optional<MatchRecord> activeMatchFor(final UUID tableId) {
+        return matches.findByTableIdOrderByStartedAtDesc(tableId).stream()
+                .filter(match -> match.status() == kz.bardak.history.domain.MatchRecordStatus.IN_PROGRESS)
+                .findFirst();
     }
 
     @Transactional
