@@ -87,7 +87,14 @@ function refreshOnce() {
     return refreshInFlight;
 }
 
-function send(method, path, body, token) {
+/**
+ * ⭐ Сетевой сбой отличается от отказа сервера.
+ *
+ * `fetch` бросает `TypeError` и когда сети нет, и когда сервер не отвечает, — а вызывающий
+ * по такому исключению не может понять, что делать: ждать и повторить или разлогинить
+ * пользователя. Приводим его к тому же виду, что и ответы с ошибкой, с отдельным кодом.
+ */
+async function send(method, path, body, token) {
     const headers = {'Accept': 'application/json'};
     if (body !== null && body !== undefined) {
         headers['Content-Type'] = 'application/json';
@@ -95,11 +102,15 @@ function send(method, path, body, token) {
     if (token) {
         headers['Authorization'] = `Bearer ${token}`;
     }
-    return fetch(`${BASE}${path}`, {
-        method,
-        headers,
-        body: body === null || body === undefined ? undefined : JSON.stringify(body),
-    });
+    try {
+        return await fetch(`${BASE}${path}`, {
+            method,
+            headers,
+            body: body === null || body === undefined ? undefined : JSON.stringify(body),
+        });
+    } catch {
+        throw new ApiError('NETWORK_UNAVAILABLE', 'Сервер недоступен', null);
+    }
 }
 
 async function unwrap(response) {

@@ -9,7 +9,9 @@ import kz.bardak.auth.domain.UserRepository;
 import kz.bardak.game.runtime.MatchService;
 import kz.bardak.game.runtime.MatchSession;
 import kz.bardak.game.rules.DealCommand;
+import kz.bardak.game.rules.DealPhase;
 import kz.bardak.game.rules.MatchResult;
+import kz.bardak.game.rules.Suit;
 import kz.bardak.lobby.LobbyService;
 import kz.bardak.lobby.domain.CardSetRepository;
 import kz.bardak.lobby.domain.TableThemeRepository;
@@ -59,6 +61,7 @@ class SnapshotRestoreIT {
     void shouldBringTheMatchBackExactlyWhenTheServerForgotIt() {
         final UUID tableId = readyTable("snap-a", "snap-b");
         final MatchSession session = matches.start(tableId);
+        resolveDice(session);
 
         // Один ход и снимок — как это делает боевой обработчик команд.
         final int attacker = session.state().deal().attackRightSeat();
@@ -77,6 +80,26 @@ class SnapshotRestoreIT {
         assertThat(restored.matchId()).isEqualTo(session.matchId());
         assertThat(restored.players()).isEqualTo(session.players());
         assertThat(restored.lastSeq()).isEqualTo(1);
+    }
+
+    /**
+     * ⭐ Довести раздачу до фазы атаки.
+     *
+     * <p>Нижней картой колоды может выпасть джокер — тогда масть козыря разыгрывается
+     * костью (§1.2), и до её выбора любой ход отклоняется. Сдача случайна: без этого шага
+     * тест падает примерно раз в восемь прогонов, и падение выглядит как поломка снимков.
+     */
+    private void resolveDice(final MatchSession session) {
+        if (session.state().deal().phase() != DealPhase.DICE) {
+            return;
+        }
+        final int chooser = session.state().deal().attackRightSeat();
+        for (final Suit suit : Suit.values()) {
+            if (session.apply(new DealCommand.ChooseTrump(chooser, suit)).isApplied()) {
+                return;
+            }
+        }
+        throw new AssertionError("Козырь разыгрывается костью, но ни одна масть не подошла");
     }
 
     @DisplayName("Should keep every hand intact When the match is restored")

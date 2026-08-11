@@ -15,7 +15,10 @@
  * живёт секунды и сгорает при использовании. Поэтому реконнект — это всегда сначала
  * REST-запрос, и только потом сокет.
  *
- * Чего ещё нет: отслеживания seq и RESYNC (M4).
+ * ⭐ Восстановление после разрыва — не только «сокет снова открыт». Пока нас не было,
+ * за столом что-то происходило, и клиент об этом не знает. Поэтому у соединения есть
+ * отдельный обработчик `onReconnect`: он вызывается только на повторных подключениях
+ * и просит догон (`RESYNC`) — при первом подключении догонять нечего.
  */
 
 import {apiPost} from './rest-client.js';
@@ -27,10 +30,21 @@ const BACKOFF_MAX_MS = 30000;
 const HEARTBEAT_INTERVAL_MS = 20000;
 const HEARTBEAT_MISS_LIMIT = 2;
 
+/**
+ * ⭐ Сколько живёт отложенная команда.
+ *
+ * Ход, нажатый в момент разрыва, терять нельзя — но и отправлять его через минуту тоже:
+ * за это время сервер сходил за игрока по таймауту (§5.1), раздача ушла вперёд, и старый
+ * ход означал бы уже совсем другое. Срок равен таймауту хода: позже него команда
+ * заведомо опоздала.
+ */
+const COMMAND_TTL_MS = 30000;
+
 export class WsClient {
     #url;
     #onEvent;
     #onStatus;
+    #onReconnect;
 
     #socket = null;
     #reconnectDelay = BACKOFF_START_MS;
@@ -41,10 +55,14 @@ export class WsClient {
     #commandCounter = 0;
     #closedByUs = false;
 
-    constructor({url, onEvent, onStatus} = {}) {
+    /** Было ли соединение уже открыто: отличает переподключение от первого входа. */
+    #wasConnected = false;
+
+    constructor({url, onEvent, onStatus, onReconnect} = {}) {
         this.#url = url ?? defaultUrl();
         this.#onEvent = onEvent ?? (() => {});
         this.#onStatus = onStatus ?? (() => {});
+        this.#onReconnect = onReconnect ?? (() => {});
     }
 
     async connect() {
@@ -54,9 +72,17 @@ export class WsClient {
         let ticket;
         try {
             ticket = (await apiPost('/auth/ws-ticket', {})).ticket;
-        } catch {
-            // Тикет не выдали — значит, сессии нет. Молча ретраить бессмысленно:
-            // пока пользователь не войдёт заново, сокет всё равно не откроется.
+        } catch (error) {
+            // ⭐ Сервер не ответил — это не отказ в доступе, а обрыв связи. Раньше здесь
+            // обе беды лечились одинаково: попытка прекращалась навсегда, и партия
+            // не переживала даже секундного пропадания сети.
+            if (error?.code === 'NETWORK_UNAVAILABLE') {
+                this.#onStatus('offline');
+                this.#scheduleReconnect();
+                return;
+            }
+            // Тикет не выдали по существу — значит, сессии нет. Молча ретраить
+            // бессмысленно: пока пользователь не войдёт заново, сокет не откроется.
             this.#onStatus('unauthorized');
             return;
         }
@@ -72,6 +98,12 @@ export class WsClient {
             this.#missedPongs = 0;
             this.#onStatus('open');
             this.#startHeartbeat();
+            // ⭐ Сначала догон, потом отложенные ходы: сервер должен получить их
+            // в состоянии, которое мы уже знаем, а мы — увидеть пропущенное.
+            if (this.#wasConnected) {
+                this.#onReconnect();
+            }
+            this.#wasConnected = true;
             this.#flushPending();
         });
 
@@ -131,7 +163,12 @@ export class WsClient {
     #flushPending() {
         const queued = this.#pending;
         this.#pending = [];
+        const now = Date.now();
         for (const envelope of queued) {
+            if (now - envelope.ts > COMMAND_TTL_MS) {
+                this.#onEvent({type: 'COMMAND_EXPIRED', payload: {type: envelope.type}});
+                continue;
+            }
             this.#socket.send(JSON.stringify(envelope));
         }
     }

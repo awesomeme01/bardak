@@ -15,7 +15,8 @@ const REFRESH_KEY = 'bardak.refreshToken';
 
 export const session = $state({
     user: null,
-    status: 'unknown', // unknown | anonymous | authenticated
+    // unknown — ещё восстанавливаем; offline — сервера нет, но вход не потерян
+    status: 'unknown',
 });
 
 configureAuth({
@@ -38,9 +39,23 @@ export async function restoreSession() {
             return;
         }
         applyTokens(await response.json());
-    } catch {
+    } catch (error) {
+        // ⭐ Сервер не ответил — это не отказ в доступе. Раньше здесь стирался refresh,
+        // и приложение, открытое без сети, теряло вход: вернуться можно было только
+        // набрав пароль заново, чего офлайн как раз и не сделать.
+        if (error?.code === 'NETWORK_UNAVAILABLE') {
+            session.status = 'offline';
+            window.addEventListener('online', restoreSession, {once: true});
+            return;
+        }
         clearSession();
     }
+}
+
+/** Повторить попытку вручную: кнопка на экране «нет сети». */
+export function retrySession() {
+    session.status = 'unknown';
+    return restoreSession();
 }
 
 export async function login(username, password) {

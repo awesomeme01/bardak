@@ -40,11 +40,27 @@ export async function enterTable(info) {
     client = new WsClient({
         onStatus: (status) => (table.status = status),
         onEvent: onEnvelope,
+        onReconnect: resync,
     });
     await client.connect();
     client.send('TABLE_JOIN', {}, info.id);
     // Если матч уже идёт — сервер пришлёт снимок; если нет, ответит, что матча нет.
     client.send('STATE_REQUEST', {}, info.id);
+}
+
+/**
+ * Догнать пропущенное после разрыва.
+ *
+ * ⭐ Просим и события с последнего известного номера, и полный снимок: за время разрыва
+ * могла закончиться раздача, и тогда события собрать состояние уже не помогут — вернуть
+ * в него можно только снимком.
+ */
+function resync() {
+    if (!table.info) {
+        return;
+    }
+    client?.send('RESYNC', {lastSeq: table.lastSeq}, table.info.id);
+    notify('Связь восстановлена — догоняю стол');
 }
 
 export function leaveTable() {
@@ -106,6 +122,10 @@ function onEnvelope(envelope) {
         case 'MATCH_ABORTED':
             table.notice = 'Матч отменён: игрок не вернулся';
             clearTimeout(noticeTimer);
+            break;
+        case 'COMMAND_EXPIRED':
+            // Ход ждал восстановления связи дольше таймаута хода: сервер уже сходил сам.
+            notify('Ход не отправлен: связь вернулась слишком поздно');
             break;
         case 'TURN_TIMEOUT':
             notify('Ход не сделан вовремя — сервер сходил сам');

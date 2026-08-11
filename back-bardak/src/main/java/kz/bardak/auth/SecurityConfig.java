@@ -50,8 +50,12 @@ public class SecurityConfig {
                         // слать Authorization, поэтому его авторизует не Spring Security,
                         // а WsTicketHandshakeInterceptor по одноразовому тикету (ADR-005).
                         .requestMatchers("/ws").permitAll()
+                        // Оболочка приложения. ⭐ Манифест и иконки — тоже: без них браузер
+                        // не считает приложение устанавливаемым, а спрашивать токен
+                        // при чтении манифеста он и не станет.
                         .requestMatchers(HttpMethod.GET, "/", "/index.html", "/app/**", "/*.css",
-                                "/*.js", "/*.ico", "/*.png", "/*.svg").permitAll()
+                                "/*.js", "/*.ico", "/*.png", "/*.svg", "/manifest.webmanifest",
+                                "/icons/**").permitAll()
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> {
                 }))

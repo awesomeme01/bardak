@@ -6,5 +6,8 @@
 
 import {mount} from 'svelte';
 import App from './App.svelte';
+import {initPwa} from './stores/pwa.svelte.js';
+
+initPwa();
 
 export default mount(App, {target: document.getElementById('app')});
