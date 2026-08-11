@@ -132,6 +132,14 @@ public class LobbyService {
         return players.save(seat);
     }
 
+    /** Стол переходит в матч: новые игроки за него уже не сядут. */
+    @Transactional
+    public void startMatch(final UUID tableId) {
+        final GameTable table = tables.findById(tableId).orElseThrow(LobbyService::tableNotFound);
+        table.startMatch();
+        tables.save(table);
+    }
+
     @Transactional
     public void close(final UUID tableId, final UUID userId) {
         final GameTable table = tables.findById(tableId).orElseThrow(LobbyService::tableNotFound);

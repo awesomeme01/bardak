@@ -16,6 +16,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import kz.bardak.lobby.ws.LobbyCommandHandler;
+import kz.bardak.game.ws.GameCommandHandler;
 
 /**
  * M1: эхо-обработчик. Никакой игровой логики — только проверка того, что конверт
@@ -51,14 +52,17 @@ public class EchoWebSocketHandler extends TextWebSocketHandler {
 
     private final ObjectMapper objectMapper;
     private final LobbyCommandHandler lobbyCommands;
+    private final GameCommandHandler gameCommands;
     private final Map<String, WebSocketSession> sessions = new ConcurrentHashMap<>();
 
     /** Где сидит соединение: нужно, чтобы при обрыве отписать игрока от его стола. */
     private final Map<String, UUID> sessionTables = new ConcurrentHashMap<>();
 
-    public EchoWebSocketHandler(ObjectMapper objectMapper, LobbyCommandHandler lobbyCommands) {
+    public EchoWebSocketHandler(ObjectMapper objectMapper, LobbyCommandHandler lobbyCommands,
+                                GameCommandHandler gameCommands) {
         this.objectMapper = objectMapper;
         this.lobbyCommands = lobbyCommands;
+        this.gameCommands = gameCommands;
     }
 
     @Override
@@ -99,6 +103,14 @@ public class EchoWebSocketHandler extends TextWebSocketHandler {
 
         if ("PING".equals(incoming.type())) {
             send(out, Envelope.event("PONG", incoming.id(), incoming.tableId(), null));
+            return;
+        }
+
+        if (gameCommands.handles(incoming.type())) {
+            if (incoming.tableId() != null) {
+                sessionTables.put(session.getId(), UUID.fromString(incoming.tableId()));
+            }
+            gameCommands.handle(incoming, (UUID) userOf(session), event -> sendRaw(out, event));
             return;
         }
 
