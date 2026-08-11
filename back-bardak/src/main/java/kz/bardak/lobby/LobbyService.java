@@ -140,6 +140,23 @@ public class LobbyService {
         tables.save(table);
     }
 
+    /**
+     * Матч кончился — стол снова ждёт.
+     *
+     * <p>Готовность сбрасывается всем: следующий матч должен начаться по общему согласию,
+     * а не потому, что галочка осталась с прошлого раза.
+     */
+    @Transactional
+    public void finishMatch(final UUID tableId) {
+        final GameTable table = tables.findById(tableId).orElseThrow(LobbyService::tableNotFound);
+        table.finishMatch();
+        tables.save(table);
+        for (final TablePlayer seat : seats(tableId)) {
+            seat.setReady(false);
+            players.save(seat);
+        }
+    }
+
     @Transactional
     public void close(final UUID tableId, final UUID userId) {
         final GameTable table = tables.findById(tableId).orElseThrow(LobbyService::tableNotFound);

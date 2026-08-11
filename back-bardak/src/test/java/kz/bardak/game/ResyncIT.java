@@ -223,9 +223,30 @@ class ResyncIT {
         // Ходит тот, у кого младший козырь: кто именно — решает сдача.
         final boolean hostAttacks = hostState.get("canAttackSeat").asInt()
                 == hostState.get("mySeat").asInt();
-        return hostAttacks
+        final Match match = hostAttacks
                 ? new Match(tableId, hostSocket, hostInbox, hostState, guestSocket, guestToken)
                 : new Match(tableId, guestSocket, guestInbox, guestState, hostSocket, hostToken);
+        return resolveDice(match);
+    }
+
+    /**
+     * ⭐ Раздача может начаться с кости: если нижней картой колоды выпал джокер, масть
+     * козыря разыгрывается, и до её выбора никаких ходов нет вообще (§1.2). Сдача случайна,
+     * поэтому тест обязан пройти этот шаг сам — иначе он падает примерно раз в восемь
+     * прогонов и выглядит как поломка ресинка.
+     */
+    private Match resolveDice(final Match match) throws Exception {
+        if (!"DICE".equals(match.attackerState().path("phase").asText())) {
+            return match;
+        }
+        for (final JsonNode action : match.attackerState().get("availableActions")) {
+            if ("CHOOSE_TRUMP".equals(action.get("type").asText())) {
+                sendWithId(match.attackerSocket(), "dice", "CHOOSE_TRUMP", match.tableId(),
+                        Map.of("suit", action.get("payload").get("suit").asText()));
+                return match.withState(awaitState(match.attackerInbox()));
+            }
+        }
+        throw new AssertionError("Козырь разыгрывается костью, но выбрать масть некому");
     }
 
     private void sendWithId(final WebSocketSession socket, final String id, final String type,
@@ -276,6 +297,10 @@ class ResyncIT {
     private record Match(String tableId, WebSocketSession attackerSocket,
                          BlockingQueue<String> attackerInbox, JsonNode attackerState,
                          WebSocketSession otherSocket, String otherToken) {
+
+        Match withState(final JsonNode state) {
+            return new Match(tableId, attackerSocket, attackerInbox, state, otherSocket, otherToken);
+        }
 
         void close() throws Exception {
             attackerSocket.close();

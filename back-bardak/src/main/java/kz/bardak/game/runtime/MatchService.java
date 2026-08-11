@@ -74,7 +74,7 @@ public class MatchService {
                     final RulesConfig config = rulesCodec.parse(table.rulesConfig());
                     final MatchSession session = new MatchSession(tableId, record.id(),
                             lobby.seats(tableId).stream().map(TablePlayer::userId).toList(),
-                            engineFor(config), projectionFor(config),
+                            engineFor(config), projectionFor(config), config,
                             stateCodec.decode(snapshot.state()));
                     session.lastSeq(snapshot.seq());
                     sessions.put(tableId, session);
@@ -124,7 +124,7 @@ public class MatchService {
                 table.rulesConfig());
 
         final MatchSession session = new MatchSession(tableId, record.id(), seatUsers, engine,
-                projectionFor(config), engine.startMatch(seatUsers.size(), matchSeed));
+                projectionFor(config), config, engine.startMatch(seatUsers.size(), matchSeed));
 
         sessions.put(tableId, session);
         lobby.startMatch(tableId);

@@ -10,6 +10,7 @@ import kz.bardak.game.rules.MatchEngine;
 import kz.bardak.game.rules.MatchResult;
 import kz.bardak.game.rules.MatchState;
 import kz.bardak.game.rules.PlayerView;
+import kz.bardak.game.rules.RulesConfig;
 import kz.bardak.game.rules.StateProjection;
 
 /**
@@ -30,6 +31,12 @@ public final class MatchSession {
     private final MatchEngine engine;
     private final StateProjection projection;
 
+    /**
+     * Правила, по которым играется этот матч. Не текущие правила стола: те могли поменяться,
+     * а матч обязан доиграться и записаться по своим (см. {@code rules_snapshot}).
+     */
+    private final RulesConfig config;
+
     private MatchState state;
 
     /** Сквозной номер события по матчу. Живёт на потоке стола, поэтому просто int. */
@@ -47,12 +54,13 @@ public final class MatchSession {
 
     public MatchSession(final UUID tableId, final UUID matchId, final List<UUID> seatUsers,
                         final MatchEngine engine, final StateProjection projection,
-                        final MatchState state) {
+                        final RulesConfig config, final MatchState state) {
         this.tableId = Objects.requireNonNull(tableId, "tableId");
         this.matchId = Objects.requireNonNull(matchId, "matchId");
         this.seatUsers = List.copyOf(Objects.requireNonNull(seatUsers, "seatUsers"));
         this.engine = Objects.requireNonNull(engine, "engine");
         this.projection = Objects.requireNonNull(projection, "projection");
+        this.config = Objects.requireNonNull(config, "config");
         this.state = Objects.requireNonNull(state, "state");
     }
 
@@ -60,6 +68,10 @@ public final class MatchSession {
 
     public UUID tableId() {
         return tableId;
+    }
+
+    public RulesConfig config() {
+        return config;
     }
 
     /** Команда с этим идентификатором уже применялась. */

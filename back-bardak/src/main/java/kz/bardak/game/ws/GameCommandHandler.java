@@ -23,6 +23,8 @@ import kz.bardak.game.rules.DealCommand;
 import kz.bardak.game.rules.DealEvent;
 import kz.bardak.game.rules.MatchResult;
 import kz.bardak.history.MatchLog;
+import kz.bardak.lobby.LobbyService;
+import kz.bardak.rating.MatchResultService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -46,6 +48,8 @@ public class GameCommandHandler {
 
     private final MatchService matches;
     private final MatchLog matchLog;
+    private final MatchResultService results;
+    private final LobbyService lobby;
     private final TableRegistry registry;
     private final UserRepository users;
     private final ObjectMapper objectMapper;
@@ -53,11 +57,14 @@ public class GameCommandHandler {
     private final GameProperties properties;
 
     public GameCommandHandler(final MatchService matches, final MatchLog matchLog,
+                              final MatchResultService results, final LobbyService lobby,
                               final TableRegistry registry, final UserRepository users,
                               final ObjectMapper objectMapper, final TurnClock clock,
                               final GameProperties properties) {
         this.matches = Objects.requireNonNull(matches, "matches");
         this.matchLog = Objects.requireNonNull(matchLog, "matchLog");
+        this.results = Objects.requireNonNull(results, "results");
+        this.lobby = Objects.requireNonNull(lobby, "lobby");
         this.clock = Objects.requireNonNull(clock, "clock");
         this.properties = Objects.requireNonNull(properties, "properties");
         this.registry = Objects.requireNonNull(registry, "registry");
@@ -84,6 +91,7 @@ public class GameCommandHandler {
         try {
             if ("MATCH_START".equals(command.type())) {
                 final MatchSession session = matches.start(tableId);
+                results.startMatch(session.matchId(), session.players());
                 runtime.subscribe(userId, sender);
                 broadcast(runtime, session, List.of());
                 restartTurnClock(runtime, session);
@@ -142,6 +150,7 @@ public class GameCommandHandler {
             saveSnapshot(session);
             broadcast(runtime, session, events);
             restartTurnClock(runtime, session);
+            finishIfOver(runtime, session);
         } catch (final ApiException e) {
             sender.accept(serialize(error(command, e.code(), e.getMessage())));
         } catch (final IllegalArgumentException e) {
@@ -150,6 +159,46 @@ public class GameCommandHandler {
             log.error("Игровая команда {} за столом {} упала", command.type(), tableId, e);
             sender.accept(serialize(error(command, "INTERNAL_ERROR", "Что-то пошло не так")));
         }
+    }
+
+    /**
+     * Матч окончен: записать итог, пересчитать рейтинг, освободить стол.
+     *
+     * <p>⭐ Итог и рейтинг пишет {@link MatchResultService} одной транзакцией, и только
+     * после её успеха стол объявляется свободным. Иначе стол успел бы открыться для нового
+     * матча, а результат прошлого — не записаться.
+     */
+    private void finishIfOver(final TableRuntime runtime, final MatchSession session) {
+        if (!session.state().isOver()) {
+            return;
+        }
+        final List<MatchResultService.RatingChange> changes = results.finishMatch(session.matchId(),
+                session.players(), session.state(), session.config().navesScale());
+        matches.finish(session.tableId());
+        lobby.finishMatch(session.tableId());
+        runtime.broadcast(serialize(Envelope.event("MATCH_OVER", null, session.tableId().toString(),
+                matchOverPayload(session, changes))));
+        log.info("Матч {} завершён, рейтинг пересчитан по {} игрокам", session.matchId(), changes.size());
+    }
+
+    private ObjectNode matchOverPayload(final MatchSession session,
+                                        final List<MatchResultService.RatingChange> changes) {
+        final ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("matchId", session.matchId().toString());
+        final var players = payload.putArray("players");
+        for (final MatchResultService.RatingChange change : changes) {
+            final ObjectNode node = players.addObject();
+            node.put("userId", change.userId().toString());
+            node.put("seatNo", session.seatOf(change.userId()).orElse(-1));
+            node.put("displayName", displayName(change.userId()));
+            node.put("place", change.place());
+            node.put("navesLevel", change.navesLevel());
+            node.put("lossDegree", change.lossDegree() == null ? null : change.lossDegree().name());
+            node.put("ratingBefore", change.before());
+            node.put("ratingAfter", change.after());
+            node.put("ratingDelta", change.delta());
+        }
+        return payload;
     }
 
     /** Снимок состояния после хода: из него матч поднимется, если сервер перезапустят. */
@@ -221,6 +270,7 @@ public class GameCommandHandler {
                         objectMapper.createObjectNode().put("seatNo", auto.seatNo()))));
                 broadcast(runtime, session, applied.events());
                 restartTurnClock(runtime, session);
+                finishIfOver(runtime, session);
             }
         });
     }

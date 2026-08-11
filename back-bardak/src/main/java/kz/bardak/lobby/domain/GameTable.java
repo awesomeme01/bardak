@@ -149,4 +149,9 @@ public class GameTable {
     public void startMatch() {
         this.status = TableStatus.IN_MATCH;
     }
+
+    /** Матч кончился — стол снова открыт: можно доукомплектоваться и сыграть ещё. */
+    public void finishMatch() {
+        this.status = TableStatus.WAITING;
+    }
 }
