@@ -117,14 +117,27 @@ class DealerTest {
                 .isEqualTo(dealer.startDeal(freshLevels(2), seed).players());
     }
 
-    @DisplayName("Should open the dice phase When the bottom card is a joker")
+    @DisplayName("Should open the dice phase When the trump card is a joker")
     @Test
-    void shouldOpenTheDicePhaseWhenTheBottomCardIsAJoker() {
+    void shouldOpenTheDicePhaseWhenTheTrumpCardIsAJoker() {
         final DealState deal = dealWithJokerAtTheBottom();
 
         assertThat(deal.phase()).isEqualTo(DealPhase.DICE);
         assertThat(deal.hasTrump()).isFalse();
-        assertThat(deal.deck().get(deal.deck().size() - 1)).isInstanceOf(JokerCard.class);
+        assertThat(deal.deck().get(deal.deck().size() - 2)).isInstanceOf(JokerCard.class);
+    }
+
+    @DisplayName("Should keep the hidden trump under the trump card When a deal starts")
+    @Test
+    void shouldKeepTheHiddenTrumpUnderTheTrumpCardWhenADealStarts() {
+        final DealState deal = dealFinishedByCard();
+        final List<Card> deck = deal.deck();
+
+        assertThat(deck).hasSizeGreaterThan(1);
+        assertThat(deck.get(deck.size() - 2))
+                .isInstanceOfSatisfying(PipCard.class,
+                        card -> assertThat(card.suit()).isEqualTo(deal.trump().suit()));
+        assertThat(deal.hiddenTrumpAwaitingSuit()).isEmpty();
     }
 
     private static Rank lowestTrumpRank(final DealState deal, final int seatNo) {

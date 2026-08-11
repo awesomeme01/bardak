@@ -42,6 +42,9 @@ public final class DealEngine {
         if (state.phase() == DealPhase.DEAL_OVER) {
             return MoveResult.rejected(RejectionReason.NOT_YOUR_TURN);
         }
+        if (state.phase() == DealPhase.DICE && !(command instanceof DealCommand.ChooseTrump)) {
+            return MoveResult.rejected(RejectionReason.TRUMP_NOT_CHOSEN_YET);
+        }
         return switch (command) {
             case DealCommand.Attack attack -> applyAttack(state, attack);
             case DealCommand.Defend defend -> applyDefend(state, defend);
@@ -64,6 +67,9 @@ public final class DealEngine {
         if (state.phase() != DealPhase.DICE) {
             return MoveResult.rejected(RejectionReason.TRUMP_NOT_IN_DISPUTE);
         }
+        if (state.hiddenTrumpAwaitingSuit().isPresent()) {
+            return chooseTrumpForHiddenTrump(state, command);
+        }
         if (state.attackRightSeat() != command.seatNo()) {
             return MoveResult.rejected(RejectionReason.NOT_YOUR_TURN);
         }
@@ -76,6 +82,29 @@ public final class DealEngine {
                 .attackRightSeat(starter)
                 .defenderSeat(state.nextActiveSeatAfter(starter))
                 .build(), List.of(new DealEvent.TrumpChosen(command.seatNo(), command.suit())));
+    }
+
+    /**
+     * ⭐ Потайной козырь оказался джокером: сначала кость и выбор масти, и только потом
+     * карта уходит в руку добирающему (§1.9, ADR-035). Порядок раунда при этом уже
+     * посчитан — первый ход по младшему козырю определяется только при сдаче.
+     */
+    private MoveResult chooseTrumpForHiddenTrump(final DealState state, final DealCommand.ChooseTrump command) {
+        final PendingHiddenTrump pending = state.hiddenTrumpAwaitingSuit().orElseThrow();
+        if (pending.chooserSeat() != command.seatNo()) {
+            return MoveResult.rejected(RejectionReason.NOT_YOUR_TURN);
+        }
+        final PlayerState recipient = state.playerAt(pending.recipientSeat());
+        final List<Card> hand = new ArrayList<>(recipient.hand());
+        hand.add(pending.card());
+        return MoveResult.applied(state.toBuilder()
+                .trump(Trump.of(command.suit()))
+                .player(recipient.withHand(List.copyOf(hand)))
+                .pendingHiddenTrump(null)
+                .phase(DealPhase.ATTACK)
+                .build(), List.of(
+                        new DealEvent.TrumpChosen(command.seatNo(), command.suit()),
+                        new DealEvent.CardsDrawn(pending.recipientSeat(), List.of(pending.card()))));
     }
 
     /** Первый ход — у обладателя младшего козыря (§1.2), уже по выбранной масти. */
@@ -443,7 +472,10 @@ public final class DealEngine {
             events.add(new DealEvent.DealFinished(loser));
             return afterExits.toBuilder().phase(DealPhase.DEAL_OVER).build();
         }
-        return startNextRound(afterExits, taken);
+        final DealState nextRound = startNextRound(afterExits, taken);
+        return nextRound.hiddenTrumpAwaitingSuit()
+                .map(pending -> nextRound.toBuilder().phase(DealPhase.DICE).build())
+                .orElse(nextRound);
     }
 
     /**
@@ -470,11 +502,27 @@ public final class DealEngine {
     private DealState refill(final DealState state, final List<DealEvent> events) {
         final List<Card> deck = new ArrayList<>(state.deck());
         DealState current = state;
+        PendingHiddenTrump pending = null;
+        Trump newTrump = null;
         for (final int seat : refillOrder(state)) {
             final PlayerState player = current.playerAt(seat);
             final List<Card> drawn = new ArrayList<>();
             while (player.handSize() + drawn.size() < config.dealSize() && !deck.isEmpty()) {
-                drawn.add(deck.remove(0));
+                final boolean lastCard = deck.size() == 1;
+                final Card card = deck.remove(0);
+                if (!lastCard) {
+                    drawn.add(card);
+                    continue;
+                }
+                events.add(new DealEvent.HiddenTrumpRevealed(seat, card));
+                if (card instanceof PipCard pip) {
+                    newTrump = Trump.of(pip.suit());
+                    events.add(new DealEvent.TrumpChanged(seat, pip.suit()));
+                    drawn.add(card);
+                } else {
+                    pending = new PendingHiddenTrump(card, seat,
+                            dice.winnerAmong(seatsInDeal(current), current.rngSeed(), current.diceRolls()));
+                }
             }
             if (drawn.isEmpty()) {
                 continue;
@@ -484,7 +532,21 @@ public final class DealEngine {
             events.add(new DealEvent.CardsDrawn(seat, List.copyOf(drawn)));
             current = current.toBuilder().player(player.withHand(List.copyOf(hand))).build();
         }
-        return current.toBuilder().deck(List.copyOf(deck)).build();
+        final DealState.Builder builder = current.toBuilder().deck(List.copyOf(deck));
+        if (newTrump != null) {
+            builder.trump(newTrump);
+        }
+        if (pending != null) {
+            builder.pendingHiddenTrump(pending).diceRolls(current.diceRolls() + 1);
+        }
+        return builder.build();
+    }
+
+    private List<Integer> seatsInDeal(final DealState state) {
+        return state.players().stream()
+                .filter(PlayerState::inDeal)
+                .map(PlayerState::seatNo)
+                .toList();
     }
 
     private List<Integer> refillOrder(final DealState state) {

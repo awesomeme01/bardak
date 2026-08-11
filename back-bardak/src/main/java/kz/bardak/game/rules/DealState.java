@@ -33,6 +33,8 @@ import java.util.Optional;
  * @param lastAttackCards    состав последней атаки раздачи. ⭐ Нужен для степеней проигрыша:
  *                           считаются восьмёрки в том, что было выложено, а не в том, что
  *                           попало игроку в руку (§0.3)
+ * @param pendingHiddenTrump потайной козырь-джокер, ждущий выбора масти (§1.9); обычно
+ *                           {@code null}
  * @param rngSeed            под-seed раздачи: всё случайное выводится из него (§6)
  * @param diceRolls          сколько бросков кости уже случилось в раздаче — чтобы два спора
  *                           подряд не давали одинаковый результат
@@ -52,6 +54,7 @@ public record DealState(
         boolean anyPileDiscarded,
         HangingWindow hangingWindow,
         List<Card> lastAttackCards,
+        PendingHiddenTrump pendingHiddenTrump,
         long rngSeed,
         int diceRolls) {
 
@@ -137,6 +140,11 @@ public record DealState(
         return passedSeats.contains(seatNo);
     }
 
+    /** Потайной козырь-джокер ждёт, пока назовут масть (§1.9). */
+    public Optional<PendingHiddenTrump> hiddenTrumpAwaitingSuit() {
+        return Optional.ofNullable(pendingHiddenTrump);
+    }
+
     public Optional<HangingWindow> hanging() {
         return Optional.ofNullable(hangingWindow);
     }
@@ -165,6 +173,7 @@ public record DealState(
         private boolean anyPileDiscarded;
         private HangingWindow hangingWindow;
         private List<Card> lastAttackCards;
+        private PendingHiddenTrump pendingHiddenTrump;
         private long rngSeed;
         private int diceRolls;
 
@@ -183,6 +192,7 @@ public record DealState(
             this.anyPileDiscarded = state.anyPileDiscarded;
             this.hangingWindow = state.hangingWindow;
             this.lastAttackCards = state.lastAttackCards;
+            this.pendingHiddenTrump = state.pendingHiddenTrump;
             this.rngSeed = state.rngSeed;
             this.diceRolls = state.diceRolls;
         }
@@ -264,6 +274,11 @@ public record DealState(
             return this;
         }
 
+        public Builder pendingHiddenTrump(final PendingHiddenTrump value) {
+            this.pendingHiddenTrump = value;
+            return this;
+        }
+
         public Builder rngSeed(final long value) {
             this.rngSeed = value;
             return this;
@@ -278,7 +293,7 @@ public record DealState(
             return new DealState(phase, trump, deck, players, table, roundStarterSeat,
                     attackRightSeat, defenderSeat, passedSeats, exitOrder,
                     anyCardBeatenThisRound, anyPileDiscarded, hangingWindow, lastAttackCards,
-                    rngSeed, diceRolls);
+                    pendingHiddenTrump, rngSeed, diceRolls);
         }
     }
 }

@@ -13,6 +13,13 @@ import java.util.Optional;
  * и было бы источником ошибок: слот живёт одну раздачу, а колода строится по составу стола.
  *
  * <p>Уровни навесов, наоборот, приходят снаружи: они живут весь матч (ADR-018).
+ *
+ * <p>⭐ Низ колоды устроен так (§1.9):
+ * <pre>
+ *   [потайной козырь] [козырная карта] [ … остальные … ]
+ * </pre>
+ * Козырь определяет <b>козырная карта</b>, а самая нижняя — потайной козырь: он придёт
+ * последнему добирающему и сменит козырь. Если до него не дошли, он так и останется тайной.
  */
 public final class Dealer {
 
@@ -69,7 +76,7 @@ public final class Dealer {
         final int playerCount = navesLevels.size();
         final List<Card> deck = new ArrayList<>(deckFactory.buildShuffled(playerCount, dealSeed));
         final List<PlayerState> players = dealHands(deck, navesLevels);
-        final Card trumpCard = deck.get(deck.size() - 1);
+        final Card trumpCard = deck.get(deck.size() - 2);
 
         final DealState.Builder builder = emptyDeal(deck, players, dealSeed);
         if (trumpCard instanceof PipCard pip) {
@@ -147,7 +154,7 @@ public final class Dealer {
                                         final long dealSeed) {
         return new DealState(DealPhase.DEALING, null, List.copyOf(deck), players, List.of(),
                 0, 0, players.size() > 1 ? 1 : 0, List.of(), List.of(), false, false,
-                null, List.of(), dealSeed, 0).toBuilder();
+                null, List.of(), null, dealSeed, 0).toBuilder();
     }
 
     private List<Integer> seats(final int playerCount) {

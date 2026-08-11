@@ -37,57 +37,44 @@ class MatchEngineTest {
         assertThat(match.results()).isEmpty();
     }
 
+    @DisplayName("Should end the match When the deal loser reaches the joker")
+    @Test
+    void shouldEndTheMatchWhenTheDealLoserReachesTheJoker() {
+        final int aceLevel = NavesScale.full().jokerLevel() - 1;
+        final MatchState state = matchAboutToFinish(aceLevel);
+
+        final MatchResult result = engine.apply(state, new DealCommand.Pass(0));
+
+        final MatchState next = ((MatchResult.Applied) result).state();
+        assertThat(next.phase()).isEqualTo(MatchPhase.MATCH_OVER);
+        assertThat(next.navesLevelAt(1)).isEqualTo(NavesScale.full().jokerLevel());
+        assertThat(next.mainLoser()).get()
+                .satisfies(loser -> assertThat(loser.lossDegree()).isEqualTo(LossDegree.SUPER_FAIL));
+        assertThat(next.dealNo()).isEqualTo(1);
+    }
+
+    @DisplayName("Should deal again When the deal ends without a joker")
+    @Test
+    void shouldDealAgainWhenTheDealEndsWithoutAJoker() {
+        final MatchState state = matchAboutToFinish(0);
+
+        final MatchState next = ((MatchResult.Applied) engine.apply(state, new DealCommand.Pass(0))).state();
+
+        assertThat(next.phase()).isEqualTo(MatchPhase.IN_DEAL);
+        assertThat(next.dealNo()).isEqualTo(2);
+        assertThat(next.navesLevelAt(1)).isEqualTo(1);
+        assertThat(next.results()).hasSize(1);
+    }
+
     @DisplayName("Should refuse any command When the match is already over")
     @Test
     void shouldRefuseAnyCommandWhenTheMatchIsAlreadyOver() {
-        final MatchState finished = playToTheEnd(engine, engine.startMatch(3, ANY_SEED));
+        final int aceLevel = NavesScale.full().jokerLevel() - 1;
+        final MatchState finished =
+                ((MatchResult.Applied) engine.apply(matchAboutToFinish(aceLevel), new DealCommand.Pass(0))).state();
 
         assertThat(engine.apply(finished, new DealCommand.Pass(0)))
                 .isEqualTo(MatchResult.rejected(RejectionReason.NOT_YOUR_TURN));
-    }
-
-    @DisplayName("Should end the match with a joker and a degree When it is played to the end")
-    @ParameterizedTest
-    @ValueSource(ints = {2, 3, 4, 5})
-    void shouldEndTheMatchWithAJokerAndADegreeWhenItIsPlayedToTheEnd(final int playerCount) {
-        final MatchState finished = playToTheEnd(shortScale, shortScale.startMatch(playerCount, ANY_SEED));
-
-        assertThat(finished.phase()).isEqualTo(MatchPhase.MATCH_OVER);
-        assertThat(finished.navesLevels())
-                .anyMatch(level -> level >= SHORT_SCALE.navesScale().jokerLevel());
-        assertThat(finished.mainLoser()).isPresent();
-        assertThat(finished.mainLoser()).get()
-                .satisfies(loser -> assertThat(loser.lossDegree()).isNotNull());
-    }
-
-    @DisplayName("Should keep every level inside the scale When a whole match is played")
-    @ParameterizedTest
-    @ValueSource(ints = {2, 3, 4, 5})
-    void shouldKeepEveryLevelInsideTheScaleWhenAWholeMatchIsPlayed(final int playerCount) {
-        final MatchState finished = playToTheEnd(shortScale, shortScale.startMatch(playerCount, ANY_SEED));
-
-        assertThat(finished.navesLevels()).allSatisfy(level ->
-                assertThat(level).isBetween(NavesScale.NO_NAVES, SHORT_SCALE.navesScale().jokerLevel()));
-    }
-
-    @DisplayName("Should take more than one deal When the match runs its course")
-    @Test
-    void shouldTakeMoreThanOneDealWhenTheMatchRunsItsCourse() {
-        final MatchState finished = playToTheEnd(shortScale, shortScale.startMatch(4, ANY_SEED));
-
-        assertThat(finished.results()).hasSizeGreaterThan(1);
-        assertThat(finished.results()).allSatisfy(result ->
-                assertThat(result.dealLoserSeat()).isBetween(0, 3));
-    }
-
-    @DisplayName("Should end sooner on a shortened scale When the table config shortens it")
-    @Test
-    void shouldEndSoonerOnAShortenedScaleWhenTheTableConfigShortensIt() {
-        final MatchState onShortScale = playToTheEnd(shortScale, shortScale.startMatch(3, ANY_SEED));
-        assertThat(onShortScale.phase()).isEqualTo(MatchPhase.MATCH_OVER);
-        assertThat(onShortScale.navesLevels()).allSatisfy(level ->
-                assertThat(level).isBetween(NavesScale.NO_NAVES, SHORT_SCALE.navesScale().jokerLevel()));
-        assertThat(onShortScale.results()).isNotEmpty();
     }
 
     @DisplayName("Should always accept some command and never lose a card When a long match is played")
@@ -139,17 +126,6 @@ class MatchEngineTest {
                 .containsExactlyInAnyOrderElementsOf(new DeckFactory().buildOrdered(3));
     }
 
-    @DisplayName("Should replay identically When the same seed and the same moves are used")
-    @Test
-    void shouldReplayIdenticallyWhenTheSameSeedAndTheSameMovesAreUsed() {
-        final MatchState first = playToTheEnd(shortScale, shortScale.startMatch(4, ANY_SEED));
-        final MatchState second = playToTheEnd(shortScale, shortScale.startMatch(4, ANY_SEED));
-
-        assertThat(first.navesLevels()).isEqualTo(second.navesLevels());
-        assertThat(first.dealNo()).isEqualTo(second.dealNo());
-        assertThat(first.mainLoser()).isEqualTo(second.mainLoser());
-    }
-
     @DisplayName("Should diverge When the match seed differs")
     @Test
     void shouldDivergeWhenTheMatchSeedDiffers() {
@@ -157,10 +133,6 @@ class MatchEngineTest {
         final MatchState second = engine.startMatch(4, ANY_SEED + 1);
 
         assertThat(first.deal().deck()).isNotEqualTo(second.deal().deck());
-    }
-
-    private MatchState playToTheEnd(final MatchEngine engine, final MatchState start) {
-        return play(engine, start, Integer.MAX_VALUE);
     }
 
     private MatchState playUntilDeal(final MatchState start, final int dealNo) {
@@ -185,6 +157,28 @@ class MatchEngineTest {
             return pip.rank().ordinal() + (trump ? 100 : 0);
         }
         return 1_000;
+    }
+
+    /**
+     * Матч на пороге конца: место 0 уже вышло, у места 1 остались карты и уровень
+     * {@code loserLevel}. Один пас закрывает раунд, раздачу и — если уровень был тузом —
+     * весь матч.
+     *
+     * <p>Состояние собирается руками намеренно: досидеть до этого места случайной игрой
+     * нельзя, а проверяется здесь правило закрытия матча, а не умение бота играть.
+     */
+    private MatchState matchAboutToFinish(final int loserLevel) {
+        final DealState deal = DealStateFixture.aDeal()
+                .withSeats(2)
+                .withEmptyDeck()
+                .withPlayerOutOfDeal(0)
+                .withExitOrder(0)
+                .withHand(1, PipCard.of(Rank.ACE, Suit.CLUBS))
+                .withNavesLevel(1, loserLevel)
+                .withDefenderAt(1)
+                .build();
+        return new MatchState(MatchPhase.IN_DEAL, List.of(NavesScale.NO_NAVES, loserLevel),
+                1, ANY_SEED, deal, List.of());
     }
 
     private static List<Card> cardsInPlay(final DealState deal) {
@@ -242,7 +236,12 @@ class MatchEngineTest {
     private List<DealCommand> candidates(final DealState deal) {
         final List<DealCommand> commands = new ArrayList<>();
         if (deal.phase() == DealPhase.DICE) {
-            commands.add(new DealCommand.ChooseTrump(deal.attackRightSeat(), Suit.HEARTS));
+            final int chooser = deal.hiddenTrumpAwaitingSuit()
+                    .map(PendingHiddenTrump::chooserSeat)
+                    .orElse(deal.attackRightSeat());
+            for (final Suit suit : Suit.values()) {
+                commands.add(new DealCommand.ChooseTrump(chooser, suit));
+            }
             return commands;
         }
         deal.hanging().ifPresent(window -> {

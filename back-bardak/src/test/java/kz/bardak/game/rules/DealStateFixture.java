@@ -88,12 +88,22 @@ final class DealStateFixture {
         return this;
     }
 
+    /**
+     * Колода-заглушка нужной длины. Карты обычные: самая нижняя — потайной козырь (§1.9),
+     * и джокер там означал бы бросок кости, которого тест не ждёт.
+     */
     DealStateFixture withDeckOf(final int cardCount) {
         final List<Card> cards = new ArrayList<>();
         for (int index = 0; index < cardCount; index++) {
-            cards.add(new JokerCard(index + 1));
+            cards.add(PipCard.of(Rank.values()[index % Rank.values().length], Suit.HEARTS));
         }
         this.deck = List.copyOf(cards);
+        return this;
+    }
+
+    /** Колода целиком, как есть: индекс 0 — верх, последняя карта — потайной козырь (§1.9). */
+    DealStateFixture withDeck(final Card... cards) {
+        this.deck = List.of(cards);
         return this;
     }
 
@@ -169,7 +179,7 @@ final class DealStateFixture {
     DealState build() {
         return new DealState(phase, trump, deck, players, table, roundStarterSeat,
                 attackRightSeat, defenderSeat, passedSeats, exitOrder,
-                anyCardBeatenThisRound, anyPileDiscarded, hangingWindow, lastAttackCards, rngSeed, 0);
+                anyCardBeatenThisRound, anyPileDiscarded, hangingWindow, lastAttackCards, null, rngSeed, 0);
     }
 
     private PlayerState player(final int seatNo) {

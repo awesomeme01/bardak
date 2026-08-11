@@ -105,6 +105,26 @@ public sealed interface DealEvent {
     record PlayerLeftDeal(int seatNo) implements DealEvent {
     }
 
+    /**
+     * ⭐ Потайной козырь вскрыт (§1.9). Событие <b>публичное, с картой</b>: видны и масть,
+     * и номинал — он меняет козырь всему столу, в отличие от скрытой карты игрока (§1.8),
+     * которую при вскрытии видит только владелец.
+     */
+    record HiddenTrumpRevealed(int seatNo, Card card) implements DealEvent {
+
+        public HiddenTrumpRevealed {
+            Objects.requireNonNull(card, "card");
+        }
+    }
+
+    /** Козырь сменился — со следующего раунда (ADR-035). */
+    record TrumpChanged(int seatNo, Suit suit) implements DealEvent {
+
+        public TrumpChanged {
+            Objects.requireNonNull(suit, "suit");
+        }
+    }
+
     /** Победитель кости назвал козырную масть (§1.2). */
     record TrumpChosen(int seatNo, Suit suit) implements DealEvent {
 
