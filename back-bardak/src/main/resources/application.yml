@@ -40,6 +40,18 @@ server:
   shutdown: graceful
 
 bardak:
+  auth:
+    # HMAC-ключ подписи access-токенов. В проде обязателен через окружение:
+    # дефолт годится только для локальной разработки и в git попадает осознанно.
+    jwt-secret: ${BARDAK_JWT_SECRET:dev-only-secret-change-me-32-bytes-minimum!!}
+    # Короткий access — главная защита при утечке: украденный токен живёт минуты.
+    access-ttl: 15m
+    refresh-ttl: 30d
+    # Тикет живёт ровно столько, чтобы клиент успел открыть сокет (ADR-005).
+    ws-ticket-ttl: 30s
+    # Регистрация закрытая: игра для узкого круга, а эндпоинт торчит наружу.
+    invite-codes: ${BARDAK_INVITE_CODES:bardak-2026}
+
   frontend:
     path: ../front-bardak/dist/
   assets:

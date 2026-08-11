@@ -3,36 +3,11 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-    <title>Bardak — M1</title>
+    <title>Bardak</title>
     <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-<header>
-    <h1>Bardak</h1>
-    <p class="stage">M1 — проверка связки браузер → Spring → Postgres</p>
-</header>
-
-<main>
-    <section class="card">
-        <h2>REST <code>/api/health</code></h2>
-        <div class="row">
-            <span id="health-badge" class="badge badge-wait">проверяю…</span>
-            <button id="health-refresh" type="button">Обновить</button>
-        </div>
-        <pre id="health-output">—</pre>
-    </section>
-
-    <section class="card">
-        <h2>WebSocket <code>/ws</code></h2>
-        <div class="row">
-            <span id="ws-badge" class="badge badge-wait">подключаюсь…</span>
-            <input id="ws-input" type="text" placeholder="текст для эха" value="привет, стол">
-            <button id="ws-send" type="button">Отправить</button>
-            <button id="ws-ping" type="button">PING</button>
-        </div>
-        <pre id="ws-log"></pre>
-    </section>
-</main>
+<div id="app"></div>
 
 <script type="module" src="/src/main.js"></script>
 </body>

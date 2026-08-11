@@ -10,8 +10,15 @@
  *     иначе не отличить от живого;
  *   - очередь неотправленных команд: ход, нажатый в момент разрыва, не теряется.
  *
- * Чего ещё нет: получения ws-тикета (M2), отслеживания seq и RESYNC (M4).
+ * ⭐ Перед КАЖДЫМ подключением, включая переподключение, запрашивается одноразовый
+ * тикет (ADR-005): браузерный WebSocket не умеет слать заголовок Authorization, а тикет
+ * живёт секунды и сгорает при использовании. Поэтому реконнект — это всегда сначала
+ * REST-запрос, и только потом сокет.
+ *
+ * Чего ещё нет: отслеживания seq и RESYNC (M4).
  */
+
+import {apiPost} from './rest-client.js';
 
 const PROTOCOL_VERSION = 1;
 
@@ -34,17 +41,30 @@ export class WsClient {
     #commandCounter = 0;
     #closedByUs = false;
 
-    constructor({url, onEvent, onStatus}) {
-        this.#url = url;
-        this.#onEvent = onEvent;
+    constructor({url, onEvent, onStatus} = {}) {
+        this.#url = url ?? defaultUrl();
+        this.#onEvent = onEvent ?? (() => {});
         this.#onStatus = onStatus ?? (() => {});
     }
 
-    connect() {
+    async connect() {
         this.#closedByUs = false;
         this.#onStatus('connecting');
 
-        const socket = new WebSocket(this.#url);
+        let ticket;
+        try {
+            ticket = (await apiPost('/auth/ws-ticket', {})).ticket;
+        } catch {
+            // Тикет не выдали — значит, сессии нет. Молча ретраить бессмысленно:
+            // пока пользователь не войдёт заново, сокет всё равно не откроется.
+            this.#onStatus('unauthorized');
+            return;
+        }
+        if (this.#closedByUs) {
+            return;
+        }
+
+        const socket = new WebSocket(`${this.#url}?ticket=${encodeURIComponent(ticket)}`);
         this.#socket = socket;
 
         socket.addEventListener('open', () => {
@@ -144,4 +164,10 @@ export class WsClient {
         clearInterval(this.#heartbeatTimer);
         this.#heartbeatTimer = null;
     }
+}
+
+/** Сокет всегда на том же origin, что и страница: dev-сервер Vite проксирует /ws на бэкенд. */
+function defaultUrl() {
+    const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
+    return `${scheme}://${location.host}/ws`;
 }

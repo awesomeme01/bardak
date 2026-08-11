@@ -1,5 +1,6 @@
 package kz.bardak.game.ws;
 
+import kz.bardak.auth.ws.WsTicketHandshakeInterceptor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.socket.config.annotation.EnableWebSocket;
@@ -16,18 +17,23 @@ import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry
 public class WebSocketConfig implements WebSocketConfigurer {
 
     private final EchoWebSocketHandler echoHandler;
+    private final WsTicketHandshakeInterceptor ticketInterceptor;
     private final String[] allowedOrigins;
 
     public WebSocketConfig(EchoWebSocketHandler echoHandler,
+                           WsTicketHandshakeInterceptor ticketInterceptor,
                            @Value("${bardak.ws.allowed-origins}") String[] allowedOrigins) {
         this.echoHandler = echoHandler;
+        this.ticketInterceptor = ticketInterceptor;
         this.allowedOrigins = allowedOrigins;
     }
 
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
-        // M2: сюда добавится HandshakeInterceptor, проверяющий одноразовый ws-тикет (ADR-005).
+        // Одноразовый тикет проверяется до установления соединения (ADR-005):
+        // неавторизованный клиент получает 401 на рукопожатии и сессию не занимает.
         registry.addHandler(echoHandler, "/ws")
+                .addInterceptors(ticketInterceptor)
                 .setAllowedOrigins(allowedOrigins);
     }
 }

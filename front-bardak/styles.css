@@ -116,3 +116,41 @@ pre {
 .log-in   { color: var(--ok); }
 .log-out  { color: var(--accent); }
 .log-sys  { color: var(--muted); font-style: italic; }
+
+/* Формы входа и регистрации. Метка над полем: в столбик читается быстрее,
+   а на телефоне строка из «метка + поле» не помещается. */
+form {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    max-width: 22rem;
+}
+
+form label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    font-size: 0.9rem;
+    color: var(--muted, #9aa4b2);
+}
+
+form input {
+    /* Общее правило выше растягивает input по flex-контейнеру: внутри колоночной
+       формы это превращало поле в прямоугольник во весь экран. */
+    flex: 0 0 auto;
+    padding: 0.5rem 0.6rem;
+    border-radius: 0.4rem;
+    border: 1px solid #2b3444;
+    background: #131a24;
+    color: inherit;
+    font: inherit;
+}
+
+form input:focus-visible {
+    outline: 2px solid #4c8dff;
+    outline-offset: 1px;
+}
+
+form .row {
+    margin-top: 0.25rem;
+}

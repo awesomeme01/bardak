@@ -28,13 +28,20 @@ import java.util.concurrent.ConcurrentHashMap;
  *       не потокобезопасна, а писать в неё будут поток стола и планировщик таймеров.</li>
  * </ul>
  *
- * <p>Чего здесь ещё нет: аутентификации (M2, одноразовый ws-тикет), маршрутизации
- * к столу и очереди команд (M3), игровых команд (M4).
+ * <p>Аутентификация уже есть: до рукопожатия допускает только одноразовый тикет
+ * (ADR-005), и в атрибутах сессии лежит {@code userId}.
+ *
+ * <p>Чего здесь ещё нет: маршрутизации к столу и очереди команд (M3), игровых команд.
  */
 @Component
 public class EchoWebSocketHandler extends TextWebSocketHandler {
 
     private static final Logger log = LoggerFactory.getLogger(EchoWebSocketHandler.class);
+
+    /** Кто за сокетом. Кладётся при рукопожатии — анонимных соединений больше нет (ADR-005). */
+    private static Object userOf(final WebSocketSession session) {
+        return session.getAttributes().get(kz.bardak.auth.ws.WsTicketHandshakeInterceptor.USER_ID_ATTRIBUTE);
+    }
 
     /** Лимит буфера на медленного клиента: не даём одному соединению есть память. */
     private static final int SEND_BUFFER_LIMIT = 512 * 1024;
@@ -52,7 +59,8 @@ public class EchoWebSocketHandler extends TextWebSocketHandler {
         WebSocketSession concurrent = new ConcurrentWebSocketSessionDecorator(
                 session, SEND_TIME_LIMIT_MS, SEND_BUFFER_LIMIT);
         sessions.put(session.getId(), concurrent);
-        log.info("WS подключён: id={}, всего сессий={}", session.getId(), sessions.size());
+        log.info("WS подключён: id={}, user={}, всего сессий={}",
+                session.getId(), userOf(session), sessions.size());
 
         ObjectNode payload = objectMapper.createObjectNode()
                 .put("sessionId", session.getId())
