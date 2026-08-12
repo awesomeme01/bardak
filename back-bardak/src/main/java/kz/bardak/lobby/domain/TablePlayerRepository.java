@@ -10,4 +10,6 @@ public interface TablePlayerRepository extends JpaRepository<TablePlayer, TableP
     List<TablePlayer> findByTableIdOrderBySeatNo(UUID tableId);
 
     Optional<TablePlayer> findByTableIdAndUserId(UUID tableId, UUID userId);
+
+    List<TablePlayer> findByUserId(UUID userId);
 }

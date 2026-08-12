@@ -14,6 +14,7 @@ import kz.bardak.lobby.LobbyService;
 import kz.bardak.lobby.domain.CardSetRepository;
 import kz.bardak.lobby.domain.GameTable;
 import kz.bardak.lobby.domain.TablePlayer;
+import kz.bardak.lobby.domain.TableStatus;
 import kz.bardak.lobby.domain.TableThemeRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -67,6 +68,26 @@ public class TableController {
 
         return toView(lobby.create(userId(jwt), request.name(), request.maxPlayers(),
                 cardSetId, themeId, asJson(request.rulesConfig()), request.isPrivate()));
+    }
+
+    /**
+     * Стол, за которым игрок сидит сейчас.
+     *
+     * <p>⭐ Нужно, чтобы вернуться после случайного выхода: вкладку закрыли, телефон уснул,
+     * браузер перезагрузился. Место осталось за игроком, и найти его он должен не глазами
+     * в общем списке, а по этому ответу.
+     */
+    @GetMapping("/current")
+    public LobbyDtos.CurrentTableView current(@AuthenticationPrincipal final Jwt jwt) {
+        final UUID userId = userId(jwt);
+        return lobby.currentTableOf(userId)
+                .map(table -> new LobbyDtos.CurrentTableView(toView(table),
+                        table.status() == TableStatus.IN_MATCH,
+                        lobby.seats(table.id()).stream()
+                                .filter(seat -> seat.userId().equals(userId))
+                                .map(TablePlayer::seatNo)
+                                .findFirst().orElse(null)))
+                .orElseGet(() -> new LobbyDtos.CurrentTableView(null, false, null));
     }
 
     @GetMapping("/{id}")

@@ -42,6 +42,16 @@ public final class LobbyDtos {
             List<SeatView> seats) {
     }
 
+    /**
+     * Где игрок сидит сейчас.
+     *
+     * @param table     стол или {@code null}, если он нигде не сидит
+     * @param inMatch   за столом идёт матч — возвращаться нужно немедленно
+     * @param mySeatNo  его место за этим столом
+     */
+    public record CurrentTableView(TableView table, boolean inMatch, Integer mySeatNo) {
+    }
+
     public record CardSetView(String id, String code, String name, String description,
                               String version, String previewUrl, boolean isDefault) {
     }

@@ -117,10 +117,39 @@ public class LobbyService {
      * <p>⭐ Строка удаляется, а не помечается: место обязано освободиться для других, а его
      * занятость определяет уникальный индекс {@code (table_id, seat_no)} — пометка в строке
      * его не отпускает. Факт участия в матче хранит {@code match_players}, а не лобби.
+     *
+     * <p>⚠️ Посреди матча уйти нельзя. Игрок мог закрыть вкладку или промахнуться по кнопке,
+     * и освободившееся место тут же занял бы посторонний — а движок продолжал бы ждать
+     * ушедшего. Пропавший игрок ставит матч на паузу (§5.2), и это единственный способ
+     * его покинуть: либо он возвращается, либо матч отменяется по времени.
      */
     @Transactional
     public void leave(final UUID tableId, final UUID userId) {
-        players.findByTableIdAndUserId(tableId, userId).ifPresent(players::delete);
+        final GameTable table = tables.findById(tableId).orElseThrow(LobbyService::tableNotFound);
+        players.findByTableIdAndUserId(tableId, userId).ifPresent(seat -> {
+            if (table.status() == TableStatus.IN_MATCH) {
+                throw new ApiException(HttpStatus.CONFLICT, "MATCH_IN_PROGRESS",
+                        "Посреди матча из-за стола не встают");
+            }
+            players.delete(seat);
+        });
+    }
+
+    /**
+     * Стол, за которым игрок сидит сейчас. Пусто — он нигде не сидит.
+     *
+     * <p>⭐ Нужно, чтобы вернуться после случайного выхода: вкладку закрыли, телефон уснул,
+     * браузер перезагрузился — место осталось за игроком, и он должен попасть обратно
+     * сам, а не искать свой стол в общем списке.
+     */
+    @Transactional(readOnly = true)
+    public Optional<GameTable> currentTableOf(final UUID userId) {
+        return players.findByUserId(userId).stream()
+                .map(TablePlayer::tableId)
+                .map(tables::findById)
+                .flatMap(Optional::stream)
+                .filter(table -> table.status() != TableStatus.CLOSED)
+                .findFirst();
     }
 
     @Transactional

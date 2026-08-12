@@ -2,11 +2,12 @@
     import {onDestroy, onMount} from 'svelte';
     import GameTable from './GameTable.svelte';
     import MatchResult from './MatchResult.svelte';
-    import {enterTable, leaveTable, setReady, startMatch, table} from '../stores/table.svelte.js';
+    import {detachTable, enterTable, leaveTable, setReady, startMatch, table} from '../stores/table.svelte.js';
 
     let {info, onExit} = $props();
 
     let ready = $state(false);
+
 
     // ⭐ Считаем по живому состоянию из стора, а не по снимку из REST: снимок сделан
     // в момент входа и про соседа, севшего секунду назад, ничего не знает.
@@ -14,7 +15,8 @@
     const everyoneReady = $derived(seats.length >= 2 && seats.every((seat) => seat.ready));
 
     onMount(() => enterTable(info));
-    onDestroy(() => leaveTable());
+    // Экран закрылся — соединение остаётся, если идёт матч (см. detachTable).
+    onDestroy(() => detachTable());
 
     function toggleReady() {
         ready = !ready;
@@ -23,6 +25,11 @@
 
     function exit() {
         leaveTable();
+        onExit();
+    }
+
+    /** Свернуть: место и соединение остаются, игрок вернётся сюда сам. */
+    function minimize() {
         onExit();
     }
 </script>
@@ -36,7 +43,9 @@
     <div class="row"><button type="button" onclick={exit}>Выйти из-за стола</button></div>
 {:else if table.game}
     <GameTable/>
-    <div class="row"><button type="button" onclick={exit}>Выйти из-за стола</button></div>
+    <div class="row">
+        <button type="button" onclick={minimize}>Свернуть — место останется за тобой</button>
+    </div>
 {:else}
     <section class="card">
         <h2>{info.name}</h2>

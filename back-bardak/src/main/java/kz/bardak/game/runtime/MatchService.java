@@ -16,6 +16,8 @@ import kz.bardak.game.rules.RulesConfig;
 import kz.bardak.game.rules.StateProjection;
 import kz.bardak.game.protocol.MatchStateCodec;
 import kz.bardak.history.MatchLog;
+import kz.bardak.history.domain.MatchPlayerRecord;
+import kz.bardak.history.domain.MatchPlayerRepository;
 import kz.bardak.history.domain.MatchRecord;
 import kz.bardak.lobby.LobbyService;
 import kz.bardak.lobby.domain.GameTable;
@@ -39,15 +41,17 @@ public class MatchService {
 
     private final LobbyService lobby;
     private final MatchLog matchLog;
+    private final MatchPlayerRepository matchPlayers;
     private final RulesConfigCodec rulesCodec;
     private final MatchStateCodec stateCodec;
     private final Map<UUID, MatchSession> sessions = new ConcurrentHashMap<>();
     private final SecureRandom secureRandom = new SecureRandom();
 
     public MatchService(final LobbyService lobby, final MatchLog matchLog,
-                        final ObjectMapper objectMapper) {
+                        final MatchPlayerRepository matchPlayers, final ObjectMapper objectMapper) {
         this.lobby = Objects.requireNonNull(lobby, "lobby");
         this.matchLog = Objects.requireNonNull(matchLog, "matchLog");
+        this.matchPlayers = Objects.requireNonNull(matchPlayers, "matchPlayers");
         this.rulesCodec = new RulesConfigCodec(objectMapper);
         this.stateCodec = new MatchStateCodec(objectMapper);
     }
@@ -73,7 +77,7 @@ public class MatchService {
                     final GameTable table = lobby.byId(tableId);
                     final RulesConfig config = rulesCodec.parse(table.rulesConfig());
                     final MatchSession session = new MatchSession(tableId, record.id(),
-                            lobby.seats(tableId).stream().map(TablePlayer::userId).toList(),
+                            seatsOfMatch(record.id(), tableId),
                             engineFor(config), projectionFor(config), config,
                             stateCodec.decode(snapshot.state()));
                     session.lastSeq(snapshot.seq());
@@ -81,6 +85,26 @@ public class MatchService {
                     log.info("Матч за столом {} поднят из снимка на seq={}", tableId, snapshot.seq());
                     return session;
                 }));
+    }
+
+    /**
+     * ⭐ Места берутся из матча, а не из лобби.
+     *
+     * <p>Лобби живёт своей жизнью: кто-то встал, кто-то сел, порядок мест изменился.
+     * Матч же раздан по местам, зафиксированным на старте (§1.2), и в снимке состояния
+     * места — это индексы. Возьми их из лобби — и после рестарта игрок получил бы чужую
+     * руку, причём молча: расклад выглядел бы совершенно правдоподобно.
+     */
+    private List<UUID> seatsOfMatch(final UUID matchId, final UUID tableId) {
+        final List<UUID> seats = matchPlayers.findByMatchIdOrderBySeatNo(matchId).stream()
+                .map(MatchPlayerRecord::userId)
+                .toList();
+        if (!seats.isEmpty()) {
+            return seats;
+        }
+        // Матчи, начатые до появления match_players, восстанавливаются по-старому.
+        log.warn("У матча {} нет записанных мест, беру порядок из лобби", matchId);
+        return lobby.seats(tableId).stream().map(TablePlayer::userId).toList();
     }
 
     private MatchEngine engineFor(final RulesConfig config) {

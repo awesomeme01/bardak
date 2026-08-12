@@ -64,7 +64,11 @@ ADR-005.
 | `POST` | `/tables` | Создать: `{name, maxPlayers, cardSetId, themeId, rulesConfig, isPrivate}` |
 | `GET` | `/tables/{id}` | Детали: игроки, набор карт, правила |
 | `GET` | `/tables/by-code/{code}` | Поиск по короткому коду приглашения |
+| `GET` | `/tables/current` | ⭐ Стол, за которым игрок сидит сейчас: `{table, inMatch, mySeatNo}`. По нему клиент возвращается за стол после закрытой вкладки |
 | `DELETE` | `/tables/{id}` | Закрыть свой стол (только хост, только до старта) |
+
+⚠️ Посреди матча `TABLE_LEAVE` отклоняется с `MATCH_IN_PROGRESS` (ADR-049): место
+принадлежит игроку до конца партии.
 
 ## Matches / History
 

@@ -56,6 +56,12 @@ class SnapshotRestoreIT {
     @Autowired
     private TableThemeRepository themes;
 
+    @Autowired
+    private kz.bardak.lobby.domain.TablePlayerRepository tablePlayers;
+
+    @Autowired
+    private kz.bardak.rating.MatchResultService results;
+
     @DisplayName("Should bring the match back exactly When the server forgot it")
     @Test
     void shouldBringTheMatchBackExactlyWhenTheServerForgotIt() {
@@ -114,6 +120,23 @@ class SnapshotRestoreIT {
 
         assertThat(matches.find(tableId).orElseThrow().state().deal().players())
                 .isEqualTo(handsBefore);
+    }
+
+    @DisplayName("Should keep the seats of the match When the lobby changed meanwhile")
+    @Test
+    void shouldKeepTheSeatsOfTheMatchWhenTheLobbyChangedMeanwhile() {
+        final UUID tableId = readyTable("snap-g", "snap-h");
+        final MatchSession session = matches.start(tableId);
+        results.startMatch(session.matchId(), session.players());
+        matchLog.snapshot(session.matchId(), 0, matches.stateCodec().encode(session.state()));
+        final List<UUID> seatsAtStart = session.players();
+
+        // Лобби разошлось с матчем: строка места пропала (ушёл по старой кнопке, чистка, что угодно).
+        tablePlayers.findByTableIdAndUserId(tableId, seatsAtStart.get(1)).ifPresent(tablePlayers::delete);
+        matches.finish(tableId);
+
+        // ⭐ Места матча зафиксированы на старте: иначе игрок получил бы чужую руку — и молча.
+        assertThat(matches.find(tableId).orElseThrow().players()).isEqualTo(seatsAtStart);
     }
 
     @DisplayName("Should stay empty When the table never played a match")

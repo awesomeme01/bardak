@@ -31,6 +31,13 @@ export const table = $state({
 let client = null;
 
 export async function enterTable(info) {
+    // ⭐ Соединение переживает уход с экрана: игрок мог заглянуть в историю или в лобби,
+    // а стол при этом продолжает жить. Второй сокет к тому же столу означал бы, что
+    // сервер шлёт снимки в мёртвое соединение, а игрок числится и там и там.
+    if (client && table.info?.id === info.id) {
+        client.send('STATE_REQUEST', {}, info.id);
+        return;
+    }
     table.info = info;
     table.game = null;
     table.notice = null;
@@ -63,14 +70,29 @@ function resync() {
     notify('Связь восстановлена — догоняю стол');
 }
 
+/** Встать из-за стола совсем: место освобождается. Посреди матча сервер откажет. */
 export function leaveTable() {
     if (client && table.info) {
         client.send('TABLE_LEAVE', {}, table.info.id);
+    }
+    detachTable();
+}
+
+/**
+ * Уйти с экрана стола, не вставая из-за него.
+ *
+ * <p>⚠️ Пока идёт матч, соединение <b>не рвём</b>: разрыв ставит партию на паузу, и через
+ * минуту она отменяется у всех. Посмотреть историю посреди игры — не повод потерять матч.
+ */
+export function detachTable() {
+    if (table.game && !table.result) {
+        return;
     }
     client?.close();
     client = null;
     table.info = null;
     table.game = null;
+    table.result = null;
 }
 
 export function setReady(ready) {

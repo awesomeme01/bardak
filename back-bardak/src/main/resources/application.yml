@@ -82,7 +82,11 @@ bardak:
     cache-seconds: 0     # в проде — надолго: имена карт стабильны, версия набора в манифесте
   ws:
     # 5173 — будущий dev-сервер Vite, когда обновится Node.
-    allowed-origins: http://localhost:8088,http://localhost:5173
+    # ⭐ Список, а не «*»: браузер шлёт Origin при рукопожатии, и открытый список означал бы,
+    # что сокет к нашему серверу может открыть любая страница в интернете.
+    # Играть с телефона по локальной сети — значит добавить сюда адрес машины:
+    # BARDAK_WS_ORIGINS=http://localhost:8088,http://192.168.х.х:8088
+    allowed-origins: ${BARDAK_WS_ORIGINS:http://localhost:8088,http://localhost:5173}
 
 management:
   endpoints:

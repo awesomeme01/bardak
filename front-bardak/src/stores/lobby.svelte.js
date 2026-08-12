@@ -10,6 +10,7 @@ import {apiGet, apiPost} from '../net/rest-client.js';
 export const lobby = $state({
     tables: [],
     current: null,   // {id, code, name, maxPlayers, seats: [...]}
+    inMatch: false,  // за текущим столом идёт матч
     error: null,
 });
 
@@ -35,6 +36,24 @@ export async function openByCode(code) {
 
 export function leaveTable() {
     lobby.current = null;
+    lobby.inMatch = false;
+}
+
+/**
+ * Вернуться туда, где сидишь.
+ *
+ * <p>⭐ Вкладку закрыли, телефон уснул, браузер перезагрузился — место осталось за игроком,
+ * и искать свой стол глазами в общем списке он не должен. Спрашиваем сервер и садимся
+ * обратно сами.
+ */
+export async function restoreTable() {
+    const current = await apiGet('/tables/current').catch(() => null);
+    if (!current?.table) {
+        return null;
+    }
+    lobby.current = current.table;
+    lobby.inMatch = current.inMatch;
+    return current;
 }
 
 /**

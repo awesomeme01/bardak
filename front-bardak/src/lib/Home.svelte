@@ -1,7 +1,7 @@
 <script>
     import {onMount} from 'svelte';
     import {loadProfile, logout} from '../stores/auth.svelte.js';
-    import {leaveTable as forgetTable, lobby} from '../stores/lobby.svelte.js';
+    import {leaveTable as forgetTable, lobby, restoreTable} from '../stores/lobby.svelte.js';
     import Lobby from './Lobby.svelte';
     import TableRoom from './TableRoom.svelte';
     import History from './History.svelte';
@@ -14,6 +14,8 @@
     onMount(async () => {
         try {
             profile = await loadProfile();
+            // Возвращаемся за стол сами: место осталось за игроком, даже если вкладку закрыли.
+            await restoreTable();
         } catch (e) {
             error = e.message;
         }
@@ -37,6 +39,15 @@
 </section>
 
 {#if tab === 'history'}
+    <!-- ⭐ Матч идёт, а игрок ушёл в историю: зовём обратно, иначе он о нём забудет
+         и партия отменится по времени. -->
+    {#if lobby.current}
+        <div class="row">
+            <button type="button" onclick={() => (tab = 'play')}>
+                ← Вернуться за стол «{lobby.current.name}»
+            </button>
+        </div>
+    {/if}
     <History/>
 {:else if lobby.current}
     <TableRoom info={lobby.current} onExit={forgetTable}/>

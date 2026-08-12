@@ -156,6 +156,60 @@ class LobbySeatingIT {
         assertThat(lobby.isReadyToStart(table.id())).isTrue();
     }
 
+    @DisplayName("Should keep the seat When a player tries to leave in the middle of a match")
+    @Test
+    void shouldKeepTheSeatWhenAPlayerTriesToLeaveInTheMiddleOfAMatch() {
+        final GameTable table = createTable(newUser("host-mid"), 2);
+        final UUID guest = newUser("guest-mid");
+        lobby.join(table.id(), guest);
+        lobby.startMatch(table.id());
+
+        assertThatThrownBy(() -> lobby.leave(table.id(), guest))
+                .isInstanceOf(ApiException.class)
+                .satisfies(thrown -> assertThat(((ApiException) thrown).code())
+                        .isEqualTo("MATCH_IN_PROGRESS"));
+
+        // ⭐ Место осталось за игроком: иначе его занял бы посторонний, а движок
+        // продолжал бы ждать ушедшего.
+        assertThat(lobby.seats(table.id())).hasSize(2);
+    }
+
+    @DisplayName("Should point back to the table When the player is seated at one")
+    @Test
+    void shouldPointBackToTheTableWhenThePlayerIsSeatedAtOne() {
+        final UUID guest = newUser("guest-back");
+        final GameTable table = createTable(newUser("host-back"), 4);
+        lobby.join(table.id(), guest);
+
+        assertThat(lobby.currentTableOf(guest)).get()
+                .satisfies(found -> assertThat(found.id()).isEqualTo(table.id()));
+    }
+
+    @DisplayName("Should point nowhere When the player left the table")
+    @Test
+    void shouldPointNowhereWhenThePlayerLeftTheTable() {
+        final UUID guest = newUser("guest-away");
+        final GameTable table = createTable(newUser("host-away"), 4);
+        lobby.join(table.id(), guest);
+
+        lobby.leave(table.id(), guest);
+
+        assertThat(lobby.currentTableOf(guest)).isEmpty();
+    }
+
+    @DisplayName("Should point back to the table When the match is already running")
+    @Test
+    void shouldPointBackToTheTableWhenTheMatchIsAlreadyRunning() {
+        final UUID guest = newUser("guest-inmatch");
+        final GameTable table = createTable(newUser("host-inmatch"), 2);
+        lobby.join(table.id(), guest);
+        lobby.startMatch(table.id());
+
+        // Закрытая вкладка не должна стоить партии: стол находится сам.
+        assertThat(lobby.currentTableOf(guest)).get()
+                .satisfies(found -> assertThat(found.status().name()).isEqualTo("IN_MATCH"));
+    }
+
     @DisplayName("Should refuse to close somebody else's table When a guest tries")
     @Test
     void shouldRefuseToCloseSomebodyElsesTableWhenAGuestTries() {
