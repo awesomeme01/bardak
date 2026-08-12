@@ -34,7 +34,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 @EnableWebSecurity
 @EnableScheduling
 @EnableConfigurationProperties({AuthProperties.class, kz.bardak.game.runtime.GameProperties.class,
-        kz.bardak.rating.RatingProperties.class})
+        kz.bardak.rating.RatingProperties.class, kz.bardak.push.PushProperties.class})
 public class SecurityConfig {
 
     @Bean

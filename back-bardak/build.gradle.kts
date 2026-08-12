@@ -26,6 +26,11 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-security")
     // JWT берём готовый: свой разбор токена — классический способ сделать дыру.
     implementation("org.springframework.boot:spring-boot-starter-oauth2-resource-server")
+    // Web Push: подпись VAPID и шифрование полезной нагрузки по RFC 8291. Своя реализация
+    // ECDH + HKDF — ровно тот случай, когда самодельная криптография хуже любой готовой.
+    implementation("nl.martijndwars:web-push:5.1.1")
+    implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
+
     implementation("org.flywaydb:flyway-core")
     implementation("org.flywaydb:flyway-database-postgresql")
 

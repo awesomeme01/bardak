@@ -39,10 +39,35 @@ Docker Desktop. Переопределяется переменной `BARDAK_PO
 
 ```bash
 ./gradlew build            # сборка
-./gradlew test             # тесты
+./gradlew test             # тесты (без Docker)
+./gradlew integrationTest  # тесты с настоящим Postgres (Testcontainers)
 docker compose down        # остановить Postgres
 docker compose down -v     # ... и стереть данные
 ```
+
+## Push-уведомления «твой ход»
+
+Без ключей VAPID уведомления просто выключены — локально играют с открытой вкладкой.
+Пара генерируется один раз:
+
+```bash
+openssl ecparam -genkey -name prime256v1 -noout -out vapid.pem
+openssl ec -in vapid.pem -text -noout        # priv: ... / pub: ...
+```
+
+Обе строки переводятся в base64url: закрытый ключ — 32 байта `priv` (ведущий `00` у openssl
+это знак, а не часть ключа), открытый — 65 байт `pub` целиком, вместе с ведущим `04`.
+Дальше:
+
+```bash
+export BARDAK_VAPID_PUBLIC=...      # его же получает браузер при подписке
+export BARDAK_VAPID_PRIVATE=...
+export BARDAK_VAPID_SUBJECT=mailto:you@example.com
+```
+
+⚠️ Уведомления приходят только тому, кого **нет за столом**, и не чаще одного раза
+в `bardak.push.quiet-for` (по умолчанию две минуты): звонок игроку с открытой вкладкой
+не помогает, а раздражает, и заканчивается тем, что уведомления отключают целиком.
 
 ## Структура
 

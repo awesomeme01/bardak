@@ -26,6 +26,7 @@ import kz.bardak.game.rules.MatchResult;
 import kz.bardak.history.DealHistory;
 import kz.bardak.history.MatchLog;
 import kz.bardak.lobby.LobbyService;
+import kz.bardak.push.TurnNotifier;
 import kz.bardak.rating.MatchResultService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -53,6 +54,7 @@ public class GameCommandHandler {
     private final DealHistory dealHistory;
     private final MatchResultService results;
     private final LobbyService lobby;
+    private final TurnNotifier turnNotifier;
     private final TableRegistry registry;
     private final UserRepository users;
     private final ObjectMapper objectMapper;
@@ -62,6 +64,7 @@ public class GameCommandHandler {
     public GameCommandHandler(final MatchService matches, final MatchLog matchLog,
                               final DealHistory dealHistory,
                               final MatchResultService results, final LobbyService lobby,
+                              final TurnNotifier turnNotifier,
                               final TableRegistry registry, final UserRepository users,
                               final ObjectMapper objectMapper, final TurnClock clock,
                               final GameProperties properties) {
@@ -70,6 +73,7 @@ public class GameCommandHandler {
         this.dealHistory = Objects.requireNonNull(dealHistory, "dealHistory");
         this.results = Objects.requireNonNull(results, "results");
         this.lobby = Objects.requireNonNull(lobby, "lobby");
+        this.turnNotifier = Objects.requireNonNull(turnNotifier, "turnNotifier");
         this.clock = Objects.requireNonNull(clock, "clock");
         this.properties = Objects.requireNonNull(properties, "properties");
         this.registry = Objects.requireNonNull(registry, "registry");
@@ -110,7 +114,7 @@ public class GameCommandHandler {
                 runtime.subscribe(userId, sender);
                 resync(session, userId, sender, command);
                 if (session.seatOf(userId).isPresent()) {
-                    resumeAfterReconnect(runtime, session);
+                    resumeAfterReconnect(runtime, session, userId);
                 }
                 return;
             }
@@ -119,7 +123,7 @@ public class GameCommandHandler {
                 runtime.subscribe(userId, sender);
                 sender.accept(serialize(stateSync(session, userId)));
                 if (session.seatOf(userId).isPresent()) {
-                    resumeAfterReconnect(runtime, session);
+                    resumeAfterReconnect(runtime, session, userId);
                 }
                 return;
             }
@@ -271,12 +275,36 @@ public class GameCommandHandler {
             clock.cancel(session.tableId());
             return;
         }
-        if (TimeoutPolicy.seatOnTheClock(session.state().deal()).isEmpty()) {
+        final var onTheClock = TimeoutPolicy.seatOnTheClock(session.state().deal());
+        if (onTheClock.isEmpty()) {
             clock.cancel(session.tableId());
             return;
         }
+        callToTable(runtime, session, onTheClock.get());
         clock.start(session.tableId(), properties.turnTimeout(),
                 () -> runtime.submit(() -> applyTimeout(runtime, session)));
+    }
+
+    /**
+     * Позвать к столу того, чей ход.
+     *
+     * <p>⭐ «Нет за столом» определяется по подписке на события стола, а не по отсутствию
+     * сокета вообще: игрок мог открыть приложение и уйти в другой стол или в историю.
+     * Само уведомление уходит с чужого потока — на потоке стола ждать ответа push-сервиса
+     * нельзя (ADR-007).
+     */
+    private void callToTable(final TableRuntime runtime, final MatchSession session, final int seat) {
+        final UUID userId = session.userAt(seat);
+        turnNotifier.turnOf(userId, tableNameOf(session.tableId()), session.tableId(),
+                runtime.subscribers().contains(userId));
+    }
+
+    private String tableNameOf(final UUID tableId) {
+        try {
+            return lobby.byId(tableId).name();
+        } catch (final RuntimeException e) {
+            return null;
+        }
     }
 
     /** Ход не сделан за отведённое время — сервер делает самое безобидное действие (§5.1). */
@@ -316,6 +344,9 @@ public class GameCommandHandler {
                                 .put("userId", userId.toString())
                                 .put("turnMillisLeft", left.toMillis())
                                 .put("graceSeconds", properties.disconnectGrace().toSeconds()))));
+                // ⭐ Позвать пропавшего: у него есть ровно это окно, чтобы вернуться.
+                turnNotifier.pausedFor(userId, tableNameOf(tableId), tableId,
+                        properties.disconnectGrace().toSeconds());
                 clock.scheduleAbort(tableId, properties.disconnectGrace(),
                         () -> runtime.submit(() -> abort(runtime, session, userId)));
             }));
@@ -323,8 +354,10 @@ public class GameCommandHandler {
     }
 
     /** Игрок вернулся: продолжаем с остатка, а не с полного хода. */
-    private void resumeAfterReconnect(final TableRuntime runtime, final MatchSession session) {
+    private void resumeAfterReconnect(final TableRuntime runtime, final MatchSession session,
+                                      final UUID userId) {
         clock.cancelAbort(session.tableId());
+        turnNotifier.present(userId);
         clock.resume(session.tableId());
         runtime.broadcast(serialize(Envelope.event("MATCH_RESUMED", null,
                 session.tableId().toString(), objectMapper.createObjectNode())));

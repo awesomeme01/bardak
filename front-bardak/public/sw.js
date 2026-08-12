@@ -10,7 +10,7 @@
  * он не может отличить от правды.
  */
 
-const VERSION = 'v1';
+const VERSION = 'v2';
 const SHELL = `bardak-shell-${VERSION}`;
 const CARDS = `bardak-cards-${VERSION}`;
 const SHELL_URL = '/';
@@ -40,6 +40,48 @@ self.addEventListener('message', (event) => {
     if (event.data === 'SKIP_WAITING') {
         self.skipWaiting();
     }
+});
+
+/**
+ * Уведомление «твой ход».
+ *
+ * ⭐ Показать его обязательно: браузер требует показать уведомление на каждый полученный
+ * push, иначе он отзовёт подписку целиком. Поэтому даже на непонятную нагрузку показывается
+ * что-то осмысленное, а не ничего.
+ *
+ * Тег один на все ходы: второе уведомление заменяет первое, а не копится столбиком.
+ */
+self.addEventListener('push', (event) => {
+    let payload = {};
+    try {
+        payload = event.data ? event.data.json() : {};
+    } catch {
+        payload = {};
+    }
+    event.waitUntil(self.registration.showNotification(payload.title ?? 'Бардак', {
+        body: payload.body ?? 'За столом ждут тебя',
+        icon: '/icons/icon-192.png',
+        badge: '/icons/icon-192.png',
+        tag: 'bardak-turn',
+        renotify: true,
+        data: {tableId: payload.tableId ?? null},
+    }));
+});
+
+/** Клик по уведомлению открывает уже открытую вкладку, а не вторую копию игры. */
+self.addEventListener('notificationclick', (event) => {
+    event.notification.close();
+    event.waitUntil((async () => {
+        const clients = await self.clients.matchAll({type: 'window', includeUncontrolled: true});
+        for (const client of clients) {
+            if (new URL(client.url).origin === self.location.origin) {
+                await client.focus();
+                client.postMessage({type: 'OPEN_TABLE', tableId: event.notification.data?.tableId});
+                return;
+            }
+        }
+        await self.clients.openWindow('/');
+    })());
 });
 
 self.addEventListener('fetch', (event) => {

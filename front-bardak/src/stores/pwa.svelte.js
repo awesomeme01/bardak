@@ -1,20 +1,25 @@
 /**
- * Установка приложения и обновление Service Worker.
+ * Установка приложения, обновление Service Worker и подписка на уведомления.
  *
  * ⭐ Главное правило этапа: обновление не рвёт идущую партию. Новый воркер ждёт
  * в стороне, а страница применяет его сама — когда за столом ничего не происходит.
  */
 
+import {apiGet, apiPost} from '../net/rest-client.js';
+
 export const pwa = $state({
     updateReady: false,   // новый воркер ждёт применения
     installPrompt: null,  // событие браузера «можно поставить на домашний экран»
     online: true,
+    pushEnabled: false,
+    pushError: null,
 });
 
 let waitingWorker = null;
 
 export function initPwa() {
     pwa.online = navigator.onLine;
+    pwa.pushEnabled = 'Notification' in window && Notification.permission === 'granted';
     window.addEventListener('online', () => (pwa.online = true));
     window.addEventListener('offline', () => (pwa.online = false));
 
@@ -80,4 +85,52 @@ export async function installApp() {
     }
     pwa.installPrompt = null;
     await prompt.prompt();
+}
+
+/**
+ * Подписка на уведомления «твой ход».
+ *
+ * ⭐ Разрешение спрашивается только по нажатию кнопки. Браузеры блокируют запрос без
+ * действия пользователя, а тот, у кого спросили сразу при входе, почти всегда жмёт
+ * «запретить» — и второй раз спросить будет уже нельзя.
+ */
+export async function enablePush() {
+    const config = await apiGet('/push/key').catch(() => null);
+    if (!config?.enabled) {
+        pwa.pushError = 'Уведомления на сервере не настроены';
+        return false;
+    }
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+        pwa.pushError = 'Браузер не умеет уведомления';
+        return false;
+    }
+    if (await Notification.requestPermission() !== 'granted') {
+        pwa.pushError = 'Уведомления запрещены в настройках браузера';
+        return false;
+    }
+
+    const registration = await navigator.serviceWorker.ready;
+    const subscription = await registration.pushManager.subscribe({
+        // Без этого флага подписаться нельзя: браузер требует, чтобы каждый push
+        // заканчивался видимым уведомлением.
+        userVisibleOnly: true,
+        applicationServerKey: base64UrlToBytes(config.publicKey),
+    });
+    const keys = subscription.toJSON().keys;
+    await apiPost('/push/subscriptions', {
+        endpoint: subscription.endpoint,
+        p256dh: keys.p256dh,
+        auth: keys.auth,
+    });
+    pwa.pushEnabled = true;
+    pwa.pushError = null;
+    return true;
+}
+
+/** Ключ приходит в base64url, а `subscribe` требует байты. */
+function base64UrlToBytes(value) {
+    const padded = (value + '='.repeat((4 - value.length % 4) % 4))
+        .replace(/-/g, '+').replace(/_/g, '/');
+    const binary = atob(padded);
+    return Uint8Array.from(binary, (character) => character.charCodeAt(0));
 }

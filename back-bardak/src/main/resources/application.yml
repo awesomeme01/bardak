@@ -58,6 +58,17 @@ bardak:
     turn-timeout: 30s
     disconnect-grace: 60s
 
+  push:
+    # Ключи VAPID: без них уведомления просто выключены — локально играют с открытой
+    # вкладкой, и заводить ключи ради этого незачем. Пара генерируется один раз:
+    # openssl ecparam -genkey -name prime256v1 -out vapid.pem (см. README).
+    public-key: ${BARDAK_VAPID_PUBLIC:}
+    private-key: ${BARDAK_VAPID_PRIVATE:}
+    subject: ${BARDAK_VAPID_SUBJECT:mailto:admin@bardak.local}
+    # Ход может вернуться к игроку через несколько секунд: без паузы партия
+    # превратилась бы в очередь звонков.
+    quiet-for: 2m
+
   rating:
     # Сезон закрывается вручную (ADR-037), и делать это вправе не каждый. Ролей в системе
     # нет: список логинов дешевле роли, пока административное действие ровно одно.
