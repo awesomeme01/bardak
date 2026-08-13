@@ -11,6 +11,7 @@ import java.util.function.Consumer;
 import kz.bardak.auth.domain.User;
 import kz.bardak.auth.domain.UserRepository;
 import kz.bardak.common.web.ApiException;
+import kz.bardak.game.protocol.CardCodec;
 import kz.bardak.game.protocol.GameProtocol;
 import kz.bardak.game.runtime.GameProperties;
 import kz.bardak.game.runtime.MatchService;
@@ -224,6 +225,11 @@ public class GameCommandHandler {
             node.put("ratingAfter", change.after());
             node.put("ratingDelta", change.delta());
         }
+        // ⭐ Последняя атака — часть приговора: по восьмёркам в ней различаются «Королевский»
+        // и «Супер-мега-сак» (§0.3). Карты были на столе у всех на виду, скрывать нечего.
+        final var lastAttack = payload.putArray("lastAttackCards");
+        session.state().lastResult().ifPresent(outcome ->
+                outcome.lastAttackCards().forEach(card -> lastAttack.add(CardCodec.encode(card))));
         return payload;
     }
 

@@ -515,4 +515,60 @@
         justify-content: center;
         color: var(--text-45);
     }
+
+    /**
+     * ⭐ Десктоп: соперники садятся дугой, как за настоящим столом, — крайние ниже средних.
+     * Это не украшение: при пятерых ряд из одинаковых мест читается как список, а дуга —
+     * как стол, за которым сидят напротив.
+     */
+    @media (min-width: 900px) {
+        .table-screen {
+            gap: 16px;
+            padding-top: 18px;
+        }
+
+        .opponents {
+            padding: 0 60px;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+
+        .opponents :global(.seat:first-child),
+        .opponents :global(.seat:last-child) {
+            transform: translateY(46px);
+        }
+
+        /* Двое за столом — соперник один и сидит строго напротив, без дуги. */
+        .opponents:has(:global(.seat:only-child)) :global(.seat) {
+            transform: none;
+        }
+
+        .middle {
+            grid-template-columns: 160px 1fr 140px;
+            padding: 0 60px;
+            min-height: 230px;
+        }
+
+        .hand {
+            min-height: 150px;
+        }
+
+        .hand :global(.card-button) {
+            width: 96px !important;
+        }
+
+        .hand-card + .hand-card {
+            margin-left: -34px;
+        }
+
+        .actions {
+            max-width: 720px;
+            margin: 0 auto;
+            background: none;
+        }
+
+        .mine {
+            padding: 0 60px;
+        }
+    }
 </style>

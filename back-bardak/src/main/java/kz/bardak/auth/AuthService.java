@@ -91,8 +91,44 @@ public class AuthService {
                 toView(user));
     }
 
+    /**
+     * Сменить имя за столом и мордочку.
+     *
+     * <p>Логин не меняется намеренно: по нему входят, и его знают соседи по столу как адрес
+     * приглашения. Имя же — то, что видно в игре, и его хочется поправить.
+     */
+    @Transactional
+    public AuthDtos.UserView updateProfile(final UUID userId, final String displayName,
+                                           final String avatar) {
+        final User user = users.findById(userId).orElseThrow(() ->
+                new ApiException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "Пользователь не найден"));
+        user.rename(displayName.trim(), avatar == null || avatar.isBlank() ? null : avatar.trim());
+        return toView(users.save(user));
+    }
+
+    /**
+     * Сменить пароль.
+     *
+     * <p>⚠️ Старый пароль спрашивается даже при живом токене: иначе оставленная открытой
+     * вкладка позволяет запереть владельца снаружи. Все refresh-токены при этом гасятся —
+     * смена пароля и означает «выкинуть всех, кто вошёл раньше».
+     */
+    @Transactional
+    public void changePassword(final UUID userId, final String currentPassword,
+                              final String newPassword) {
+        final User user = users.findById(userId).orElseThrow(() ->
+                new ApiException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "Пользователь не найден"));
+        if (!passwordEncoder.matches(currentPassword, user.passwordHash())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_CREDENTIALS",
+                    "Текущий пароль не подошёл");
+        }
+        user.changePassword(passwordEncoder.encode(newPassword));
+        users.save(user);
+        refreshTokens.revokeAllOf(userId);
+    }
+
     private static AuthDtos.UserView toView(final User user) {
         return new AuthDtos.UserView(user.id().toString(), user.username(),
-                user.displayName(), user.avatarUrl());
+                user.displayName(), user.avatarUrl(), user.avatar());
     }
 }

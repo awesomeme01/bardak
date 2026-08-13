@@ -64,9 +64,12 @@ export function deltaText(value) {
  * ради узнавания за столом на пятерых — заводить целую подсистему там, где хватает
  * остатка от деления.
  */
-const FACES = ['🦊', '🥔', '🗿', '😼', '🐻', '🦉', '🐙', '🦅', '🐺', '🦁', '🐸', '🦄'];
+export const FACES = ['🦊', '🥔', '🗿', '😼', '🐻', '🦉', '🐙', '🦅', '🐺', '🦁', '🐸', '🦄'];
 
-export function avatarOf(userId) {
+export function avatarOf(userId, chosen = null) {
+    if (chosen) {
+        return chosen;
+    }
     if (!userId) {
         return '🃏';
     }

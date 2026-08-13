@@ -94,6 +94,11 @@ public class RefreshTokenService {
                 });
     }
 
+    /** Погасить все токены игрока: так делает смена пароля. */
+    public void revokeAllOf(final UUID userId) {
+        seriesRevoker.revokeAll(userId, clock.instant());
+    }
+
     public long refreshTtlSeconds() {
         return properties.refreshTtl().toSeconds();
     }

@@ -9,9 +9,9 @@
      */
     import {avatarOf} from './naming.js';
 
-    let {userId = '', size = 52, active = false, ring = false} = $props();
+    let {userId = '', avatar = null, size = 52, active = false, ring = false} = $props();
 
-    const face = $derived(avatarOf(userId));
+    const face = $derived(avatarOf(userId, avatar));
 </script>
 
 <span class="avatar" class:active class:ring

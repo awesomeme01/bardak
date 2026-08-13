@@ -15,6 +15,8 @@
     let {onClose, onHistory} = $props();
 
     const players = $derived(table.result?.players ?? []);
+    const lastAttack = $derived(table.result?.lastAttackCards ?? []);
+    const eights = $derived(lastAttack.filter((code) => code.startsWith('8-')).length);
     const mine = $derived(players.find((player) => player.userId === profile.user?.id));
     const loser = $derived(players.find((player) => player.lossDegree));
 
@@ -44,6 +46,25 @@
             <h1 class="degree">Матч окончен</h1>
         {/if}
     </div>
+
+    {#if lastAttack.length}
+        <!-- ⭐ Восьмёрки в последней атаке — это и есть разница между «Королевским»
+             и «Супер-мега-саком» (§0.3). Показываем карты, а не пересказ. -->
+        <div class="last-attack" class:royal-box={loser?.lossDegree === 'ROYAL'}>
+            <div class="label">Последняя атака{#if eights} · восьмёрки{/if}</div>
+            <div class="attack-cards">
+                {#each lastAttack as code (code)}
+                    <Card {code} width={52}/>
+                {/each}
+            </div>
+            {#if eights === 4}
+                <p class="mono note">четыре восьмёрки — дальше некуда</p>
+            {:else if eights > 0}
+                <p class="mono note">{eights === 1 ? 'одна восьмёрка' : `${eights} восьмёрки`} —
+                    не четыре, до «Королевского» не дотянул</p>
+            {/if}
+        </div>
+    {/if}
 
     <div class="places">
         {#each players as player (player.userId)}
@@ -116,6 +137,41 @@
 
     .who {
         font-size: 13px;
+    }
+
+    .last-attack {
+        padding: 14px 16px;
+        border-radius: 16px;
+        border: 1px solid rgba(232, 85, 95, 0.4);
+        background: rgba(232, 85, 95, 0.1);
+        display: flex;
+        flex-direction: column;
+        gap: 11px;
+        align-items: center;
+    }
+
+    .last-attack .label {
+        color: #ff9ba2;
+    }
+
+    .royal-box {
+        border-color: var(--gold-soft);
+        background: rgba(240, 205, 138, 0.1);
+    }
+
+    .royal-box .label {
+        color: var(--gold);
+    }
+
+    .attack-cards {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+
+    .note {
+        text-align: center;
     }
 
     .places {

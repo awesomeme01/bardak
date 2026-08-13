@@ -186,4 +186,18 @@
         overflow-y: auto;
         opacity: 0.85;
     }
+
+    /* Десктоп: рейтинг и список матчей рядом — разбор раскрывается под списком. */
+    @media (min-width: 900px) {
+        .block-card {
+            padding: 20px 32px 0;
+        }
+
+        .block-card:first-child {
+            display: grid;
+            grid-template-columns: 320px minmax(0, 1fr);
+            gap: 24px;
+            align-items: center;
+        }
+    }
 </style>

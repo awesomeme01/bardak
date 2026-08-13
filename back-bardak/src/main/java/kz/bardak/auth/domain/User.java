@@ -37,6 +37,10 @@ public class User {
     @Column(name = "avatar_url")
     private String avatarUrl;
 
+    /** ⭐ Эмодзи, а не ссылка: за столом мордочка, а не фотография (см. V8). */
+    @Column
+    private String avatar;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private UserStatus status;
@@ -79,6 +83,20 @@ public class User {
 
     public String passwordHash() {
         return passwordHash;
+    }
+
+    public String avatar() {
+        return avatar;
+    }
+
+    /** Сменить то, что видно за столом. Логин не меняется — по нему входят. */
+    public void rename(final String displayName, final String avatar) {
+        this.displayName = Objects.requireNonNull(displayName, "displayName");
+        this.avatar = avatar;
+    }
+
+    public void changePassword(final String passwordHash) {
+        this.passwordHash = Objects.requireNonNull(passwordHash, "passwordHash");
     }
 
     public String avatarUrl() {

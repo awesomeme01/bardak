@@ -265,4 +265,39 @@
         display: flex;
         gap: 10px;
     }
+
+    /* На широком экране список столов и формы стоят рядом, а не друг под другом. */
+    @media (min-width: 900px) {
+        .screen {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 360px;
+            grid-template-areas:
+                'current side'
+                'title   side'
+                'tables  side'
+                'bycode  side';
+            gap: 16px 28px;
+            align-content: start;
+            padding: 24px 32px 0;
+        }
+
+        .card-gold {
+            grid-area: current;
+        }
+
+        .tables {
+            grid-area: tables;
+        }
+
+        .by-code, .sheet {
+            grid-area: side;
+            align-self: start;
+        }
+
+        .bottom-bar {
+            max-width: 360px;
+            margin-left: auto;
+            padding: 14px 32px 28px;
+        }
+    }
 </style>

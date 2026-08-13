@@ -12,6 +12,8 @@
     import Lobby from './Lobby.svelte';
     import TableRoom from './TableRoom.svelte';
     import History from './History.svelte';
+    import Profile from './Profile.svelte';
+    import Stats from './Stats.svelte';
 
     let tab = $state('play');
     let error = $state(null);
@@ -30,14 +32,20 @@
     const atTable = $derived(tab === 'play' && lobby.current !== null);
 </script>
 
-{#if !atTable}
+{#if !atTable && tab !== 'profile' && tab !== 'stats'}
     <AppHeader onRefresh={tab === 'play' ? () => lobbyScreen?.refresh() : null}
-               onHistory={() => (tab = tab === 'history' ? 'play' : 'history')}/>
+               onHistory={() => (tab = tab === 'history' ? 'play' : 'history')}
+               onProfile={() => (tab = 'profile')}
+               onStats={() => (tab = 'stats')}/>
 {/if}
 
 {#if error}<p class="notice notice-fail top">{error}</p>{/if}
 
-{#if tab === 'history'}
+{#if tab === 'profile'}
+    <Profile onBack={() => (tab = 'play')}/>
+{:else if tab === 'stats'}
+    <Stats onBack={() => (tab = 'play')}/>
+{:else if tab === 'history'}
     {#if lobby.current}
         <!-- ⭐ Матч идёт, а игрок ушёл в разбор: зовём обратно, иначе партия отменится по времени. -->
         <button class="back-to-table" type="button" onclick={() => (tab = 'play')}>

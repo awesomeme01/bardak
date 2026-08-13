@@ -37,6 +37,10 @@ export function apiPost(path, body) {
     return request('POST', path, body);
 }
 
+export function apiPatch(path, body) {
+    return request('PATCH', path, body);
+}
+
 /** Запрос без токена и без авто-refresh — для самого входа и обновления пары. */
 export async function apiPostAnonymous(path, body) {
     return send('POST', path, body, null);

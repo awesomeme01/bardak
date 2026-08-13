@@ -38,10 +38,26 @@ public final class AuthDtos {
     }
 
     /** Публичное представление игрока: ни хеша пароля, ни почты. */
-    public record UserView(String id, String username, String displayName, String avatarUrl) {
+    public record UserView(String id, String username, String displayName, String avatarUrl,
+                           String avatar) {
     }
 
     /** Одноразовый тикет для WS-рукопожатия (ADR-005). */
+    /** Что можно про себя поменять. Логин не меняется: по нему входят. */
+    public record UpdateProfileRequest(@NotBlank @Size(min = 2, max = 64) String displayName,
+                                       @Size(max = 8) String avatar) {
+    }
+
+    /**
+     * Смена пароля.
+     *
+     * <p>⚠️ Старый пароль обязателен даже при живом токене: украденная вкладка не должна
+     * давать возможность запереть владельца снаружи.
+     */
+    public record ChangePasswordRequest(@NotBlank String currentPassword,
+                                        @NotBlank @Size(min = 8, max = 128) String newPassword) {
+    }
+
     public record WsTicket(String ticket, long expiresIn) {
     }
 }
