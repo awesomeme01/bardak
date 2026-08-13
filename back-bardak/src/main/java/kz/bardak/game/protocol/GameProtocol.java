@@ -53,7 +53,8 @@ public final class GameProtocol {
     /** Проекция движка в сообщение `STATE_SYNC`. */
     public static PlayerViewDto toDto(final PlayerView view, final UUID tableId, final int dealNo,
                                       final IntFunction<UUID> userAtSeat,
-                                      final IntFunction<String> displayNameAtSeat) {
+                                      final IntFunction<String> displayNameAtSeat,
+                                      final Integer turnSecondsLeft) {
         final List<PlayerViewDto.SeatStateDto> players = new ArrayList<>();
         for (final SeatView seat : view.seats()) {
             players.add(new PlayerViewDto.SeatStateDto(
@@ -83,6 +84,7 @@ public final class GameProtocol {
                 view.trump().map(Enum::name).orElse(null),
                 view.protectedSuit() == null ? null : view.protectedSuit().name(),
                 view.deckLeft(),
+                view.discardCount(),
                 view.myHand().stream().map(CardCodec::encode).toList(),
                 view.iHaveHiddenCard(),
                 view.mySeat(),
@@ -92,6 +94,7 @@ public final class GameProtocol {
                 view.defenderSeat(),
                 view.canAttackSeat(),
                 view.hangingVictim().orElse(null),
+                turnSecondsLeft,
                 view.availableActions().stream().map(GameProtocol::toAction).toList());
     }
 

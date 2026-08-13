@@ -400,8 +400,15 @@ public class GameCommandHandler {
     }
 
     private Envelope stateSync(final MatchSession session, final UUID userId) {
+        // ⭐ Остаток хода отдаётся сервером, а не отсчитывается клиентом от своей догадки:
+        // по этим же часам сервер сходит за молчащего (§5.1), и расхождение выглядело бы
+        // как отобранный ход.
+        final Integer secondsLeft = clock.remaining(session.tableId())
+                .map(left -> (int) Math.ceil(left.toMillis() / 1000d))
+                .orElse(null);
         final var dto = GameProtocol.toDto(session.viewFor(userId), session.tableId(),
-                session.state().dealNo(), session::userAt, seat -> displayName(session.userAt(seat)));
+                session.state().dealNo(), session::userAt, seat -> displayName(session.userAt(seat)),
+                secondsLeft);
         return Envelope.event("STATE_SYNC", null, session.tableId().toString(),
                 objectMapper.valueToTree(dto));
     }

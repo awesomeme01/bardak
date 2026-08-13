@@ -248,4 +248,58 @@ class StateProjectionTest {
         }
         throw new IllegalStateException("Не нашлось seed с джокером снизу");
     }
+
+    @DisplayName("Should show an empty discard pile When the deal has just been dealt")
+    @Test
+    void shouldShowAnEmptyDiscardPileWhenTheDealHasJustBeenDealt() {
+        // ⭐ Проверять надо на настоящей сдаче: счёт отбоя выводится от обратного, и его
+        // правильность держится на том, что все карты колоды где-то есть. Ошибка здесь
+        // тихая — «Бито 12» просто разойдётся с реальностью, и никто не заметит.
+        final DealState dealt = new Dealer(RulesConfig.defaults(), new DiceResolver.Seeded())
+                .startDeal(List.of(NavesScale.NO_NAVES, NavesScale.NO_NAVES), 42L);
+
+        final PlayerView view = StateProjection.withDefaults().project(dealt, 0);
+
+        assertThat(view.discardCount()).isZero();
+    }
+
+    @DisplayName("Should count the beaten cards When a round went to the discard pile")
+    @Test
+    void shouldCountTheBeatenCardsWhenARoundWentToTheDiscardPile() {
+        final DealEngine engine = DealEngine.withDefaults();
+        DealState state = new Dealer(RulesConfig.defaults(), new DiceResolver.Seeded())
+                .startDeal(List.of(NavesScale.NO_NAVES, NavesScale.NO_NAVES), 7L);
+        // Играем, пока стол не уйдёт в отбой: до этого момента отбой обязан быть пустым.
+        for (int move = 0; move < 60 && StateProjection.withDefaults()
+                .project(state, 0).discardCount() == 0; move++) {
+            state = advance(engine, state);
+        }
+
+        assertThat(StateProjection.withDefaults().project(state, 0).discardCount()).isPositive();
+    }
+
+    /** Один ход простейшего автоигрока: первое, что примет движок. */
+    private DealState advance(final DealEngine engine, final DealState state) {
+        for (final DealCommand candidate : candidates(state)) {
+            if (engine.apply(state, candidate) instanceof MoveResult.Applied applied) {
+                return applied.state();
+            }
+        }
+        return state;
+    }
+
+    private List<DealCommand> candidates(final DealState state) {
+        final List<DealCommand> commands = new java.util.ArrayList<>();
+        for (final Card card : state.playerAt(state.defenderSeat()).hand()) {
+            for (final TableSlot slot : state.table()) {
+                commands.add(new DealCommand.Defend(state.defenderSeat(), card, slot.attack()));
+            }
+        }
+        for (final Card card : state.playerAt(state.attackRightSeat()).hand()) {
+            commands.add(new DealCommand.Attack(state.attackRightSeat(), card));
+        }
+        commands.add(new DealCommand.Pass(state.attackRightSeat()));
+        commands.add(new DealCommand.Take(state.defenderSeat()));
+        return commands;
+    }
 }

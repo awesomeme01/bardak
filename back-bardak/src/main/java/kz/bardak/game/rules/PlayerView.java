@@ -18,6 +18,9 @@ import java.util.Optional;
  * @param trumpSuit         козырная масть; пусто, пока её разыгрывают костью (§1.2)
  * @param protectedSuit     защищённая масть — считается сервером, фронт её не выводит
  * @param deckLeft          сколько карт осталось в колоде; сами карты не отдаются
+ * @param discardCount      сколько карт ушло в отбой. ⭐ Считает сервер: клиент знал бы
+ *                          состав колоды и мог бы вычесть — то есть считать карты вместо
+ *                          игрока, а это уже другая игра
  * @param myHand            своя рука целиком
  * @param iHaveHiddenCard   есть ли у меня не вскрытая скрытая карта
  * @param table             стол виден всем
@@ -35,6 +38,7 @@ public record PlayerView(
         Suit trumpSuit,
         Suit protectedSuit,
         int deckLeft,
+        int discardCount,
         List<Card> myHand,
         boolean iHaveHiddenCard,
         List<TableSlot> table,

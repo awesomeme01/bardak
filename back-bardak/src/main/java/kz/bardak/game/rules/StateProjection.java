@@ -38,6 +38,7 @@ public final class StateProjection {
                 state.hasTrump() ? state.trump().suit() : null,
                 state.hasTrump() ? state.trump().protectedSuit() : null,
                 state.deck().size(),
+                discardCount(state),
                 viewer.hand(),
                 viewer.hasFaceDownCard(),
                 state.table(),
@@ -47,6 +48,31 @@ public final class StateProjection {
                 state.defenderSeat(),
                 state.hanging().map(HangingWindow::victimSeat).orElse(null),
                 availableActions(state, viewerSeat));
+    }
+
+    /**
+     * Сколько карт ушло в отбой.
+     *
+     * <p>Прямого счётчика в раздаче нет — отбитые карты просто исчезают со стола. Считаем
+     * от обратного: всё, чего нет ни в колоде, ни на руках, ни на столе, ни в навесах,
+     * лежит в отбое.
+     *
+     * <p>⚠️ Счёт верен для состояний, сданных {@link Dealer}: он держится на том, что все
+     * карты колоды где-то есть. Снимок, собранный вручную (в тестах), даст ерунду — и это
+     * не поломка, а цена того, что отдельного счётчика не заводится.
+     */
+    private int discardCount(final DealState state) {
+        int inPlay = state.deck().size();
+        for (final PlayerState player : state.players()) {
+            inPlay += player.hand().size() + player.hungCards().size();
+            if (player.hasFaceDownCard()) {
+                inPlay++;
+            }
+        }
+        for (final TableSlot slot : state.table()) {
+            inPlay += slot.defenceCard().isPresent() ? 2 : 1;
+        }
+        return Math.max(0, new DeckFactory().buildOrdered(state.players().size()).size() - inPlay);
     }
 
     /**

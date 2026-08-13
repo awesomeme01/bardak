@@ -2,6 +2,7 @@ package kz.bardak.game.runtime;
 
 import java.time.Duration;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -58,6 +59,22 @@ public class TurnClock {
         current.future().cancel(false);
         paused.put(tableId, new Paused(left, current.onExpiry()));
         return left;
+    }
+
+    /**
+     * Сколько осталось на ход. Пусто — часы не идут: либо ждать некого, либо матч на паузе.
+     *
+     * <p>⭐ Остаток снимается с самого задания, а не считается по своей копии времени:
+     * два счётчика одного и того же неизбежно разъезжаются, и клиент увидел бы не то,
+     * по чему сервер на самом деле сходит за игрока.
+     */
+    public Optional<Duration> remaining(final UUID tableId) {
+        final Pending current = pending.get(tableId);
+        if (current == null) {
+            return Optional.empty();
+        }
+        return Optional.of(Duration.ofMillis(Math.max(0,
+                current.future().getDelay(TimeUnit.MILLISECONDS))));
     }
 
     /** Продолжить с остатка. Если паузы не было — ничего не делает. */

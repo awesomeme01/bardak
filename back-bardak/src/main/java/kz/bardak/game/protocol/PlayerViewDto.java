@@ -14,6 +14,8 @@ import java.util.Map;
  * @param myHand           своя рука; у соседей — только {@code cardsCount}
  * @param iHaveHiddenCard  своя скрытая карта: только факт, даже владелец её не видит (§1.8)
  * @param availableActions что именно можно сделать сейчас; фронт правил не знает (ADR-003)
+ * @param turnSecondsLeft  сколько секунд осталось у того, кто на часах (§5.1); {@code null},
+ *                         если ход никого не ждёт
  */
 public record PlayerViewDto(
         String tableId,
@@ -22,6 +24,7 @@ public record PlayerViewDto(
         String trumpSuit,
         String protectedSuit,
         int deckLeft,
+        int discardCount,
         List<String> myHand,
         boolean iHaveHiddenCard,
         int mySeat,
@@ -31,6 +34,7 @@ public record PlayerViewDto(
         int defenderSeat,
         int canAttackSeat,
         Integer hangingVictimSeat,
+        Integer turnSecondsLeft,
         List<ActionDto> availableActions) {
 
     public record TableSlotDto(String attack, String defend) {
