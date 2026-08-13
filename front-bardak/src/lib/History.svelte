@@ -11,8 +11,8 @@
     }
 </script>
 
-<section class="card">
-    <h2>Рейтинг</h2>
+<section class="block-card">
+    <span class="label">Рейтинг</span>
     {#if history.rating}
         <p><strong>{Number(history.rating.rating).toFixed(0)}</strong> · матчей: {history.rating.matchesPlayed}</p>
         <RatingChart points={history.rating.history}/>
@@ -21,10 +21,10 @@
     {/if}
 </section>
 
-<section class="card">
-    <h2>История матчей</h2>
+<section class="block-card">
+    <span class="label">История матчей</span>
     {#if history.error}
-        <p class="badge badge-fail">{history.error}</p>
+        <p class="notice notice-fail">{history.error}</p>
     {/if}
     {#if history.loading}
         <p>Загружаю…</p>
@@ -35,17 +35,22 @@
     <ul class="matches">
         {#each history.matches as match (match.id)}
             <li>
-                <button type="button" class="row-button" onclick={() => openMatch(match.id)}>
-                    <span>{when(match.startedAt)}</span>
-                    <span>{match.playersCount} игрока · раздач: {match.dealsPlayed}</span>
+                <button type="button" class="card match" onclick={() => openMatch(match.id)}>
+                    <span class="grow">
+                        <span class="when">{when(match.startedAt)}</span>
+                        <span class="mono block">{match.playersCount} игрока · раздач: {match.dealsPlayed}</span>
+                    </span>
                     {#if match.status === 'ABORTED'}
                         <!-- Отменённый матч виден с причиной и не влияет на рейтинг (§5.3). -->
-                        <span class="badge badge-warn">отменён: {match.abortReason ?? 'без причины'}</span>
+                        <span class="pill">отменён</span>
                     {:else}
-                        <span class="badge {match.myPlace === 1 ? 'badge-ok' : 'badge-wait'}">
+                        <span class="pill" class:pill-ready={match.myPlace === 1}>
                             место {match.myPlace ?? '—'}
                         </span>
-                        <span>{deltaText(match.myRatingDelta)}</span>
+                        <span class="delta" class:up={Number(match.myRatingDelta) > 0}
+                              class:down={Number(match.myRatingDelta) < 0}>
+                            {deltaText(match.myRatingDelta)}
+                        </span>
                     {/if}
                 </button>
 
@@ -112,20 +117,54 @@
         list-style: none;
         padding: 0;
         margin: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
     }
 
-    .row-button {
+    .block-card {
         display: flex;
-        gap: 0.75rem;
+        flex-direction: column;
+        gap: 12px;
+        padding: 16px 20px 0;
+    }
+
+    .match {
+        display: flex;
         align-items: center;
+        gap: 10px;
         width: 100%;
         text-align: left;
-        background: none;
-        border: none;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.12);
-        padding: 0.5rem 0;
         color: inherit;
-        cursor: pointer;
+    }
+
+    .grow {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .when {
+        font-size: 14px;
+        font-weight: 700;
+    }
+
+    .block {
+        display: block;
+        margin-top: 4px;
+    }
+
+    .delta {
+        font-family: var(--mono);
+        font-size: 13px;
+        color: var(--text-55);
+    }
+
+    .delta.up {
+        color: var(--green);
+    }
+
+    .delta.down {
+        color: #ff6b75;
     }
 
     .details {

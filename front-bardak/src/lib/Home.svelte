@@ -1,56 +1,73 @@
 <script>
+    /**
+     * Что показывать вошедшему: стол, лобби или историю.
+     *
+     * Роутера нет намеренно — экранов три, и переключаются они состоянием, а не адресом.
+     */
     import {onMount} from 'svelte';
-    import {loadProfile, logout} from '../stores/auth.svelte.js';
+    import {loadProfile} from '../stores/profile.svelte.js';
     import {leaveTable as forgetTable, lobby, restoreTable} from '../stores/lobby.svelte.js';
+    import {table} from '../stores/table.svelte.js';
+    import AppHeader from './AppHeader.svelte';
     import Lobby from './Lobby.svelte';
     import TableRoom from './TableRoom.svelte';
     import History from './History.svelte';
 
-    let profile = $state(null);
-    let error = $state(null);
-    // Разделов два, и переключаются они кнопкой: роутер ради этого не нужен.
     let tab = $state('play');
+    let error = $state(null);
+    let lobbyScreen = $state(null);
 
     onMount(async () => {
         try {
-            profile = await loadProfile();
+            await loadProfile();
             // Возвращаемся за стол сами: место осталось за игроком, даже если вкладку закрыли.
             await restoreTable();
         } catch (e) {
             error = e.message;
         }
     });
+
+    const atTable = $derived(tab === 'play' && lobby.current !== null);
 </script>
 
-<section class="card">
-    <h2>Профиль</h2>
-    {#if error}
-        <p class="badge badge-fail">{error}</p>
-    {:else if profile}
-        <p>За столом ты <strong>{profile.displayName}</strong> (@{profile.username})</p>
-    {:else}
-        <p>Загружаю…</p>
-    {/if}
-    <div class="row">
-        <button type="button" onclick={() => (tab = 'play')} disabled={tab === 'play'}>Игра</button>
-        <button type="button" onclick={() => (tab = 'history')} disabled={tab === 'history'}>История</button>
-        <button type="button" onclick={logout}>Выйти</button>
-    </div>
-</section>
+{#if !atTable}
+    <AppHeader onRefresh={tab === 'play' ? () => lobbyScreen?.refresh() : null}
+               onHistory={() => (tab = tab === 'history' ? 'play' : 'history')}/>
+{/if}
+
+{#if error}<p class="notice notice-fail top">{error}</p>{/if}
 
 {#if tab === 'history'}
-    <!-- ⭐ Матч идёт, а игрок ушёл в историю: зовём обратно, иначе он о нём забудет
-         и партия отменится по времени. -->
     {#if lobby.current}
-        <div class="row">
-            <button type="button" onclick={() => (tab = 'play')}>
-                ← Вернуться за стол «{lobby.current.name}»
-            </button>
-        </div>
+        <!-- ⭐ Матч идёт, а игрок ушёл в разбор: зовём обратно, иначе партия отменится по времени. -->
+        <button class="back-to-table" type="button" onclick={() => (tab = 'play')}>
+            ← Вернуться за стол «{lobby.current.name}»
+            {#if table.game}<span class="pill pill-turn">матч идёт</span>{/if}
+        </button>
     {/if}
     <History/>
 {:else if lobby.current}
-    <TableRoom info={lobby.current} onExit={forgetTable}/>
+    <TableRoom info={lobby.current} onExit={forgetTable} onHistory={() => (tab = 'history')}/>
 {:else}
-    <Lobby onEnter={() => {}}/>
+    <Lobby bind:this={lobbyScreen} onEnter={() => {}}/>
 {/if}
+
+<style>
+    .top {
+        margin: 12px 20px 0;
+    }
+
+    .back-to-table {
+        margin: 12px 20px 0;
+        padding: 12px 16px;
+        border-radius: 14px;
+        border: 1px solid var(--gold-soft);
+        background: rgba(240, 205, 138, 0.08);
+        color: var(--gold);
+        font-size: 14px;
+        text-align: left;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+</style>

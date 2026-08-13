@@ -56,3 +56,35 @@ export function deltaText(value) {
     const number = Number(value);
     return number > 0 ? `+${number.toFixed(1)}` : number.toFixed(1);
 }
+
+/**
+ * Мордочка игрока — постоянная, выведенная из его идентификатора.
+ *
+ * Не случайная и не хранимая: случайная менялась бы при каждом входе, а хранить картинку
+ * ради узнавания за столом на пятерых — заводить целую подсистему там, где хватает
+ * остатка от деления.
+ */
+const FACES = ['🦊', '🥔', '🗿', '😼', '🐻', '🦉', '🐙', '🦅', '🐺', '🦁', '🐸', '🦄'];
+
+export function avatarOf(userId) {
+    if (!userId) {
+        return '🃏';
+    }
+    let sum = 0;
+    for (let i = 0; i < userId.length; i++) {
+        sum = (sum * 31 + userId.charCodeAt(i)) % 100000;
+    }
+    return FACES[sum % FACES.length];
+}
+
+/** Масть одним значком: в тесном месте название не помещается. */
+const SUIT_GLYPHS = {DIAMONDS: '♦', HEARTS: '♥', SPADES: '♠', CLUBS: '♣'};
+
+export function suitGlyph(code) {
+    return SUIT_GLYPHS[code] ?? '—';
+}
+
+/** Красные масти красим — иначе на сукне ♦ и ♥ неотличимы от ♠ и ♣. */
+export function isRedSuit(code) {
+    return code === 'DIAMONDS' || code === 'HEARTS';
+}

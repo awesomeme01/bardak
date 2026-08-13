@@ -46,6 +46,11 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/auth/register", "/api/auth/login",
                                 "/api/auth/refresh", "/api/auth/logout").permitAll()
                         .requestMatchers("/api/health", "/actuator/**", "/assets/**").permitAll()
+                        // ⭐ Каталог наборов открыт: это список ссылок на картинки, которые
+                        // и так лежат в /assets. Экран входа показывает карты из набора —
+                        // требовать ради этого токен значит запирать витрину, а не данные.
+                        .requestMatchers(HttpMethod.GET, "/api/card-sets", "/api/card-sets/**",
+                                "/api/table-themes").permitAll()
                         // ⭐ Сокет пропускается фильтром намеренно: браузерный WebSocket не умеет
                         // слать Authorization, поэтому его авторизует не Spring Security,
                         // а WsTicketHandshakeInterceptor по одноразовому тикету (ADR-005).

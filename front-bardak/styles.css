@@ -1,243 +1,361 @@
+@import "/fonts/fonts.css";
+
+/**
+ * Оформление по макетам дизайнера (`design/`).
+ *
+ * Одна тёмная тема и никакой светлой: играют вечером, и стол — зелёное сукно, которое
+ * на белом фоне выглядит как чужая заплатка. Это осознанный выбор, а не забытая ветка.
+ */
 :root {
-    --bg: #14171c;
-    --panel: #1c2128;
-    --border: #2d333b;
-    --text: #e6edf3;
-    --muted: #8b949e;
-    --ok: #3fb950;
-    --warn: #d29922;
-    --fail: #f85149;
-    --accent: #4493f8;
+    /* Сукно и подложки */
+    --felt: radial-gradient(120% 74% at 50% 30%, #26493d 0%, #1a332c 46%, #0e1714 100%);
+    --room: radial-gradient(130% 55% at 50% 6%, #1f3b32 0%, #14211d 46%, #0b0f0d 100%);
+    --defeat: radial-gradient(110% 46% at 50% 6%, #3a1416 0%, #170d0d 52%, #0a0808 100%);
+    --ink: #0b0f0d;
+
+    /* Текст */
+    --text: #f2f0ea;
+    --text-70: rgba(242, 240, 234, 0.7);
+    --text-55: rgba(242, 240, 234, 0.55);
+    --text-45: rgba(242, 240, 234, 0.45);
+    --text-30: rgba(242, 240, 234, 0.3);
+
+    /* Золото — главный акцент: им отмечено то, что сейчас можно и нужно сделать */
+    --gold: #f0cd8a;
+    --gold-soft: rgba(240, 205, 138, 0.5);
+    --gold-face: linear-gradient(160deg, #f5d79b, #c99a4e);
+    --gold-ink: #191410;
+
+    /* Красная — «беру» и проигрыш; синяя — перевод; зелёная — готовность */
+    --red-face: linear-gradient(160deg, #e8626c, #a52833);
+    --red: #e8848c;
+    --blue-face: linear-gradient(160deg, #6aa6e8, #2f5f9e);
+    --green: #7fd8a6;
+
+    /* Поверхности */
+    --line: rgba(255, 255, 255, 0.09);
+    --line-strong: rgba(255, 255, 255, 0.16);
+    --surface: rgba(255, 255, 255, 0.03);
+    --surface-hi: rgba(255, 255, 255, 0.06);
+
+    --display: Oswald, "Arial Narrow", sans-serif;
+    --body: Manrope, system-ui, -apple-system, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+    --r-card: 18px;
+    --r-btn: 16px;
+    --r-chip: 10px;
+
     color-scheme: dark;
 }
 
-* { box-sizing: border-box; }
+* {
+    box-sizing: border-box;
+}
+
+html, body {
+    margin: 0;
+    min-height: 100%;
+}
 
 body {
-    margin: 0;
-    padding: 2rem 1rem 3rem;
-    background: var(--bg);
+    background: var(--room);
+    background-attachment: fixed;
     color: var(--text);
-    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+    font: 500 15px/1.5 var(--body);
+    -webkit-font-smoothing: antialiased;
+    /* Вырез и домашняя полоса телефона: игра идёт во весь экран. */
+    padding: env(safe-area-inset-top) env(safe-area-inset-right)
+             env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 
-header, main {
-    max-width: 780px;
+/* Экран стола красит фон сам: сукно отличается от комнаты ожидания. */
+body.at-table {
+    background: var(--felt);
+}
+
+body.match-over {
+    background: var(--defeat);
+}
+
+.app {
+    max-width: 460px;
     margin: 0 auto;
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
 }
 
-h1 {
+/* ─── Типографика ─────────────────────────────────────────────── */
+
+h1, h2, h3 {
     margin: 0;
-    font-size: 1.6rem;
-    letter-spacing: -0.02em;
-}
-
-.stage {
-    margin: 0.25rem 0 2rem;
-    color: var(--muted);
-    font-size: 0.9rem;
-}
-
-h2 {
-    margin: 0 0 0.9rem;
-    font-size: 1rem;
+    font-family: var(--display);
     font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    line-height: 1.05;
 }
 
-code {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 0.88em;
-    color: var(--accent);
+h1 { font-size: 26px; }
+h2 { font-size: 20px; }
+h3 { font-size: 16px; }
+
+p {
+    margin: 0;
 }
+
+/** Микро-подпись: ею подписано всё служебное — метки полей, счётчики, состояния. */
+.label {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    color: var(--text-45);
+}
+
+.mono {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-45);
+}
+
+.muted {
+    color: var(--text-55);
+}
+
+.gold {
+    color: var(--gold);
+}
+
+/* ─── Кнопки ──────────────────────────────────────────────────── */
+
+button {
+    font-family: var(--body);
+    font-weight: 700;
+    color: var(--text);
+    background: none;
+    border: none;
+    cursor: pointer;
+}
+
+button:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+
+/** Главная кнопка экрана. Золотая — ровно одна на экран: она и есть «что делать». */
+.btn {
+    height: 58px;
+    padding: 0 22px;
+    border-radius: var(--r-btn);
+    background: var(--gold-face);
+    color: var(--gold-ink);
+    font-size: 17px;
+    font-weight: 800;
+    box-shadow: 0 10px 26px rgba(201, 154, 78, 0.35);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.btn-ghost {
+    height: 52px;
+    padding: 0 18px;
+    border-radius: 15px;
+    border: 1px solid var(--line-strong);
+    background: none;
+    color: var(--text-70);
+    font-size: 15px;
+    box-shadow: none;
+}
+
+.btn-red {
+    background: var(--red-face);
+    color: #fff;
+    box-shadow: 0 8px 20px rgba(165, 40, 51, 0.35);
+}
+
+.btn-blue {
+    background: var(--blue-face);
+    color: #fff;
+    box-shadow: 0 8px 20px rgba(47, 95, 158, 0.35);
+}
+
+.btn-small {
+    height: 40px;
+    padding: 0 16px;
+    border-radius: 12px;
+    font-size: 14px;
+    font-weight: 700;
+    border: 1px solid var(--line-strong);
+    background: none;
+    color: var(--text);
+    box-shadow: none;
+}
+
+.icon-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 11px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: var(--text-70);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 15px;
+}
+
+/* ─── Поля ────────────────────────────────────────────────────── */
+
+label.field {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+input {
+    height: 54px;
+    padding: 0 16px;
+    border-radius: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text);
+    font: 500 16px var(--body);
+    outline: none;
+}
+
+input:focus-visible {
+    border-color: var(--gold);
+}
+
+select {
+    height: 54px;
+    padding: 0 12px;
+    border-radius: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text);
+    font: 500 16px var(--body);
+}
+
+/* ─── Карточки и плашки ───────────────────────────────────────── */
 
 .card {
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 1.1rem 1.2rem;
-    margin-bottom: 1.2rem;
+    padding: 14px 16px;
+    border-radius: var(--r-card);
+    border: 1px solid var(--line);
+    background: var(--surface);
+}
+
+.card-gold {
+    border-color: var(--gold-soft);
+    background: linear-gradient(160deg, rgba(240, 205, 138, 0.14), rgba(240, 205, 138, 0.04));
+}
+
+.pill {
+    height: 28px;
+    padding: 0 11px;
+    border-radius: 9px;
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-70);
+    font: 700 11px var(--mono);
+    display: inline-flex;
+    align-items: center;
+}
+
+.pill-ready {
+    background: rgba(127, 216, 166, 0.16);
+    color: var(--green);
+}
+
+.pill-turn {
+    background: rgba(240, 205, 138, 0.16);
+    color: var(--gold);
+}
+
+.notice {
+    padding: 11px 14px;
+    border-radius: 14px;
+    border: 1px solid rgba(240, 205, 138, 0.3);
+    background: rgba(240, 205, 138, 0.08);
+    color: var(--gold);
+    font: 500 13px var(--body);
+}
+
+.notice-fail {
+    border-color: rgba(232, 132, 140, 0.35);
+    background: rgba(232, 132, 140, 0.1);
+    color: var(--red);
 }
 
 .row {
     display: flex;
-    flex-wrap: wrap;
+    gap: 10px;
     align-items: center;
-    gap: 0.6rem;
-    margin-bottom: 0.9rem;
 }
 
-.badge {
-    padding: 0.2rem 0.6rem;
-    border-radius: 999px;
-    font-size: 0.82rem;
-    font-weight: 500;
-    white-space: nowrap;
-}
+/* ─── Игральные карты ─────────────────────────────────────────── */
 
-.badge-ok   { background: rgba(63, 185, 80, 0.15);  color: var(--ok); }
-.badge-warn { background: rgba(210, 153, 34, 0.15); color: var(--warn); }
-.badge-fail { background: rgba(248, 81, 73, 0.15);  color: var(--fail); }
-.badge-wait { background: rgba(139, 148, 158, 0.15); color: var(--muted); }
-
-button, input {
-    font: inherit;
-    padding: 0.35rem 0.75rem;
-    border-radius: 6px;
-    border: 1px solid var(--border);
-    background: #21262d;
-    color: var(--text);
-}
-
-input { flex: 1 1 12rem; min-width: 0; }
-
-button {
-    cursor: pointer;
-    transition: border-color 0.15s;
-}
-
-button:hover { border-color: var(--accent); }
-
-pre {
-    margin: 0;
-    padding: 0.8rem;
-    max-height: 16rem;
-    overflow: auto;
-    background: #0d1117;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 0.82rem;
-    line-height: 1.55;
-    white-space: pre-wrap;
-    word-break: break-word;
-}
-
-.log-line { color: var(--muted); }
-.log-in   { color: var(--ok); }
-.log-out  { color: var(--accent); }
-.log-sys  { color: var(--muted); font-style: italic; }
-
-/* Формы входа и регистрации. Метка над полем: в столбик читается быстрее,
-   а на телефоне строка из «метка + поле» не помещается. */
-form {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-    max-width: 22rem;
-}
-
-form label {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-    font-size: 0.9rem;
-    color: var(--muted, #9aa4b2);
-}
-
-form input {
-    /* Общее правило выше растягивает input по flex-контейнеру: внутри колоночной
-       формы это превращало поле в прямоугольник во весь экран. */
-    flex: 0 0 auto;
-    padding: 0.5rem 0.6rem;
-    border-radius: 0.4rem;
-    border: 1px solid #2b3444;
-    background: #131a24;
-    color: inherit;
-    font: inherit;
-}
-
-form input:focus-visible {
-    outline: 2px solid #4c8dff;
-    outline-offset: 1px;
-}
-
-form .row {
-    margin-top: 0.25rem;
-}
-
-/* Лобби и комната ожидания */
-ul.tables, ul.seats {
-    list-style: none;
-    margin: 0.5rem 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.4rem;
-}
-
-ul.seats li {
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-}
-
-.seat-no {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 1.6rem;
-    height: 1.6rem;
-    border-radius: 50%;
-    border: 1px solid var(--border);
-    font-size: 0.8rem;
-    color: var(--muted);
-}
-
-.empty { color: var(--muted); }
-.offline { opacity: 0.5; }
-
-label.inline {
-    flex-direction: row;
-    align-items: center;
-    gap: 0.5rem;
-}
-
-label.inline input { flex: 0 0 auto; }
-
-form select {
-    font: inherit;
-    padding: 0.5rem 0.6rem;
-    border-radius: 0.4rem;
-    border: 1px solid #2b3444;
-    background: #131a24;
-    color: inherit;
-}
-
-/* Игровой стол */
-.hand, .table-slots {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    margin: 0.5rem 0;
-}
-
-.card-face {
-    width: 72px;
-    height: 104px;
-    padding: 0;
-    border: 1px solid var(--border);
+/**
+ * ⭐ Пропорция карты — часть контракта набора: 500×726, то есть 1:1.452.
+ * Задаётся в одном месте, чтобы размеры карт по всему приложению задавались шириной.
+ */
+.playing-card {
+    aspect-ratio: 500 / 726;
     border-radius: 8px;
-    background: #0f141b;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    overflow: hidden;
-    font-size: 0.8rem;
-    color: var(--text);
+    display: block;
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.55);
+    user-select: none;
+    -webkit-user-drag: none;
 }
 
-button.card-face { cursor: pointer; transition: transform 0.1s, border-color 0.15s; }
-button.card-face:hover { transform: translateY(-4px); border-color: #4c8dff; }
-.card-face.selected { border-color: #4c8dff; transform: translateY(-6px); }
-.card-face img { width: 100%; height: 100%; object-fit: contain; }
-.card-face.small { width: 42px; height: 60px; }
+/** Карта, которой сейчас нельзя пойти: гаснет, но остаётся читаемой. */
+.playing-card.dimmed {
+    filter: brightness(0.68) saturate(0.65);
+}
 
-/* Пара «атака — чем бита»: защита ложится поверх со сдвигом, как на настоящем столе. */
-.slot { position: relative; padding-right: 18px; }
-.slot .card-face.small { position: absolute; left: 22px; top: 26px; }
-.slot.targetable .card-face { border-color: #4c8dff; box-shadow: 0 0 0 2px rgba(76, 141, 255, 0.35); }
+.playing-card.playable {
+    outline: 2px solid var(--gold);
+    outline-offset: 2px;
+}
 
-.naves { display: inline-flex; align-items: center; gap: 0.3rem; }
-.muted { color: var(--muted); }
-ul.seats li.current { border-left: 2px solid #4c8dff; padding-left: 0.5rem; }
-.badge-warn { background: rgba(210, 153, 34, 0.2); color: #d29922; }
+/* Пустое место под карту: колода кончилась, навесов ещё нет, отбой пуст. */
+.card-slot {
+    aspect-ratio: 500 / 726;
+    border-radius: 6px;
+    border: 1px dashed rgba(255, 255, 255, 0.28);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    font-family: var(--mono);
+    color: var(--text-45);
+}
+
+.card-slot.gold {
+    border-color: var(--gold-soft);
+    color: var(--gold);
+}
+
+/* ─── Служебное ───────────────────────────────────────────────── */
+
+:focus-visible {
+    outline: 2px solid var(--gold);
+    outline-offset: 2px;
+}
+
+@keyframes turn-ring {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(240, 205, 138, 0.55); }
+    50% { box-shadow: 0 0 0 8px rgba(240, 205, 138, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}

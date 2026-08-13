@@ -1,5 +1,6 @@
 <script>
     import {login} from '../stores/auth.svelte.js';
+    import CardFan from './CardFan.svelte';
 
     let {onRegister} = $props();
 
@@ -24,15 +25,81 @@
     }
 </script>
 
-<section class="card">
-    <h2>Вход</h2>
-    <form onsubmit={submit}>
-        <label>Логин<input bind:value={username} autocomplete="username" required></label>
-        <label>Пароль<input type="password" bind:value={password} autocomplete="current-password" required></label>
-        {#if error}<p class="badge badge-fail">{error}</p>{/if}
-        <div class="row">
-            <button type="submit" disabled={busy}>{busy ? 'Вхожу…' : 'Войти'}</button>
-            <button type="button" onclick={onRegister}>Регистрация</button>
+<form class="screen" onsubmit={submit}>
+    <div class="brand">
+        <span class="mark">♠</span>
+        <div>
+            <div class="wordmark">БАРДАК</div>
+            <div class="mono">игра для своих</div>
         </div>
-    </form>
-</section>
+    </div>
+
+    <CardFan/>
+
+    <div class="fields">
+        <label class="field">
+            <span class="label">Логин</span>
+            <input bind:value={username} autocomplete="username" required>
+        </label>
+        <label class="field">
+            <span class="label">Пароль</span>
+            <input type="password" bind:value={password} autocomplete="current-password" required>
+        </label>
+        {#if error}<p class="notice notice-fail">{error}</p>{/if}
+    </div>
+
+    <div class="actions">
+        <button class="btn" type="submit" disabled={busy}>{busy ? 'Вхожу…' : 'Войти'}</button>
+        <button class="btn-ghost" type="button" onclick={onRegister}>Регистрация по коду</button>
+    </div>
+</form>
+
+<style>
+    .screen {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 30px;
+        padding: 30px 22px 26px;
+    }
+
+    .brand {
+        display: flex;
+        align-items: center;
+        gap: 11px;
+    }
+
+    .mark {
+        width: 38px;
+        height: 38px;
+        border-radius: 11px;
+        background: var(--gold-face);
+        color: var(--gold-ink);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 20px;
+        font-weight: 800;
+    }
+
+    .wordmark {
+        font-family: var(--display);
+        font-weight: 600;
+        font-size: 24px;
+        letter-spacing: 0.04em;
+        line-height: 1;
+    }
+
+    .fields {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+    }
+
+    .actions {
+        margin-top: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+</style>

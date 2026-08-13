@@ -10,7 +10,7 @@
  * он не может отличить от правды.
  */
 
-const VERSION = 'v2';
+const VERSION = 'v3';
 const SHELL = `bardak-shell-${VERSION}`;
 const CARDS = `bardak-cards-${VERSION}`;
 const SHELL_URL = '/';
@@ -106,7 +106,7 @@ self.addEventListener('fetch', (event) => {
         return;
     }
     if (url.pathname.startsWith('/app/') || url.pathname.startsWith('/icons/')
-        || url.pathname === '/manifest.webmanifest') {
+        || url.pathname.startsWith('/fonts/') || url.pathname === '/manifest.webmanifest') {
         event.respondWith(cacheFirst(request, SHELL));
     }
 });
