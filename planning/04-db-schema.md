@@ -385,7 +385,64 @@ Glicko-2 / OpenSkill не должен требовать миграции с п
 
 ---
 
-## Порядок миграций (M1–M6)
+## Друзья ⭐
+
+```sql
+create table friendships (
+    low_user_id  uuid        not null references users(id),
+    high_user_id uuid        not null references users(id),
+    requested_by uuid        not null references users(id),   -- принимать должен другой
+    status       varchar(16) not null check (status in ('PENDING', 'ACCEPTED')),
+    created_at   timestamptz not null default now(),
+    decided_at   timestamptz,
+    primary key (low_user_id, high_user_id),
+    constraint friendships_not_self check (low_user_id <> high_user_id),
+    constraint friendships_ordered  check (low_user_id < high_user_id)
+);
+create index idx_friendships_high on friendships (high_user_id);
+```
+
+⭐ **Одна строка на пару, а не две зеркальные** (ADR-056). Две строки надо держать
+согласованными при каждом изменении, и рассинхрон означает, что человек у тебя в друзьях,
+а ты у него нет. Пара нормализована — меньший идентификатор всегда первый, — поэтому такое
+состояние непредставимо, а уникальность обеспечивает первичный ключ, а не дисциплина кода.
+
+⚠️ `friendships_ordered` — не украшение: именно эта проверка поймала, что `UUID.compareTo`
+в Java и сравнение uuid в Postgres дают **разный порядок** (знаковые long против побайтового).
+Порядок пары считается по канонической записи, см. ADR-056.
+
+Заявка и дружба — состояния одной строки. Отдельной таблицы заявок нет: принятие потребовало
+бы переноса строки, то есть удаления и вставки там, где хватает смены статуса. Отказ
+и разрыв — одно действие, строка удаляется; отказы не хранятся.
+
+**Приглашение за стол в схеме отсутствует намеренно** — это сообщение по сокету, а не запись
+(ADR-055). Присутствие тоже нигде не хранится: оно считается по живым соединениям в памяти
+узла (ADR-054).
+
+---
+
+## Инварианты, которые держит база, а не код ⭐
+
+Два правила существовали только в намерении, пока их не поймала живая игра:
+
+```sql
+-- V9: игрок сидит за одним столом за раз (ADR-057).
+-- Уникальность на (table_id, seat_no) защищала МЕСТО от двух игроков,
+-- но не ИГРОКА от двух мест.
+create unique index ux_table_players_user on table_players (user_id);
+
+-- V10: логин уникален и ищется без учёта регистра (ADR-058).
+alter table users drop constraint if exists users_username_key;
+create unique index ux_users_username_lower on users (lower(username));
+```
+
+⚠️ Обе гонки закрываются только базой. Между чтением «сижу ли я где-то» и вставкой всегда
+есть щель: пять одновременных «Создать стол» успевали пройти проверку в коде и посадить
+человека сразу за пять столов.
+
+---
+
+## Порядок миграций
 
 | Версия | Что |
 |---|---|
@@ -395,6 +452,11 @@ Glicko-2 / OpenSkill не должен требовать миграции с п
 | `V4__event_visibility.sql` | `match_events.private_to_seat` |
 | `V5__rating_and_seasons.sql` | `user_rating`, `rating_history`, `seasons` |
 | `V6__deal_trump_suit_width.sql` | `deals.trump_suit` под имя масти |
+| `V7__push_subscriptions.sql` | подписки устройств на уведомления |
+| `V8__user_avatar.sql` | выбранная мордочка игрока |
+| `V9__one_table_per_player.sql` | ⭐ `ux_table_players_user` — один стол на игрока (ADR-057) |
+| `V10__username_case_insensitive.sql` | ⭐ логин без учёта регистра (ADR-058) |
+| `V11__friendships.sql` | ⭐ `friendships` — друзья и заявки (ADR-056) |
 
 ---
 
