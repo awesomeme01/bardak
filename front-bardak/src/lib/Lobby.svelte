@@ -1,7 +1,9 @@
 <script>
     import {onMount} from 'svelte';
     import {createTable, lobby, loadTables, openByCode, openTable} from '../stores/lobby.svelte.js';
+    import {friends, inviteFriend, loadFriends} from '../stores/friends.svelte.js';
     import CodeBoxes from './CodeBoxes.svelte';
+    import Avatar from './Avatar.svelte';
 
     let {onEnter} = $props();
 
@@ -11,8 +13,36 @@
     let maxPlayers = $state(4);
     let isPrivate = $state(false);
     let code = $state('');
+    let themeId = $state(null);
 
-    onMount(refresh);
+    /**
+     * ⚠️ Выбор показываем, только если тем правда несколько. Список из одного пункта —
+     * не выбор, а шум: наполнение каталога живёт в миграциях, и пока там одна тема,
+     * этой строке в форме делать нечего.
+     */
+    const themes = $derived(lobby.themes.length > 1 ? lobby.themes : []);
+
+    /**
+     * ⭐ Кого позвать сразу при создании. Звать друзей после того, как стол готов, —
+     * лишний переход на другой экран ровно в тот момент, когда стол пустой и ждать
+     * некого. Отмеченные получают оклик сразу, как только стол появился.
+     */
+    let toInvite = $state(new Set());
+
+    onMount(() => {
+        refresh();
+        // Список нужен только ради выбора при создании — молча, без своей полосы ошибки.
+        loadFriends().catch(() => null);
+    });
+
+    function toggleInvite(userId) {
+        const next = new Set(toInvite);
+        next.has(userId) ? next.delete(userId) : next.add(userId);
+        toInvite = next;
+    }
+
+    /** Свободных мест, кроме моего: больше приглашений, чем стульев, звать бессмысленно. */
+    const seatsToFill = $derived(maxPlayers - 1);
 
     export async function refresh() {
         error = null;
@@ -23,18 +53,50 @@
         }
     }
 
+    /**
+     * ⚠️ Пока запрос летит, второй не уходит.
+     *
+     * Без этого нетерпеливый двойной клик по «Создать» заводил по столу на каждое нажатие:
+     * запрос не мгновенный, кнопка оставалась живой, и в лобби оседал десяток одинаковых
+     * столов. Сервер такие теперь и сам не создаст, но плодить заведомо мёртвые запросы
+     * незачем — и кнопка обязана показывать, что её услышали.
+     */
+    let busy = $state(false);
+
     async function run(action) {
+        if (busy) {
+            return;
+        }
+        busy = true;
         error = null;
         try {
             onEnter(await action());
         } catch (e) {
             error = e.message;
+        } finally {
+            busy = false;
         }
     }
 
+    /**
+     * ⚠️ Приглашения уходят ПОСЛЕ создания и не мешают войти за стол.
+     *
+     * Друг мог выйти из сети, пока заполнялась форма, — но это не повод не открыть стол
+     * тому, кто его создал. Поэтому неудачная рассылка не роняет вход: стол уже есть,
+     * а кого не дозвались, видно по полосе уведомления.
+     */
     const create = (event) => {
         event.preventDefault();
-        run(() => createTable(name, maxPlayers, isPrivate));
+        run(async () => {
+            const table = await createTable(name, maxPlayers, isPrivate, themeId);
+            const called = [...toInvite];
+            toInvite = new Set();
+            for (const userId of called) {
+                const person = friends.list.find((f) => f.userId === userId);
+                await inviteFriend(userId, table.id, person?.displayName ?? 'Друг').catch(() => null);
+            }
+            return table;
+        });
     };
 
     const enterByCode = (event) => {
@@ -105,8 +167,53 @@
                 <input type="checkbox" bind:checked={isPrivate}>
                 <span>Приватный — только по коду</span>
             </label>
+
+            {#if themes.length}
+                <div class="themes">
+                    <span class="label">Сукно</span>
+                    <div class="theme-picks">
+                        {#each themes as theme (theme.id)}
+                            <button type="button" class="theme" class:chosen={themeId === theme.id
+                                        || (themeId === null && theme.isDefault)}
+                                    title={theme.name}
+                                    onclick={() => (themeId = theme.id)}>
+                                <span class="swatch" style="background:{theme.feltColor}"></span>
+                                <span class="theme-name">{theme.name}</span>
+                            </button>
+                        {/each}
+                    </div>
+                </div>
+            {/if}
+
+            <!--
+              ⭐ Позвать друзей прямо здесь, а не потом с другого экрана. Стол создают,
+              чтобы с кем-то сыграть, — и это тот самый момент, когда известно с кем.
+            -->
+            {#if friends.list.length}
+                <div class="invite-block">
+                    <span class="label">Позвать друзей
+                        {#if toInvite.size}<span class="gold">· {toInvite.size} из {seatsToFill}</span>{/if}
+                    </span>
+                    <div class="friend-picks">
+                        {#each friends.list as person (person.userId)}
+                            {@const chosen = toInvite.has(person.userId)}
+                            <button type="button" class="pick" class:chosen
+                                    class:full={!chosen && toInvite.size >= seatsToFill}
+                                    disabled={!chosen && toInvite.size >= seatsToFill}
+                                    onclick={() => toggleInvite(person.userId)}>
+                                <Avatar userId={person.userId} size={28}/>
+                                <span class="pick-name">{person.displayName}</span>
+                                <!-- Онлайн виден сразу: спящему оклик уйдёт уведомлением, а не мгновенно. -->
+                                <span class="dot-online" class:on={person.online}
+                                      title={person.online ? 'в сети' : 'не в сети'}></span>
+                            </button>
+                        {/each}
+                    </div>
+                </div>
+            {/if}
+
             <div class="row">
-                <button class="btn grow" type="submit">Создать</button>
+                <button class="btn grow" type="submit" disabled={busy}>{busy ? 'Создаю…' : 'Создать'}</button>
                 <button class="btn-ghost" type="button" onclick={() => (sheet = null)}>Отмена</button>
             </div>
         </form>
@@ -115,7 +222,7 @@
             <span class="label">Код от друга — шесть символов</span>
             <CodeBoxes bind:value={code} length={6} editable/>
             <div class="row">
-                <button class="btn grow" type="submit">Войти</button>
+                <button class="btn grow" type="submit" disabled={busy}>{busy ? 'Вхожу…' : 'Войти'}</button>
                 <button class="btn-ghost" type="button" onclick={() => (sheet = null)}>Отмена</button>
             </div>
         </form>
@@ -144,6 +251,107 @@
         gap: 14px;
         padding: 16px 20px 0;
         overflow-y: auto;
+    }
+
+    .themes {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .theme-picks {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .theme {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 10px;
+        border-radius: 12px;
+        border: 1px solid var(--line-strong);
+        background: var(--surface);
+    }
+
+    .theme.chosen {
+        border-color: var(--gold-soft);
+        background: rgba(240, 205, 138, 0.12);
+    }
+
+    .swatch {
+        width: 18px;
+        height: 18px;
+        border-radius: 5px;
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        flex: none;
+    }
+
+    .theme-name {
+        font-size: 12px;
+    }
+
+    .invite-block {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    /* Друзей может быть много, а форма не должна расти на весь экран. */
+    .friend-picks {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        max-height: 168px;
+        overflow-y: auto;
+    }
+
+    .pick {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 6px 10px;
+        border-radius: 12px;
+        border: 1px solid var(--line-strong);
+        background: var(--surface);
+        text-align: left;
+    }
+
+    .pick.chosen {
+        border-color: var(--gold-soft);
+        background: rgba(240, 205, 138, 0.12);
+    }
+
+    /* Мест меньше, чем друзей: лишние гаснут, а не отказывают молча по нажатию. */
+    .pick.full {
+        opacity: 0.4;
+    }
+
+    .pick-name {
+        flex: 1;
+        font-size: 13px;
+        font-weight: 600;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .dot-online {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--line-strong);
+        flex: none;
+    }
+
+    .dot-online.on {
+        background: var(--green);
+        box-shadow: 0 0 8px var(--green);
+    }
+
+    .gold {
+        color: var(--gold);
     }
 
     .spread {

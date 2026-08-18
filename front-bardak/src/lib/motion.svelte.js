@@ -60,7 +60,94 @@ export function anchorCentre(name) {
     return {x: box.left + box.width / 2, y: box.top + box.height / 2};
 }
 
-/** Карты в полёте. Список короткий: полёт живёт меньше секунды. */
+/**
+ * Точки вылета для карт, которые вот-вот появятся на своих местах.
+ *
+ * ⭐ Прилетающая карта — это не призрак поверх стола, а сама карта. Событие только
+ * запоминает, откуда она стартует; летит потом настоящий узел из своего конечного места
+ * назад к точке вылета и обратно (приём FLIP).
+ *
+ * Почему не призрак: призрак не знает, куда именно ляжет карта — слоты на столе
+ * разъезжаются, когда добавляется новый. Он летел в середину стола, а карта проявлялась
+ * в своём слоте, и в конце было видно обе сразу. У настоящего узла конечная точка —
+ * его собственное место, промахнуться невозможно.
+ */
+const origins = new Map();
+
+/** Добор: карт в руке ещё нет, и по коду их не запомнить — приходит только счёт. */
+let handDraw = {point: null, left: 0};
+
+/** Запомнить, откуда прилетит карта. Вызывается на событии, пока на экране старое. */
+export function rememberOrigin(code, from, spin = 0) {
+    const point = anchorCentre(from);
+    if (point) {
+        origins.set(code, {...point, width: widthAt(from), spin});
+    }
+}
+
+/** То же для добора: следующие {@code count} новых карт руки прилетят из колоды. */
+export function rememberDraw(count, from) {
+    const point = anchorCentre(from);
+    if (point) {
+        handDraw = {point: {...point, width: widthAt(from), spin: -6}, left: count};
+    }
+}
+
+function takeOrigin(key, pool) {
+    if (origins.has(key)) {
+        const origin = origins.get(key);
+        origins.delete(key);
+        return origin;
+    }
+    if (pool === 'hand' && handDraw.left > 0) {
+        handDraw.left--;
+        return handDraw.point;
+    }
+    return null;
+}
+
+/**
+ * Действие: карта въезжает на своё место из запомненной точки.
+ *
+ * <p>Порядок именно такой: узел уже стоит там, где должен, мы измеряем его настоящее
+ * место, отбрасываем к точке вылета без перехода и только следующим кадром отпускаем.
+ * Поэтому «куда лететь» не вычисляется — оно известно точно.
+ */
+export function flyFrom(node, params) {
+    const {key, pool = null, delay = 0} = params ?? {};
+    const origin = takeOrigin(key, pool);
+    if (!origin) {
+        return {};
+    }
+    const box = node.getBoundingClientRect();
+    if (!box.width) {
+        return {};
+    }
+    const dx = origin.x - (box.left + box.width / 2);
+    const dy = origin.y - (box.top + box.height / 2);
+    const scale = origin.width ? Math.max(0.25, origin.width / box.width) : 1;
+
+    node.style.transformOrigin = 'center center';
+    node.style.transition = 'none';
+    node.style.transform = `translate(${dx}px, ${dy}px) scale(${scale}) rotate(${origin.spin}deg)`;
+    node.style.zIndex = '30';
+    node.style.position = 'relative';
+
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+        node.style.transition = `transform ${TIMING.move}ms cubic-bezier(0.22, 0.61, 0.25, 1) ${delay}ms`;
+        node.style.transform = '';
+    }));
+    setTimeout(() => {
+        node.style.transition = '';
+        node.style.transform = '';
+        node.style.zIndex = '';
+        node.style.transformOrigin = '';
+        node.style.position = '';
+    }, TIMING.move + delay + 80);
+    return {};
+}
+
+/** Карты в полёте — только те, что со стола УХОДЯТ: у них конечного узла нет. */
 export const flights = $state([]);
 
 /** Карта, которую сейчас показывают крупно посреди стола (потайной козырь). */
@@ -159,4 +246,6 @@ export function showSpotlight(code) {
 export function clearFlights() {
     flights.length = 0;
     spotlight.card = null;
+    origins.clear();
+    handDraw = {point: null, left: 0};
 }

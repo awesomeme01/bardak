@@ -82,6 +82,9 @@ async function exchange(path, body) {
     const response = await apiPostAnonymous(path, body);
     const payload = await response.json().catch(() => null);
     if (!response.ok) {
+        // Код и подробности с сервера едут на ошибке: экрану нужен не только текст,
+        // но и повод — по коду он решает, какое поле подсветить.
+        /** @type {Error & {code?: string, details?: unknown}} */
         const error = new Error(payload?.message ?? 'Не получилось');
         error.code = payload?.code;
         error.details = payload?.details;

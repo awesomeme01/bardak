@@ -9,6 +9,7 @@
     import {applyUpdate, enablePush, installApp, pwa} from '../stores/pwa.svelte.js';
     import {session} from '../stores/auth.svelte.js';
     import {table} from '../stores/table.svelte.js';
+    import {connection} from '../stores/connection.svelte.js';
 
     // ⭐ Подписка привязана к игроку и требует токена: незалогиненному эта кнопка
     // предлагает то, чего он сделать не может, и упирается в 401.
@@ -24,7 +25,7 @@
      * состояние сокета.
      */
     const LOST = ['closed', 'error', 'offline', 'reconnecting', 'connecting'];
-    const tableLost = $derived(table.info !== null && LOST.includes(table.status));
+    const tableLost = $derived(table.info !== null && LOST.includes(connection.status));
 
     $effect(() => {
         if (pwa.updateReady && !inMatch) {

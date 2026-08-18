@@ -91,3 +91,66 @@ export function suitGlyph(code) {
 export function isRedSuit(code) {
     return code === 'DIAMONDS' || code === 'HEARTS';
 }
+
+/** Короткая запись карты: «6♦» вместо «6-diamonds», «🃏» вместо «Joker-2». */
+export function shortCard(code) {
+    if (!code) {
+        return '';
+    }
+    if (code.startsWith('Joker')) {
+        return '🃏';
+    }
+    const [rank, suit] = code.split('-');
+    const glyph = {diamonds: '♦', hearts: '♥', spades: '♠', clubs: '♣'}[suit] ?? '';
+    return rank + glyph;
+}
+
+/**
+ * Событие матча человеческой фразой.
+ *
+ * <p>⭐ Реплей рассказывает партию, а не показывает лог. `CARD_ATTACKED` с кодом карты —
+ * это протокол; человек хочет прочитать «кладёт 7♦». Поэтому здесь перевод, а не вывод
+ * типа события на экран.
+ *
+ * @param nameOf кто сидит на месте — имя игрока по номеру места
+ */
+export function replayLine(event, nameOf) {
+    const p = event.payload ?? {};
+    const card = shortCard(p.cardCode);
+    switch (event.type) {
+        case 'CARD_ATTACKED': return `кладёт ${card}`;
+        case 'CARD_DEFENDED': return `бьёт ${shortCard(p.targetCardCode)} картой ${card}`;
+        case 'ATTACK_TRANSFERRED': return `переводит ${card} на ${nameOf(p.toSeatNo)}`;
+        case 'PASSED': return 'пасует';
+        case 'ATTACK_RIGHT_MOVED': return 'право подкидывать уходит дальше';
+        case 'TAKE_ANNOUNCED': return 'объявляет «беру»';
+        case 'CARDS_TAKEN': return `забирает стол — ${p.count} ${cards(p.count)}`;
+        case 'ROUND_BEATEN': return `бито — ${p.count} ${cards(p.count)} в отбой`;
+        case 'CARDS_DRAWN': return `добирает ${p.count} ${cards(p.count)}`;
+        case 'CARD_HUNG': return `навешивает ${card} игроку ${nameOf(p.victimSeat)}`;
+        case 'NAVES_LEVEL_CHANGED': return 'поднимается на ступень по шкале';
+        case 'HANGING_WINDOW_OPENED': return 'открылось окно навеса';
+        case 'HANGING_WINDOW_CLOSED': return 'окно навеса закрылось';
+        case 'HIDDEN_TRUMP_REVEALED': return `вскрывает потайной козырь ${card}`;
+        case 'TRUMP_CHANGED': return `козырь меняется на ${suitName(p.suit)}`;
+        case 'TRUMP_CHOSEN': return `называет козырь ${suitName(p.suit)}`;
+        case 'FACE_DOWN_REVEALED': return `вскрывает скрытую карту ${card}`;
+        case 'DICE_ROLLED': return 'бросок кости за право хода';
+        case 'PLAYER_LEFT_DEAL': return 'выходит из раздачи — карт не осталось';
+        case 'DEAL_FINISHED': return 'раздача окончена';
+        case 'MOVE_REJECTED': return 'попытка хода отклонена правилами';
+        default: return event.type.toLowerCase().replaceAll('_', ' ');
+    }
+}
+
+function cards(count) {
+    const tail = count % 10;
+    const hundred = count % 100;
+    if (tail === 1 && hundred !== 11) {
+        return 'карту';
+    }
+    if (tail >= 2 && tail <= 4 && (hundred < 12 || hundred > 14)) {
+        return 'карты';
+    }
+    return 'карт';
+}

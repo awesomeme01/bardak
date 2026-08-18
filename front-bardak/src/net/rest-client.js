@@ -22,7 +22,9 @@ export function configureAuth({getRefreshToken, onTokens, onLost}) {
     onSessionLost = onLost ?? (() => {});
 }
 
+/** @type {() => string | null} */
 let restoreRefreshToken = () => null;
+/** @type {(tokens: {accessToken: string, refreshToken: string}) => void} */
 let saveTokens = () => {};
 
 export function setAccessToken(token) {
@@ -39,6 +41,10 @@ export function apiPost(path, body) {
 
 export function apiPatch(path, body) {
     return request('PATCH', path, body);
+}
+
+export function apiDelete(path) {
+    return request('DELETE', path, null);
 }
 
 /** Запрос без токена и без авто-refresh — для самого входа и обновления пары. */

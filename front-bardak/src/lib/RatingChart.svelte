@@ -39,7 +39,10 @@
     </svg>
     <p class="range">от {min.toFixed(0)} до {max.toFixed(0)} за {values.length} матч(ей)</p>
 {:else}
-    <p>Ещё ни одного сыгранного матча.</p>
+    <!-- Пустой график — не пустое место: рамка показывает, что тут появится линия. -->
+    <div class="chart empty" role="img" aria-label="График рейтинга пока пуст">
+        <span class="mono">рейтинг по матчам появится после первой партии</span>
+    </div>
 {/if}
 
 <style>
@@ -47,6 +50,19 @@
         width: 100%;
         max-width: 320px;
         height: 96px;
+    }
+
+    .empty {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0 14px;
+        border: 1px dashed rgba(255, 255, 255, 0.16);
+        border-radius: 12px;
+        text-align: center;
+        font-size: 10px;
+        letter-spacing: 0.05em;
+        color: var(--text-45);
     }
 
     polyline {

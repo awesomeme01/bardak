@@ -9,6 +9,7 @@ import {apiGet, apiPost} from '../net/rest-client.js';
 
 export const lobby = $state({
     tables: [],
+    themes: [],      // каталог тем стола; пусто, пока не спросили
     current: null,   // {id, code, name, maxPlayers, seats: [...]}
     inMatch: false,  // за текущим столом идёт матч
     error: null,
@@ -18,10 +19,35 @@ export async function loadTables() {
     lobby.tables = await apiGet('/tables');
 }
 
-export async function createTable(name, maxPlayers, isPrivate) {
-    const table = await apiPost('/tables', {name, maxPlayers, isPrivate});
+export async function createTable(name, maxPlayers, isPrivate, themeId = null) {
+    const table = await apiPost('/tables', {name, maxPlayers, isPrivate, themeId});
     lobby.current = table;
     return table;
+}
+
+/**
+ * Каталог тем стола.
+ *
+ * ⚠️ Тем в базе может быть одна — тогда выбирать не из чего, и экран не должен показывать
+ * список из одного пункта. Это не ошибка загрузки: наполнение каталога живёт в миграциях,
+ * а не в интерфейсе.
+ */
+export async function loadThemes() {
+    lobby.themes = await apiGet('/table-themes').catch(() => []);
+    return lobby.themes;
+}
+
+/**
+ * Цвет сукна выбранной темы — или `null` для темы по умолчанию.
+ *
+ * ⚠️ Умолчание намеренно не красится цветом из базы. В макете сукно — трёхточечный
+ * градиент, подобранный руками; `feltColor` там плоский и заметно ярче. Подставить его
+ * значило бы испортить вид стола ради формальной «поддержки тем». Своим цветом красятся
+ * только НЕ дефолтные темы, где другого источника вида нет.
+ */
+export function feltOf(themeId) {
+    const theme = lobby.themes.find((item) => item.id === themeId);
+    return !theme || theme.isDefault ? null : theme.feltColor;
 }
 
 export async function openTable(tableId) {
@@ -57,11 +83,16 @@ export async function restoreTable() {
 }
 
 /**
- * Событие стола из WS.
+ * Событие стола из WS — единственное место, где меняется состав.
  *
  * ⭐ Место игрока приходит в событии, а не вычисляется на клиенте: порядок мест
  * определяет очерёдность хода, и вычислять его в двух местах — верный способ разойтись
  * с сервером.
+ *
+ * ⚠️ Владелец состава здесь один. Раньше стол вёл свою копию мест, а эта функция вообще
+ * никем не вызывалась: карточка «Ты за столом» в лобби показывала состав на момент входа
+ * и не менялась — «1 из 2», когда за столом уже двое. Две копии одних и тех же данных
+ * расходятся всегда; вопрос только когда это заметят.
  */
 export function applyTableEvent(envelope) {
     if (!lobby.current || envelope.tableId !== lobby.current.id) {

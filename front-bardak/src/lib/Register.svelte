@@ -8,6 +8,18 @@
     let error = $state(null);
     let busy = $state(false);
 
+    /**
+     * Длина кода приглашения. Ровно столько клеточек, сколько символов в коде: пустые
+     * клетки в конце читались как «ты чего-то не дописал», хотя код уже введён целиком.
+     */
+    const INVITE_LENGTH = 11;
+
+    /** Кнопка ждёт, пока заполнено всё: отправлять заведомо неполную форму незачем. */
+    const ready = $derived(form.username.trim().length >= 3
+        && form.displayName.trim().length >= 2
+        && form.password.length >= 8
+        && form.inviteCode.trim().length === INVITE_LENGTH);
+
     async function submit(event) {
         event.preventDefault();
         busy = true;
@@ -33,7 +45,10 @@
     <div class="fields">
         <label class="field">
             <span class="label">Логин</span>
-            <input bind:value={form.username} autocomplete="username" required minlength="3">
+            <!-- ⚠️ Автозаглавная буква отключена: логин ищется без учёта регистра, но
+                 показывать «Shabdan» тому, кто набрал «shabdan», всё равно незачем. -->
+            <input bind:value={form.username} autocomplete="username" required minlength="3"
+                   maxlength="32" autocapitalize="none" autocorrect="off" spellcheck="false">
         </label>
         <label class="field">
             <span class="label">Имя за столом</span>
@@ -48,13 +63,13 @@
 
     <div class="code">
         <span class="label">Код приглашения</span>
-        <CodeBoxes bind:value={form.inviteCode} length={12} editable/>
+        <CodeBoxes bind:value={form.inviteCode} length={INVITE_LENGTH} editable/>
     </div>
 
     {#if error}<p class="notice notice-fail">{error}</p>{/if}
 
     <div class="actions">
-        <button class="btn" type="submit" disabled={busy}>{busy ? 'Создаю…' : 'Создать'}</button>
+        <button class="btn" type="submit" disabled={busy || !ready}>{busy ? 'Создаю…' : 'Создать'}</button>
         <button class="btn-ghost" type="button" onclick={onDone}>Ко входу</button>
     </div>
 </form>

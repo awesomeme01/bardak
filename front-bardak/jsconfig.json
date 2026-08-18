@@ -1,0 +1,30 @@
+{
+  // Конфиг существует ради `npm run check`, а не ради сборки: Vite сюда не смотрит.
+  //
+  // ⭐ `checkJs` включён из-за конкретной поломки. Переименование пропса `compact` -> `size`
+  // пропустило одно место в разметке, Vite собрал без единого слова, и экран падал в
+  // рантайме на `ReferenceError: compact is not defined`. Шаблон Svelte для Vite —
+  // не код, а строка; имена в нём не проверяет никто, кроме svelte-check.
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "allowJs": true,
+    "checkJs": true,
+    // Даёт знание про `import.meta.env`. Приезжает вместе с vite, отдельной зависимости нет.
+    "types": ["vite/client"],
+    // Проверяем свой код, а не типы чужих пакетов.
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "resolveJsonModule": true,
+    "noEmit": true,
+    // ⚠️ Строгость не поднимать. Это проект на JS без аннотаций: со `strict` каждый
+    // параметр становится ошибкой implicit any, и полезные находки тонут в шуме.
+    "strict": false
+  },
+  // ⚠️ `vite.config.js` сюда не входит намеренно: он живёт в Node и знает про `process`,
+  // а знание это стоит `@types/node` — целая зависимость ради десяти строк сборки,
+  // поломку которых Vite и так покажет первым же запуском.
+  "include": ["src/**/*.js", "src/**/*.svelte", "svelte.config.js"],
+  "exclude": ["node_modules", "dist"]
+}

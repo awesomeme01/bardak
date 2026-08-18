@@ -30,14 +30,53 @@
     };
 
     const iLost = $derived(Boolean(mine?.lossDegree));
+    const royal = $derived(loser?.lossDegree === 'ROYAL');
+    const deals = $derived(table.result?.dealsPlayed ?? 0);
+
+    /**
+     * ⭐ Корона из восьмёрок — та самая последняя атака, разложенная веером над джокером.
+     * Карты не выдуманы и не нарисованы заново: это ровно то, что лежало на столе, и
+     * читаться должно как трофей, а не как иллюстрация к тексту.
+     */
+    const crown = $derived(royal ? lastAttack.filter((code) => code.startsWith('8-')) : []);
+
+    /** Наклон карт короны: крайние заваливаются сильнее и сидят ниже. */
+    const CROWN_TILT = [-18, -7, 7, 18];
+
+    function dealsWord(count) {
+        const tail = count % 10;
+        const hundred = count % 100;
+        if (tail === 1 && hundred !== 11) {
+            return 'раздача';
+        }
+        if (tail >= 2 && tail <= 4 && (hundred < 12 || hundred > 14)) {
+            return 'раздачи';
+        }
+        return 'раздач';
+    }
 </script>
 
-<div class="screen" class:royal={loser?.lossDegree === 'ROYAL'}>
+<div class="screen" class:royal>
     <div class="head">
-        <div class="label">Матч окончен</div>
+        <div class="label">Матч окончен{#if deals} · {deals} {dealsWord(deals)}{/if}</div>
         {#if loser}
-            <span class="joker"><Card code="Joker-1" width={86}/></span>
-            <h1 class="degree">{degreeName(loser.lossDegree)}</h1>
+            {#if crown.length === 4}
+                <div class="crown">
+                    {#each crown as code, index (code)}
+                        <span class="crown-card" style="transform: rotate({CROWN_TILT[index]}deg)
+                              translateY({Math.abs(CROWN_TILT[index]) > 10 ? 6 : 0}px)">
+                            <Card {code} width={44}/>
+                        </span>
+                    {/each}
+                </div>
+            {/if}
+            <span class="joker" class:royal-joker={royal}>
+                <Card code="Joker-1" width={royal ? 104 : 86}/>
+            </span>
+            <h1 class="degree" class:royal-degree={royal}>{degreeName(loser.lossDegree)}</h1>
+            {#if royal}
+                <div class="label rarity">высшая степень · реже не бывает</div>
+            {/if}
             <p class="why">{WHY[loser.lossDegree] ?? ''}</p>
             <p class="who muted">
                 {iLost ? 'Это ты.' : `${loser.displayName} — до джокера доехал он.`}
@@ -119,13 +158,51 @@
     }
 
     .joker :global(.playing-card) {
-        border-radius: 10px;
         box-shadow: 0 18px 40px rgba(0, 0, 0, 0.7), 0 0 0 2px var(--gold-soft);
+    }
+
+    /* Королевский: джокер крупнее и светится — он здесь главный предмет на экране. */
+    .royal-joker {
+        margin-top: -10px;
+        position: relative;
+        z-index: 3;
+    }
+
+    .royal-joker :global(.playing-card) {
+        box-shadow: 0 24px 50px rgba(0, 0, 0, 0.75), 0 0 0 2px var(--gold),
+                    0 0 50px rgba(240, 205, 138, 0.3);
+    }
+
+    .crown {
+        display: flex;
+        justify-content: center;
+        align-items: flex-end;
+    }
+
+    .crown-card {
+        display: block;
+    }
+
+    .crown-card + .crown-card {
+        margin-left: -8px;
+    }
+
+    .crown-card :global(.playing-card) {
+        box-shadow: 0 6px 16px rgba(0, 0, 0, 0.5);
     }
 
     .degree {
         font-size: 34px;
         color: var(--red);
+    }
+
+    .royal-degree {
+        color: #f5d79b;
+        font-size: 38px;
+    }
+
+    .rarity {
+        color: var(--gold);
     }
 
     .why {

@@ -12,6 +12,7 @@
         faceDown = false,
         width = 70,
         playable = false,
+        selected = false,
         dimmed = false,
         onclick = null,
         style = '',
@@ -28,10 +29,10 @@
 {#if onclick}
     <button type="button" {onclick} class="card-button" style={sizing}
             title={title ?? code} aria-label={title ?? code}>
-        <img class="playing-card" class:playable class:dimmed src={src} alt={code}>
+        <img class="playing-card" class:playable class:selected class:dimmed src={src} alt={code}>
     </button>
 {:else if src}
-    <img class="playing-card" class:playable class:dimmed src={src} style={sizing}
+    <img class="playing-card" class:playable class:selected class:dimmed src={src} style={sizing}
          alt={faceDown ? 'рубашка' : code} title={title ?? (faceDown ? 'рубашка' : code)}>
 {:else}
     <!-- Манифест ещё не пришёл или набор без этой карты: показываем код, а не пустоту. -->

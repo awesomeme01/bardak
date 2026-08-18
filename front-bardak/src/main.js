@@ -7,7 +7,12 @@
 import {mount} from 'svelte';
 import App from './App.svelte';
 import {initPwa} from './stores/pwa.svelte.js';
+import {readInviteFromUrl} from './stores/invite-link.svelte.js';
 
 initPwa();
+
+// ⭐ Код из ссылки читается ДО построения разметки: приглашение адресовано и вошедшему,
+// и тому, у кого учётки ещё нет, а адрес надо забрать до первой же перерисовки.
+readInviteFromUrl();
 
 export default mount(App, {target: document.getElementById('app')});

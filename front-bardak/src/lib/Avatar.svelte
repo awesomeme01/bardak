@@ -9,12 +9,18 @@
      */
     import {avatarOf} from './naming.js';
 
-    let {userId = '', avatar = null, size = 52, active = false, ring = false} = $props();
+    /**
+     * ⭐ `tone` — роль в раздаче, а не «чей ход»: атака красная, защита зелёная, ждущие
+     * без цвета вовсе. Цвет роли важнее подсветки очереди — за столом сначала ищут глазами
+     * «кто на кого», и только потом «кто думает».
+     */
+    let {userId = '', avatar = null, size = 52, active = false, tone = null, pulse = false} = $props();
 
     const face = $derived(avatarOf(userId, avatar));
 </script>
 
-<span class="avatar" class:active class:ring
+<span class="avatar" class:active class:pulse
+      class:attack={tone === 'attack'} class:defend={tone === 'defend'}
       style="width:{size}px; height:{size}px; font-size:{Math.round(size * 0.5)}px">
     {face}
 </span>
@@ -36,7 +42,27 @@
         border-color: var(--gold);
     }
 
-    .ring {
+    /* Кто нападает. Красный здесь не «опасность», а сторона — как повязка на рукаве. */
+    .attack {
+        border-color: var(--seat-attack);
+        box-shadow: 0 0 0 3px rgba(232, 98, 108, 0.16);
+    }
+
+    .defend {
+        border-color: var(--seat-defend);
+        box-shadow: 0 0 0 3px rgba(127, 216, 166, 0.16);
+    }
+
+    /* Пульс достаётся тому, кого сейчас ждут, — поверх цвета его роли. */
+    .pulse {
         animation: turn-ring 1.9s ease-in-out infinite;
+    }
+
+    .pulse.attack {
+        animation-name: turn-ring-attack;
+    }
+
+    .pulse.defend {
+        animation-name: turn-ring-defend;
     }
 </style>

@@ -39,7 +39,10 @@
     <div class="fields">
         <label class="field">
             <span class="label">Логин</span>
-            <input bind:value={username} autocomplete="username" required>
+            <!-- ⚠️ Без этого телефон сам ставит заглавную первую букву, и вход с верным
+                 паролем отвечал «неверный логин или пароль». -->
+            <input bind:value={username} autocomplete="username" required
+                   autocapitalize="none" autocorrect="off" spellcheck="false">
         </label>
         <label class="field">
             <span class="label">Пароль</span>

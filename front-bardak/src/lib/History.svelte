@@ -1,10 +1,22 @@
 <script>
     import {onMount} from 'svelte';
-    import {closeReplay, history, loadHistory, loadReplay, openMatch} from '../stores/history.svelte.js';
+    import {history, loadHistory, loadReplay, openMatch} from '../stores/history.svelte.js';
     import RatingChart from './RatingChart.svelte';
     import {degreeName, deltaText, levelName, reasonName, suitName} from './naming.js';
 
     onMount(loadHistory);
+
+    /**
+     * ⚠️ Число матчей в рейтинге и длина этого списка — разные величины, и раньше они
+     * молча спорили на экране: сверху «матчей: 1», ниже три строки.
+     *
+     * Спор не в данных: отменённый матч в счёт не идёт (§5.3), но из истории не исчезает —
+     * посмотреть, что там было, надо и по нему. Поэтому список сам говорит, сколько строк
+     * засчитано, а сколько нет, и оба числа сходятся.
+     */
+    const counted = $derived(history.matches.filter((match) => match.status === 'FINISHED').length);
+    const aborted = $derived(history.matches.filter((match) => match.status === 'ABORTED').length);
+    const running = $derived(history.matches.filter((match) => match.status === 'IN_PROGRESS').length);
 
     function when(iso) {
         return iso ? new Date(iso).toLocaleString('ru-RU') : '—';
@@ -14,7 +26,8 @@
 <section class="block-card">
     <span class="label">Рейтинг</span>
     {#if history.rating}
-        <p><strong>{Number(history.rating.rating).toFixed(0)}</strong> · матчей: {history.rating.matchesPlayed}</p>
+        <p><strong>{Number(history.rating.rating).toFixed(0)}</strong> ·
+            засчитанных матчей: {history.rating.matchesPlayed}</p>
         <RatingChart points={history.rating.history}/>
     {:else}
         <p>Загружаю…</p>
@@ -23,13 +36,21 @@
 
 <section class="block-card">
     <span class="label">История матчей</span>
+    {#if history.matches.length}
+        <p class="mono tally">
+            засчитано {counted}{#if running} · идёт {running}{/if}{#if aborted} · отменено {aborted}{/if}
+            {#if aborted || running} — в рейтинг идут только законченные{/if}
+        </p>
+    {/if}
     {#if history.error}
         <p class="notice notice-fail">{history.error}</p>
     {/if}
     {#if history.loading}
         <p>Загружаю…</p>
     {:else if !history.matches.length}
-        <p>Сыгранных матчей пока нет.</p>
+        <!-- Пустая история объясняет, что в ней будет: иначе экран читается как поломка. -->
+        <p class="muted">Сыгранных матчей пока нет. После первой партии здесь появится список —
+            с местами, степенями проигрыша и разбором по раздачам.</p>
     {/if}
 
     <ul class="matches">
@@ -42,7 +63,10 @@
                     </span>
                     {#if match.status === 'ABORTED'}
                         <!-- Отменённый матч виден с причиной и не влияет на рейтинг (§5.3). -->
-                        <span class="pill">отменён</span>
+                        <span class="pill">отменён · не в счёт</span>
+                    {:else if match.status === 'IN_PROGRESS'}
+                        <!-- Идущий матч в истории уже есть, но места и рейтинга у него ещё нет. -->
+                        <span class="pill pill-turn">идёт сейчас</span>
                     {:else}
                         <span class="pill" class:pill-ready={match.myPlace === 1}>
                             место {match.myPlace ?? '—'}
@@ -86,25 +110,10 @@
                         {/each}
 
                         <div class="row">
-                            {#if history.replay}
-                                <button type="button" onclick={closeReplay}>Скрыть реплей</button>
-                            {:else}
-                                <button type="button" onclick={() => loadReplay(match.id)}>Реплей</button>
-                            {/if}
+                            <button class="btn-small" type="button"
+                                    onclick={() => loadReplay(match.id)}>Смотреть реплей</button>
                         </div>
 
-                        {#if history.replay}
-                            <!-- ⭐ Реплей приходит уже отфильтрованным: чужого в нём нет. -->
-                            <ol class="replay">
-                                {#each history.replay.events as event (event.seq)}
-                                    <li>
-                                        <code>{event.seq}</code> {event.type}
-                                        {#if event.payload?.cardCode}· {event.payload.cardCode}{/if}
-                                        {#if event.payload?.seatNo !== undefined}· место {event.payload.seatNo + 1}{/if}
-                                    </li>
-                                {/each}
-                            </ol>
-                        {/if}
                     </div>
                 {/if}
             </li>
@@ -113,6 +122,12 @@
 </section>
 
 <style>
+    /* Сверка чисел: сколько строк в списке пошло в рейтинг, а сколько нет. */
+    .tally {
+        font-size: 11px;
+        color: var(--text-45);
+    }
+
     .matches {
         list-style: none;
         padding: 0;

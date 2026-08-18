@@ -40,6 +40,15 @@ const HEARTBEAT_MISS_LIMIT = 2;
  */
 const COMMAND_TTL_MS = 30000;
 
+/**
+ * Сколько раз пробовать взять тикет, прежде чем признать сессию потерянной.
+ *
+ * ⚠️ Не «один раз»: отказ мог быть временным — истёкший access-токен, не успевшее
+ * обновление пары, секундная недоступность. Сдаться сразу означает тихо мёртвый сокет
+ * до конца партии.
+ */
+const TICKET_ATTEMPTS = 4;
+
 export class WsClient {
     #url;
     #onEvent;
@@ -53,11 +62,32 @@ export class WsClient {
     #missedPongs = 0;
     #pending = [];
     #commandCounter = 0;
+
+    /**
+     * ⚠️ Префикс уникален для этого экземпляра клиента и переживает только его.
+     *
+     * Сервер отсеивает повторы по идентификатору команды: клиент переотправляет ход после
+     * разрыва, не зная, дошёл ли он, и применить его дважды нельзя. Но идентификатор был
+     * простым счётчиком `c-1`, `c-2`, а счётчик обнулялся на каждой перезагрузке страницы.
+     * После обновления первый же ход снова назывался `c-1`, сервер узнавал в нём уже
+     * применённую команду и молча возвращал состояние. Со стороны игрока — «кнопка
+     * не реагирует», причём тем чаще, чем больше он ходил по экранам.
+     *
+     * ⚠️ `crypto.randomUUID` здесь не годится: он есть только в защищённом контексте,
+     * а по локальной сети игра открывается по обычному http.
+     */
+    #commandPrefix = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
     #closedByUs = false;
+    #ticketFailures = 0;
 
     /** Было ли соединение уже открыто: отличает переподключение от первого входа. */
     #wasConnected = false;
 
+    /**
+     * @param {{url?: string, onEvent?: (envelope: any) => void,
+     *          onStatus?: (status: string, retryInMs?: number) => void,
+     *          onReconnect?: () => void}} [options]
+     */
     constructor({url, onEvent, onStatus, onReconnect} = {}) {
         this.#url = url ?? defaultUrl();
         this.#onEvent = onEvent ?? (() => {});
@@ -81,11 +111,23 @@ export class WsClient {
                 this.#scheduleReconnect();
                 return;
             }
-            // Тикет не выдали по существу — значит, сессии нет. Молча ретраить
-            // бессмысленно: пока пользователь не войдёт заново, сокет не откроется.
+            // ⚠️ Тикет не выдали по существу. Раньше попытки прекращались здесь навсегда,
+            // и это было хуже, чем кажется: сокет тихо умирал, экран оставался прежним,
+            // а каждый ход уходил в очередь, из которой его уже никто не доставал.
+            // Со стороны игрока это выглядело как «кнопки не реагируют».
+            //
+            // Отказ не всегда вечный: access-токен живёт минуты, и обновление пары могло
+            // просто не успеть. Поэтому пробуем ещё несколько раз и только потом сдаёмся.
+            this.#ticketFailures++;
+            if (this.#ticketFailures < TICKET_ATTEMPTS) {
+                this.#onStatus('reconnecting');
+                this.#scheduleReconnect();
+                return;
+            }
             this.#onStatus('unauthorized');
             return;
         }
+        this.#ticketFailures = 0;
         if (this.#closedByUs) {
             return;
         }
@@ -134,11 +176,16 @@ export class WsClient {
         });
     }
 
+    /** Открыт ли сокот прямо сейчас — по нему видно, уйдёт команда сразу или в очередь. */
+    get connected() {
+        return this.#socket?.readyState === WebSocket.OPEN;
+    }
+
     /** Отправляет команду; если соединения нет — кладёт в очередь до восстановления. */
     send(type, payload = null, tableId = null) {
         const envelope = {
             v: PROTOCOL_VERSION,
-            id: `c-${++this.#commandCounter}`,
+            id: `${this.#commandPrefix}-${++this.#commandCounter}`,
             type,
             ts: Date.now(),
         };

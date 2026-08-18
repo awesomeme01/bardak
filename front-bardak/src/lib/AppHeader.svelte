@@ -8,7 +8,8 @@
     import {profile} from '../stores/profile.svelte.js';
     import Avatar from './Avatar.svelte';
 
-    let {onRefresh = null, onHistory = null, onProfile = null, onStats = null} = $props();
+    let {onRefresh = null, onHistory = null, onProfile = null, onStats = null,
+        onFriends = null, onLeaders = null} = $props();
 </script>
 
 <header class="bar">
@@ -24,6 +25,12 @@
     <div class="row">
         {#if onRefresh}
             <button class="icon-btn" type="button" onclick={onRefresh} aria-label="Обновить">↻</button>
+        {/if}
+        {#if onFriends}
+            <button class="icon-btn" type="button" onclick={onFriends} aria-label="Друзья">👥</button>
+        {/if}
+        {#if onLeaders}
+            <button class="icon-btn" type="button" onclick={onLeaders} aria-label="Таблица лидеров">🏆</button>
         {/if}
         {#if onStats}
             <button class="icon-btn" type="button" onclick={onStats} aria-label="Статистика">📊</button>

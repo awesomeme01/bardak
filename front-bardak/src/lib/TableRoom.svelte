@@ -9,9 +9,9 @@
     import GameTable from './GameTable.svelte';
     import MatchResult from './MatchResult.svelte';
     import WaitingRoom from './WaitingRoom.svelte';
-    import {detachTable, enterTable, leaveTable, table} from '../stores/table.svelte.js';
+    import {detachTable, enterTable, leaveMatch, leaveTable, table} from '../stores/table.svelte.js';
 
-    let {info, onExit, onHistory} = $props();
+    let {info, onExit, onMenu = null, onHistory} = $props();
 
     onMount(() => enterTable(info));
     // Экран закрылся — соединение остаётся, если идёт матч (см. detachTable).
@@ -19,6 +19,12 @@
 
     function leave() {
         leaveTable();
+        onExit();
+    }
+
+    /** Уйти посреди партии: она отменяется у всех, стол снова свободен. */
+    function abandon() {
+        leaveMatch();
         onExit();
     }
 </script>
@@ -30,9 +36,9 @@
 {#if table.result}
     <MatchResult onClose={() => (table.result = null)} {onHistory}/>
 {:else if table.game}
-    <GameTable/>
+    <GameTable onLeave={abandon} {onMenu}/>
 {:else}
-    <WaitingRoom onExit={leave} fallback={info}/>
+    <WaitingRoom onExit={leave} {onMenu} fallback={info}/>
 {/if}
 
 <style>
