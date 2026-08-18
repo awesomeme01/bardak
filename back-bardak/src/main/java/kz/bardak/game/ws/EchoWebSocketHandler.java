@@ -16,6 +16,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import kz.bardak.lobby.ws.LobbyCommandHandler;
+import kz.bardak.social.Presence;
 import kz.bardak.game.ws.GameCommandHandler;
 
 /**
@@ -53,16 +54,18 @@ public class EchoWebSocketHandler extends TextWebSocketHandler {
     private final ObjectMapper objectMapper;
     private final LobbyCommandHandler lobbyCommands;
     private final GameCommandHandler gameCommands;
+    private final Presence presence;
     private final Map<String, WebSocketSession> sessions = new ConcurrentHashMap<>();
 
     /** Где сидит соединение: нужно, чтобы при обрыве отписать игрока от его стола. */
     private final Map<String, UUID> sessionTables = new ConcurrentHashMap<>();
 
     public EchoWebSocketHandler(ObjectMapper objectMapper, LobbyCommandHandler lobbyCommands,
-                                GameCommandHandler gameCommands) {
+                                GameCommandHandler gameCommands, Presence presence) {
         this.objectMapper = objectMapper;
         this.lobbyCommands = lobbyCommands;
         this.gameCommands = gameCommands;
+        this.presence = presence;
     }
 
     @Override
@@ -70,6 +73,10 @@ public class EchoWebSocketHandler extends TextWebSocketHandler {
         WebSocketSession concurrent = new ConcurrentWebSocketSessionDecorator(
                 session, SEND_TIME_LIMIT_MS, SEND_BUFFER_LIMIT);
         sessions.put(session.getId(), concurrent);
+        // Присутствие — это живой сокет: друзья видят «в сети» ровно пока он открыт,
+        // и через него же до игрока доходит приглашение за стол.
+        presence.connected((UUID) userOf(session), session.getId(),
+                message -> sendRaw(concurrent, message));
         log.info("WS подключён: id={}, user={}, всего сессий={}",
                 session.getId(), userOf(session), sessions.size());
 
@@ -134,6 +141,7 @@ public class EchoWebSocketHandler extends TextWebSocketHandler {
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
         sessions.remove(session.getId());
+        presence.disconnected((UUID) userOf(session), session.getId());
         UUID tableId = sessionTables.remove(session.getId());
         if (tableId != null) {
             UUID userId = (UUID) userOf(session);

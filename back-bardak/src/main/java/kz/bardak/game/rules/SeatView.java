@@ -22,6 +22,11 @@ import java.util.Optional;
  * @param nextIsJoker   следующая ступень — джокер
  * @param passed        спасовал в этом раунде
  * @param inDeal        ещё в раздаче
+ * @param exitPlace     каким по счёту вышел из раздачи, начиная с первого; пусто — ещё играет.
+ *                      Порядок выхода не украшение: первый вышедший получает −1 по шкале (§0.1)
+ * @param stepsToJoker  сколько навесов осталось до джокера. ⭐ Считает сервер: это и есть счёт
+ *                      в игре (ADR-017), и выводить его на клиенте значило бы держать копию
+ *                      шкалы в двух местах
  */
 public record SeatView(
         int seatNo,
@@ -32,7 +37,9 @@ public record SeatView(
         Rank nextNavesRank,
         boolean nextIsJoker,
         boolean passed,
-        boolean inDeal) {
+        boolean inDeal,
+        Integer exitPlace,
+        int stepsToJoker) {
 
     public SeatView {
         hungCards = List.copyOf(Objects.requireNonNull(hungCards, "hungCards"));

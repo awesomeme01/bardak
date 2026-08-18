@@ -142,6 +142,69 @@ class StateProjectionTest {
         assertThat(view.protectedSuit()).isEqualTo(Suit.CLUBS);
     }
 
+    /**
+     * ⭐ Козырная карта открыта всем — она лежит на столе лицом вверх (§1.9). Это не дыра
+     * в тумане войны, а его граница: следом за ней лежит потайной козырь, и вот его
+     * не видит никто.
+     */
+    @DisplayName("Should show the trump card itself When the deck still holds it")
+    @Test
+    void shouldShowTheTrumpCardItselfWhenTheDeckStillHoldsIt() {
+        final DealState state = aDeal()
+                .withDeck(ACE_CLUBS, NINE_DIAMONDS, SEVEN_DIAMONDS, SIX_SPADES)
+                .build();
+
+        final PlayerView view = projection.project(state, 0);
+
+        assertThat(view.trumpCard())
+                .as("козырная — предпоследняя в колоде, последняя это потайной козырь")
+                .isEqualTo(SEVEN_DIAMONDS);
+    }
+
+    @DisplayName("Should hide the trump card When only the hidden trump is left")
+    @Test
+    void shouldHideTheTrumpCardWhenOnlyTheHiddenTrumpIsLeft() {
+        final DealState state = aDeal().withDeck(SIX_SPADES).build();
+
+        final PlayerView view = projection.project(state, 0);
+
+        assertThat(view.trumpCard())
+                .as("последняя карта колоды — потайной козырь, её не видит никто")
+                .isNull();
+    }
+
+    @DisplayName("Should number the players by their exit order When some have left the deal")
+    @Test
+    void shouldNumberThePlayersByTheirExitOrderWhenSomeHaveLeftTheDeal() {
+        final DealState state = aDeal()
+                .withPlayerOutOfDeal(2)
+                .withPlayerOutOfDeal(1)
+                .withExitOrder(2, 1)
+                .build();
+
+        final PlayerView view = projection.project(state, 0);
+
+        assertThat(view.seat(2).exitPlace()).isEqualTo(1);
+        assertThat(view.seat(1).exitPlace()).isEqualTo(2);
+        assertThat(view.seat(0).exitPlace()).as("этот ещё играет").isNull();
+    }
+
+    @DisplayName("Should count the steps left to the joker When the scale is projected")
+    @Test
+    void shouldCountTheStepsLeftToTheJokerWhenTheScaleIsProjected() {
+        final DealState state = aDeal()
+                .withNavesLevel(1, NavesScale.NO_NAVES)
+                .withNavesLevel(2, NavesScale.full().jokerLevel() - 1)
+                .build();
+
+        final PlayerView view = projection.project(state, 0);
+
+        assertThat(view.seat(1).stepsToJoker())
+                .as("нетронутому лететь всю шкалу и джокер сверху")
+                .isEqualTo(NavesScale.full().jokerLevel() + 1);
+        assertThat(view.seat(2).stepsToJoker()).as("этому следующим летит джокер").isEqualTo(1);
+    }
+
     @DisplayName("Should leave the trump empty When it is still being rolled for")
     @Test
     void shouldLeaveTheTrumpEmptyWhenItIsStillBeingRolledFor() {

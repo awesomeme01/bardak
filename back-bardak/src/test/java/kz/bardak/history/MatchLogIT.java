@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.List;
 import java.util.UUID;
+import kz.bardak.TestPostgres;
 import kz.bardak.auth.domain.User;
 import kz.bardak.auth.domain.UserRepository;
 import kz.bardak.game.rules.DealEvent;
@@ -27,20 +28,16 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
  * Лог матча (ADR-004): только вставка, сквозной номер, никаких дыр и дублей.
  */
 @Tag("integration")
-@Testcontainers
 @SpringBootTest
 class MatchLogIT {
 
-    @Container
     @ServiceConnection
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16-alpine");
+    static final PostgreSQLContainer<?> POSTGRES = TestPostgres.INSTANCE;
 
     @Autowired
     private MatchLog matchLog;

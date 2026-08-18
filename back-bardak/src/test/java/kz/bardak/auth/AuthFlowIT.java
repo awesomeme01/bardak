@@ -3,7 +3,9 @@ package kz.bardak.auth;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import java.util.Locale;
 import java.util.Map;
+import kz.bardak.TestPostgres;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -18,8 +20,6 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
  * Полный путь авторизации на настоящем Postgres — той же версии, что в проде.
@@ -29,15 +29,13 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * использовании.
  */
 @Tag("integration")
-@Testcontainers
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class AuthFlowIT {
 
     private static final String INVITE = "bardak-2026";
 
-    @Container
     @ServiceConnection
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16-alpine");
+    static final PostgreSQLContainer<?> POSTGRES = TestPostgres.INSTANCE;
 
     @Autowired
     private TestRestTemplate rest;
@@ -64,6 +62,46 @@ class AuthFlowIT {
         assertThat(tokens.get("refreshToken").asText()).isNotBlank();
         assertThat(tokens.get("user").get("username").asText()).isEqualTo("newcomer");
         assertThat(tokens.get("user").has("passwordHash")).isFalse();
+    }
+
+    @DisplayName("Should hand out a token pair When the invite code is typed in upper case")
+    @Test
+    void shouldHandOutATokenPairWhenTheInviteCodeIsTypedInUpperCase() {
+        final ResponseEntity<JsonNode> response = rest.postForEntity("/api/auth/register",
+                registration("shouty", INVITE.toUpperCase(Locale.ROOT)), JsonNode.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody().get("accessToken").asText()).isNotBlank();
+    }
+
+    /**
+     * ⚠️ Регрессия: вход с верным паролем отвечал «неверный логин или пароль», если логин
+     * набрали в другом регистре. Телефонная клавиатура делает это сама на каждом входе.
+     */
+    @DisplayName("Should let the player in When the login case differs from the registered one")
+    @Test
+    void shouldLetThePlayerInWhenTheLoginCaseDiffersFromTheRegisteredOne() {
+        register("CaseOwner");
+
+        final ResponseEntity<JsonNode> response = rest.postForEntity("/api/auth/login",
+                Map.of("username", "caseowner", "password", "very-secret-password"), JsonNode.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody().get("user").get("username").asText())
+                .as("логин показывается так, как его набрал владелец")
+                .isEqualTo("CaseOwner");
+    }
+
+    @DisplayName("Should refuse the registration When the login differs only by case")
+    @Test
+    void shouldRefuseTheRegistrationWhenTheLoginDiffersOnlyByCase() {
+        register("Twinlogin");
+
+        final ResponseEntity<JsonNode> response = rest.postForEntity("/api/auth/register",
+                registration("twinLOGIN", INVITE), JsonNode.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(response.getBody().get("code").asText()).isEqualTo("USERNAME_TAKEN");
     }
 
     @DisplayName("Should answer the same way When the login or the password is wrong")

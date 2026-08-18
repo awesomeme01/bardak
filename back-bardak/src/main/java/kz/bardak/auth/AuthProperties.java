@@ -2,7 +2,6 @@ package kz.bardak.auth;
 
 import java.time.Duration;
 import java.util.List;
-import java.util.Set;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
@@ -34,7 +33,15 @@ public record AuthProperties(
         inviteCodes = List.copyOf(inviteCodes == null ? List.of() : inviteCodes);
     }
 
+    /**
+     * ⚠️ Регистр не важен: поле кода на экране регистрации поднимает ввод в верхний
+     * регистр, и строчный код из конфига иначе не ввести вообще никак.
+     */
     public boolean isInviteCodeValid(final String code) {
-        return code != null && Set.copyOf(inviteCodes).contains(code.trim());
+        if (code == null) {
+            return false;
+        }
+        final String candidate = code.trim();
+        return inviteCodes.stream().anyMatch(known -> known.equalsIgnoreCase(candidate));
     }
 }

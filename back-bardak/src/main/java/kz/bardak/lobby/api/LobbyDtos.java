@@ -52,6 +52,23 @@ public final class LobbyDtos {
     public record CurrentTableView(TableView table, boolean inMatch, Integer mySeatNo) {
     }
 
+    /**
+     * Стол глазами того, кто пришёл по ссылке и ещё не вошёл в игру.
+     *
+     * <p>⭐ Отдаётся <b>без токена</b>: по ссылке приходит и тот, у кого учётки нет вовсе,
+     * и до регистрации он должен видеть, куда его зовут. Иначе приглашение выглядит как
+     * пустая форма входа, и человек уходит, не поняв, зачем ему регистрироваться.
+     *
+     * <p>⚠️ Здесь намеренно НЕТ имён игроков и идентификаторов — только сам стол и сколько
+     * мест занято. Код стола короткий, его пересылают в переписке, и всё, что попадёт
+     * в этот ответ, станет доступно любому, кто код увидел.
+     *
+     * @param joinable  за стол ещё можно сесть: не идёт матч и есть свободное место
+     */
+    public record TableInviteView(String code, String name, int maxPlayers, int seatsTaken,
+                                  boolean isPrivate, boolean joinable) {
+    }
+
     public record CardSetView(String id, String code, String name, String description,
                               String version, String previewUrl, boolean isDefault) {
     }

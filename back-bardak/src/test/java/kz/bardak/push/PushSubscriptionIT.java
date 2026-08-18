@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.fasterxml.jackson.databind.JsonNode;
 import java.util.Map;
 import java.util.UUID;
+import kz.bardak.TestPostgres;
 import kz.bardak.push.domain.PushSubscriptionRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -18,8 +19,6 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
  * Подписка устройства на уведомления.
@@ -29,7 +28,6 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * звонок столько раз, сколько раз открывал вкладку.
  */
 @Tag("integration")
-@Testcontainers
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = {
                 // ⭐ Ключи настоящие, но одноразовые — сгенерированы для тестов и никуда
@@ -39,9 +37,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
                 "bardak.push.private-key=9PZ-3BcLpSMDdYZqJ1bx526i08qJzHqNpFGZUu6L_K8"})
 class PushSubscriptionIT {
 
-    @Container
     @ServiceConnection
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16-alpine");
+    static final PostgreSQLContainer<?> POSTGRES = TestPostgres.INSTANCE;
 
     @Autowired
     private TestRestTemplate rest;

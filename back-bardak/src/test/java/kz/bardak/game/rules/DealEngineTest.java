@@ -18,6 +18,10 @@ class DealEngineTest {
     private static final Card NINE_DIAMONDS = PipCard.of(Rank.NINE, Suit.DIAMONDS);
     private static final Card ACE_CLUBS = PipCard.of(Rank.ACE, Suit.CLUBS);
     private static final Card KING_CLUBS = PipCard.of(Rank.KING, Suit.CLUBS);
+    private static final Card NINE_HEARTS = PipCard.of(Rank.NINE, Suit.HEARTS);
+    private static final Card QUEEN_CLUBS = PipCard.of(Rank.QUEEN, Suit.CLUBS);
+    private static final Card QUEEN_HEARTS = PipCard.of(Rank.QUEEN, Suit.HEARTS);
+    private static final Card QUEEN_DIAMONDS = PipCard.of(Rank.QUEEN, Suit.DIAMONDS);
 
     private final DealEngine engine = DealEngine.withDefaults();
 
@@ -412,6 +416,81 @@ class DealEngineTest {
         assertThat(events(result)).containsExactly(
                 new DealEvent.FaceDownRevealed(0, SEVEN_DIAMONDS),
                 new DealEvent.CardAttacked(0, SEVEN_DIAMONDS));
+    }
+
+    /**
+     * ⚠️ Регрессия: раздача вставала намертво. Спасовавший при неотбитом столе сохранял
+     * право подкидывать, и после отбоя последней карты он не мог ни подкинуть, ни спасовать
+     * снова, а защищавшемуся оставалось только забрать стол, который он же и отбил.
+     */
+    @DisplayName("Should close the round When the last card is beaten and everyone has passed")
+    @Test
+    void shouldCloseTheRoundWhenTheLastCardIsBeatenAndEveryoneHasPassed() {
+        final DealState state = twoSeatsWithAttackerPassed();
+
+        final MoveResult result = engine.apply(state, new DealCommand.Defend(1, NINE_HEARTS, QUEEN_DIAMONDS));
+
+        final DealState next = applied(result);
+        assertThat(next.table()).isEmpty();
+        assertThat(next.passedSeats()).isEmpty();
+        assertThat(events(result)).contains(
+                new DealEvent.RoundBeaten(1, List.of(QUEEN_CLUBS, QUEEN_HEARTS, QUEEN_DIAMONDS, NINE_HEARTS)));
+    }
+
+    /**
+     * ⚠️ Проверяется именно обладатель права хода, а не «хоть кто-нибудь». В зависшем столе
+     * ход формально был — защищавшийся мог забрать стол, который сам же и отбил. Живой
+     * раздачу это не делало: тот, кого ждут, не мог ничего.
+     */
+    @DisplayName("Should not strand the attacker When the last card is beaten and everyone has passed")
+    @Test
+    void shouldNotStrandTheAttackerWhenTheLastCardIsBeatenAndEveryoneHasPassed() {
+        final DealState state = twoSeatsWithAttackerPassed();
+
+        final DealState next = applied(engine.apply(state, new DealCommand.Defend(1, NINE_HEARTS, QUEEN_DIAMONDS)));
+
+        assertThat(StateProjection.withDefaults().project(next, next.attackRightSeat()).availableActions())
+                .as("у того, за кем право хода, обязано быть что сделать")
+                .isNotEmpty();
+    }
+
+    @DisplayName("Should keep the attack right When the last card is beaten and a thrower is still in")
+    @Test
+    void shouldKeepTheAttackRightWhenTheLastCardIsBeatenAndAThrowerIsStillIn() {
+        final DealState state = aDeal()
+                .withSeats(2)
+                .withPhase(DealPhase.DEFEND)
+                .withRoundStarterAt(0)
+                .withDefenderAt(1)
+                .withAttackCards(QUEEN_DIAMONDS)
+                .withHand(0, ACE_CLUBS)
+                .withHand(1, NINE_HEARTS)
+                .withDeckOf(20)
+                .build();
+
+        final MoveResult result = engine.apply(state, new DealCommand.Defend(1, NINE_HEARTS, QUEEN_DIAMONDS));
+
+        final DealState next = applied(result);
+        assertThat(next.table()).hasSize(1);
+        assertThat(next.phase()).isEqualTo(DealPhase.ATTACK);
+        assertThat(next.attackRightSeat()).isEqualTo(0);
+        assertThat(events(result)).containsExactly(new DealEvent.CardDefended(1, NINE_HEARTS, QUEEN_DIAMONDS));
+    }
+
+    /** Стол из скриншота бага: место 0 спасовало, одна пара отбита, одна карта ещё нет. */
+    private static DealState twoSeatsWithAttackerPassed() {
+        return aDeal()
+                .withSeats(2)
+                .withPhase(DealPhase.DEFEND)
+                .withRoundStarterAt(0)
+                .withDefenderAt(1)
+                .withPassed(0)
+                .withBeatenPair(QUEEN_CLUBS, QUEEN_HEARTS)
+                .withAttackCards(QUEEN_DIAMONDS)
+                .withHand(0, ACE_CLUBS)
+                .withHand(1, NINE_HEARTS)
+                .withDeckOf(20)
+                .build();
     }
 
     private static DealState applied(final MoveResult result) {

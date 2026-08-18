@@ -36,6 +36,7 @@ public final class StateProjection {
                 viewerSeat,
                 state.phase(),
                 state.hasTrump() ? state.trump().suit() : null,
+                trumpCard(state),
                 state.hasTrump() ? state.trump().protectedSuit() : null,
                 state.deck().size(),
                 discardCount(state),
@@ -48,6 +49,22 @@ public final class StateProjection {
                 state.defenderSeat(),
                 state.hanging().map(HangingWindow::victimSeat).orElse(null),
                 availableActions(state, viewerSeat));
+    }
+
+    /**
+     * Козырная карта, лежащая под колодой лицом вверх (§1.9).
+     *
+     * <p>⭐ Низ колоды — {@code [ … ] [козырная карта] [потайной козырь]}, и карты уходят
+     * сверху. Значит козырная — предпоследняя, пока в колоде хотя бы две карты; когда
+     * осталась одна, козырную уже забрали в руку, а последняя — потайной козырь, и её
+     * не видит никто до вскрытия.
+     *
+     * <p>Отдавать её всем можно и нужно: она открыта на столе. Скрывать её было проще,
+     * но за настоящим столом так не бывает — козырь знают все и с первой секунды.
+     */
+    private Card trumpCard(final DealState state) {
+        final List<Card> deck = state.deck();
+        return deck.size() >= 2 ? deck.get(deck.size() - 2) : null;
     }
 
     /**
@@ -93,6 +110,7 @@ public final class StateProjection {
     private List<SeatView> seats(final DealState state) {
         final List<SeatView> seats = new ArrayList<>();
         for (final PlayerState player : state.players()) {
+            final int index = state.exitOrder().indexOf(player.seatNo());
             seats.add(new SeatView(
                     player.seatNo(),
                     player.handSize(),
@@ -102,9 +120,22 @@ public final class StateProjection {
                     config.navesScale().nextRank(player.navesLevel()).orElse(null),
                     config.navesScale().nextIsJoker(player.navesLevel()),
                     state.hasPassed(player.seatNo()),
-                    player.inDeal()));
+                    player.inDeal(),
+                    index < 0 ? null : index + 1,
+                    stepsToJoker(player.navesLevel())));
         }
         return List.copyOf(seats);
+    }
+
+    /**
+     * Сколько навесов осталось до джокера.
+     *
+     * <p>Джокер вешается, когда уровень доходит до {@code jokerLevel}; значит осталось ровно
+     * столько ступеней, сколько до него не хватает. Ноль означает, что джокер уже висит и
+     * игрок раздачу проиграл (§0.2).
+     */
+    private int stepsToJoker(final int navesLevel) {
+        return Math.max(0, config.navesScale().jokerLevel() - navesLevel);
     }
 
     /**

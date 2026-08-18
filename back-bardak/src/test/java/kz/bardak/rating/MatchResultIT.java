@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
+import kz.bardak.TestPostgres;
 import kz.bardak.auth.domain.User;
 import kz.bardak.auth.domain.UserRepository;
 import kz.bardak.game.rules.DealOutcome;
@@ -33,8 +34,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
  * Итог матча на настоящем Postgres: места, уровни, рейтинг.
@@ -43,13 +42,11 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * посчитанный дважды, раздул бы рейтинг, а починить это потом можно только руками.
  */
 @Tag("integration")
-@Testcontainers
 @SpringBootTest
 class MatchResultIT {
 
-    @Container
     @ServiceConnection
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16-alpine");
+    static final PostgreSQLContainer<?> POSTGRES = TestPostgres.INSTANCE;
 
     @Autowired
     private MatchResultService results;

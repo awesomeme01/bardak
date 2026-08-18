@@ -41,11 +41,6 @@ public class MatchHistoryController {
         return history.details(id, userId(jwt));
     }
 
-    @GetMapping("/{id}/deals")
-    public List<HistoryDtos.DealSummary> deals(@PathVariable final UUID id) {
-        return history.dealsOf(id);
-    }
-
     /** ⚠️ Только после матча и только с точки зрения спрашивающего. */
     @GetMapping("/{id}/replay")
     public HistoryDtos.Replay replay(@PathVariable final UUID id,

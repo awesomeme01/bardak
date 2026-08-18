@@ -16,6 +16,10 @@ import java.util.Optional;
  * @param mySeat            место смотрящего
  * @param phase             фаза раздачи
  * @param trumpSuit         козырная масть; пусто, пока её разыгрывают костью (§1.2)
+ * @param trumpCard         ⭐ сама козырная карта из-под колоды — <b>открыта всем</b> (§1.9).
+ *                          Это не нарушение тумана войны: она лежит на столе лицом вверх,
+ *                          и знать её положено каждому. Не путать с потайным козырем —
+ *                          самой нижней картой, которая до вскрытия не видна никому
  * @param protectedSuit     защищённая масть — считается сервером, фронт её не выводит
  * @param deckLeft          сколько карт осталось в колоде; сами карты не отдаются
  * @param discardCount      сколько карт ушло в отбой. ⭐ Считает сервер: клиент знал бы
@@ -36,6 +40,7 @@ public record PlayerView(
         int mySeat,
         DealPhase phase,
         Suit trumpSuit,
+        Card trumpCard,
         Suit protectedSuit,
         int deckLeft,
         int discardCount,

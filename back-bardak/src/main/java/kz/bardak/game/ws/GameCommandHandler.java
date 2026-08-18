@@ -48,7 +48,7 @@ public class GameCommandHandler {
     private static final Logger log = LoggerFactory.getLogger(GameCommandHandler.class);
     private static final List<String> COMMANDS = List.of("MATCH_START", "PLAY_CARD", "PASS", "TAKE",
             "TRANSFER", "HANG_CARD", "HANG_SKIP", "CHOOSE_TRUMP", "REVEAL_FACE_DOWN", "STATE_REQUEST",
-            "RESYNC");
+            "RESYNC", "MATCH_LEAVE");
 
     private final MatchService matches;
     private final MatchLog matchLog;
@@ -110,6 +110,18 @@ public class GameCommandHandler {
             final MatchSession session = matches.find(tableId).orElseThrow(() ->
                     new ApiException(org.springframework.http.HttpStatus.CONFLICT, "NO_MATCH",
                             "За этим столом матч не идёт"));
+
+            // ⭐ Уйти из идущего матча можно, но только явно и с последствиями для всех:
+            // партия отменяется целиком. Тихо освободить своё место нельзя — движок
+            // продолжал бы ждать ушедшего, а на освободившийся стул сел бы посторонний.
+            if ("MATCH_LEAVE".equals(command.type())) {
+                if (session.seatOf(userId).isEmpty()) {
+                    throw new ApiException(org.springframework.http.HttpStatus.CONFLICT,
+                            "NOT_AT_TABLE", "Ты не за этим столом");
+                }
+                leaveMatch(runtime, session, userId);
+                return;
+            }
 
             if ("RESYNC".equals(command.type())) {
                 runtime.subscribe(userId, sender);
@@ -212,6 +224,9 @@ public class GameCommandHandler {
                                         final List<MatchResultService.RatingChange> changes) {
         final ObjectNode payload = objectMapper.createObjectNode();
         payload.put("matchId", session.matchId().toString());
+        // Сколько раздач шёл матч: степень проигрыша читается иначе, если до неё ехали
+        // двадцать раздач, а не три.
+        payload.put("dealsPlayed", session.state().results().size());
         final var players = payload.putArray("players");
         for (final MatchResultService.RatingChange change : changes) {
             final ObjectNode node = players.addObject();
@@ -287,6 +302,12 @@ public class GameCommandHandler {
             return;
         }
         callToTable(runtime, session, onTheClock.get());
+        // ⭐ Часы идут, только если стол согласился ходить за молчащего. Без этого ход
+        // просто ждёт своего хозяина — сколько угодно, и никто его не отбирает.
+        if (!properties.autoMoveOnTimeout()) {
+            clock.cancel(session.tableId());
+            return;
+        }
         clock.start(session.tableId(), properties.turnTimeout(),
                 () -> runtime.submit(() -> applyTimeout(runtime, session)));
     }
@@ -369,10 +390,40 @@ public class GameCommandHandler {
                 session.tableId().toString(), objectMapper.createObjectNode())));
     }
 
+    /**
+     * Игрок вышел из матча по своей воле.
+     *
+     * <p>⚠️ Отличается от пропажи со связи (§5.2) тем, что ждать некого: человек ушёл
+     * сознательно, и держать остальных минуту на паузе незачем. Матч отменяется сразу,
+     * места освобождаются, стол снова открыт — можно собраться заново.
+     *
+     * <p>Отменённый матч в рейтинг не идёт (§5.3): уйти из проигранной партии, чтобы
+     * не считалась, всё равно нельзя — она не считается ни для кого.
+     */
+    private void leaveMatch(final TableRuntime runtime, final MatchSession session, final UUID userId) {
+        clock.cancel(session.tableId());
+        clock.cancelAbort(session.tableId());
+        matchLog.abort(session.matchId(), "Игрок вышел из матча");
+        matches.finish(session.tableId());
+        lobby.finishMatch(session.tableId());
+        runtime.broadcast(serialize(Envelope.event("MATCH_ABORTED", null,
+                session.tableId().toString(),
+                objectMapper.createObjectNode()
+                        .put("userId", userId.toString())
+                        .put("reason", "PLAYER_LEFT"))));
+        lobby.leave(session.tableId(), userId);
+        registry.unsubscribe(session.tableId(), userId);
+    }
+
     private void abort(final TableRuntime runtime, final MatchSession session, final UUID userId) {
         clock.cancel(session.tableId());
         matchLog.abort(session.matchId(), "Игрок не вернулся за отведённое время");
         matches.finish(session.tableId());
+        // ⚠️ Стол обязан вернуться в ожидание. Без этого отменённый матч оставлял его
+        // в состоянии IN_MATCH навсегда: сесть за него больше нельзя, начать новый матч
+        // тоже, и в лобби он до конца дней показывал «матч идёт». Штатное завершение это
+        // делало, а отмена — нет.
+        lobby.finishMatch(session.tableId());
         runtime.broadcast(serialize(Envelope.event("MATCH_ABORTED", null,
                 session.tableId().toString(),
                 objectMapper.createObjectNode().put("userId", userId.toString()))));

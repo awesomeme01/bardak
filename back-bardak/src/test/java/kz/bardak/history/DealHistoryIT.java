@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.util.List;
 import java.util.UUID;
+import kz.bardak.TestPostgres;
 import kz.bardak.auth.domain.User;
 import kz.bardak.auth.domain.UserRepository;
 import kz.bardak.game.rules.DealOutcome;
@@ -33,8 +34,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
  * Запись сыгранной раздачи на настоящем Postgres.
@@ -44,13 +43,11 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * выглядят как отсутствие сдвига.
  */
 @Tag("integration")
-@Testcontainers
 @SpringBootTest
 class DealHistoryIT {
 
-    @Container
     @ServiceConnection
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16-alpine");
+    static final PostgreSQLContainer<?> POSTGRES = TestPostgres.INSTANCE;
 
     @Autowired
     private DealHistory dealHistory;

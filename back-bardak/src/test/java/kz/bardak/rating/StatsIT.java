@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import kz.bardak.TestPostgres;
 import kz.bardak.game.rules.DealOutcome;
 import kz.bardak.game.rules.DealStateFixtureAccess;
 import kz.bardak.game.rules.LossDegree;
@@ -28,8 +29,6 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
  * Статистика игрока.
@@ -38,13 +37,11 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * что отменённые матчи в счёт не идут. Ошибка здесь тихая — числа выглядят правдоподобно.
  */
 @Tag("integration")
-@Testcontainers
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class StatsIT {
 
-    @Container
     @ServiceConnection
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16-alpine");
+    static final PostgreSQLContainer<?> POSTGRES = TestPostgres.INSTANCE;
 
     @Autowired
     private TestRestTemplate rest;

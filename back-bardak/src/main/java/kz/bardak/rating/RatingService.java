@@ -71,8 +71,10 @@ public class RatingService {
     }
 
     @Transactional(readOnly = true)
-    public List<RatingDtos.SeasonView> seasons() {
-        return seasons.findAllByOrderByStartedAtDesc().stream().map(this::toView).toList();
+    public RatingDtos.SeasonsView seasons(final String username) {
+        return new RatingDtos.SeasonsView(
+                seasons.findAllByOrderByStartedAtDesc().stream().map(this::toView).toList(),
+                properties.isSeasonAdmin(username));
     }
 
     /**

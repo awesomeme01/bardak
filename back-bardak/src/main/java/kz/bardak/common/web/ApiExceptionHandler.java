@@ -11,6 +11,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 /**
  * Превращает исключения в единый формат ответа.
@@ -40,6 +41,23 @@ public class ApiExceptionHandler {
         log.info("Невалидный запрос [{}]: {}", traceId, fields);
         return ResponseEntity.badRequest()
                 .body(new ApiError("VALIDATION_FAILED", "Проверьте заполнение полей", traceId, fields));
+    }
+
+    /**
+     * Неизвестный путь.
+     *
+     * <p>⚠️ Без этого обработчика любой опечатанный или снесённый адрес под {@code /api}
+     * отвечал <b>500</b> и писал в лог полный стек как «необработанная ошибка»: Spring
+     * бросает {@link NoResourceFoundException}, и она проваливалась в общий обработчик.
+     * Клиент не мог отличить «такого адреса нет» от «сервер сломался», а лог наполнялся
+     * стеками там, где ничего не ломалось.
+     */
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<ApiError> handleNotFound(final HttpServletRequest request) {
+        final String traceId = newTraceId();
+        log.info("Неизвестный путь [{}]: {}", traceId, request.getRequestURI());
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(new ApiError("NOT_FOUND", "Такого адреса нет", traceId, Map.of()));
     }
 
     @ExceptionHandler(Exception.class)

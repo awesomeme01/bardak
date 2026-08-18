@@ -40,8 +40,8 @@ public class RatingController {
     }
 
     @GetMapping("/seasons")
-    public List<RatingDtos.SeasonView> seasons() {
-        return rating.seasons();
+    public RatingDtos.SeasonsView seasons(@AuthenticationPrincipal final Jwt jwt) {
+        return rating.seasons(jwt.getClaimAsString("username"));
     }
 
     /** Закрыть текущий сезон и открыть следующий (ADR-037). */

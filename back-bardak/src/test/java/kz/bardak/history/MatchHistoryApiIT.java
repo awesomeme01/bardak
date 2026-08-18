@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import kz.bardak.TestPostgres;
 import kz.bardak.game.rules.DealEvent;
 import kz.bardak.game.rules.DealOutcome;
 import kz.bardak.game.rules.JokerCard;
@@ -37,8 +38,6 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
  * История и рейтинг через REST.
@@ -48,14 +47,12 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * правила прятали весь матч (§1.8).
  */
 @Tag("integration")
-@Testcontainers
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = "bardak.rating.season-admins=season-boss")
 class MatchHistoryApiIT {
 
-    @Container
     @ServiceConnection
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16-alpine");
+    static final PostgreSQLContainer<?> POSTGRES = TestPostgres.INSTANCE;
 
     @Autowired
     private TestRestTemplate rest;
@@ -169,6 +166,19 @@ class MatchHistoryApiIT {
         assertThat(response.getBody().get("code").asText()).isEqualTo("NOT_SEASON_ADMIN");
     }
 
+    @DisplayName("Should say the season cannot be managed When the player is not an admin")
+    @Test
+    void shouldSayTheSeasonCannotBeManagedWhenThePlayerIsNotAnAdmin() {
+        final Player player = register("hist-plain");
+
+        final JsonNode view = get(player, "/api/rating/seasons").getBody();
+
+        // ⚠️ Признак нужен экрану до нажатия: иначе кнопка «закрыть сезон» видна всем,
+        // а отказ прилетает уже после. Список сезонов при этом виден каждому.
+        assertThat(view.get("canManage").asBoolean()).isFalse();
+        assertThat(view.get("seasons")).isNotEmpty();
+    }
+
     @DisplayName("Should open the next season When an admin closes the current one")
     @Test
     void shouldOpenTheNextSeasonWhenAnAdminClosesTheCurrentOne() {
@@ -181,9 +191,13 @@ class MatchHistoryApiIT {
         assertThat(opened.get("open").asBoolean()).isTrue();
         assertThat(opened.get("startedAt").isNull()).isFalse();
         // ⭐ Открытый сезон обязан быть ровно один: закрытие и открытие — одно действие.
-        final JsonNode all = get(admin, "/api/rating/seasons").getBody();
+        final JsonNode view = get(admin, "/api/rating/seasons").getBody();
+        final JsonNode all = view.get("seasons");
         assertThat(all).hasSize(2);
         assertThat(all).filteredOn(season -> season.get("open").asBoolean()).hasSize(1);
+        // ⭐ Право приходит вместе со списком: экран не должен гадать, кому показывать
+        // кнопку «закрыть сезон», и получать отказ уже после нажатия.
+        assertThat(view.get("canManage").asBoolean()).isTrue();
     }
 
     /** Матч из одной раздачи: место 0 вышло первым, место 1 добралось до джокера. */

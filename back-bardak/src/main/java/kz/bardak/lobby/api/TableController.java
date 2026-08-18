@@ -100,6 +100,25 @@ public class TableController {
         return toView(lobby.byCode(code));
     }
 
+    /**
+     * Заглянуть за стол по коду <b>до входа в игру</b>.
+     *
+     * <p>⭐ Единственная ручка столов без токена, и это её смысл: по ссылке-приглашению
+     * приходит и тот, у кого учётки ещё нет. Он должен увидеть, куда его зовут, <i>до</i>
+     * регистрации, — иначе ссылка открывает безымянную форму входа, и человек уходит.
+     *
+     * <p>⚠️ Отдаём только сам стол и число занятых мест. Имён игроков здесь нет намеренно:
+     * код короткий и живёт в переписке, поэтому всё в этом ответе — публично.
+     */
+    @GetMapping("/invite/{code}")
+    public LobbyDtos.TableInviteView invite(@PathVariable final String code) {
+        final GameTable table = lobby.byCode(code);
+        final int taken = lobby.seats(table.id()).size();
+        return new LobbyDtos.TableInviteView(table.code(), table.name(), table.maxPlayers(),
+                taken, table.isPrivate(),
+                table.status() == TableStatus.WAITING && taken < table.maxPlayers());
+    }
+
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> close(@PathVariable final UUID id, @AuthenticationPrincipal final Jwt jwt) {
         lobby.close(id, userId(jwt));

@@ -217,7 +217,32 @@ public final class DealEngine {
                 .anyCardBeatenThisRound(true)
                 .phase(unbeatenRemain(table) ? DealPhase.DEFEND : DealPhase.ATTACK)
                 .build();
-        return MoveResult.applied(defended, events);
+        if (unbeatenRemain(table)) {
+            return MoveResult.applied(defended, events);
+        }
+        return afterLastCardBeaten(defended, events);
+    }
+
+    /**
+     * ⚠️ Отбита последняя карта на столе — раунд возвращается в атаку, и право подкидывать
+     * обязано достаться тому, кто им реально может воспользоваться.
+     *
+     * <p>Пас при неотбитом столе право никуда не двигает: двигать его некуда, следующего
+     * подкидывающего нет. Оно так и остаётся за спасовавшим, и после отбоя последней карты
+     * этот игрок не может ни подкинуть ({@code hasPassed}), ни спасовать ещё раз — раздача
+     * вставала намертво у всех за столом. Если подкидывать больше некому, раунд здесь же
+     * и закрывается: стол отбит целиком, это «бито».
+     */
+    private MoveResult afterLastCardBeaten(final DealState state, final List<DealEvent> events) {
+        final OptionalInt next = attackOrder.nextAttacker(state);
+        if (next.isPresent()) {
+            if (next.getAsInt() != state.attackRightSeat()) {
+                events.add(new DealEvent.AttackRightMoved(next.getAsInt()));
+            }
+            return MoveResult.applied(state.toBuilder().attackRightSeat(next.getAsInt()).build(), events);
+        }
+        events.add(new DealEvent.RoundBeaten(state.defenderSeat(), state.tableCards()));
+        return MoveResult.applied(finishRound(clearTable(state, true), false, events), events);
     }
 
     /**

@@ -68,7 +68,9 @@ public final class GameProtocol {
                     seat.nextRank().map(rank -> rank.code()).orElse(null),
                     seat.nextIsJoker(),
                     seat.passed(),
-                    seat.inDeal()));
+                    seat.inDeal(),
+                    seat.exitPlace(),
+                    seat.stepsToJoker()));
         }
 
         final List<PlayerViewDto.TableSlotDto> table = new ArrayList<>();
@@ -82,6 +84,7 @@ public final class GameProtocol {
                 dealNo,
                 view.phase().name(),
                 view.trump().map(Enum::name).orElse(null),
+                view.trumpCard() == null ? null : CardCodec.encode(view.trumpCard()),
                 view.protectedSuit() == null ? null : view.protectedSuit().name(),
                 view.deckLeft(),
                 view.discardCount(),

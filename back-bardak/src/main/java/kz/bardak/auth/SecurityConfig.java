@@ -51,6 +51,10 @@ public class SecurityConfig {
                         // требовать ради этого токен значит запирать витрину, а не данные.
                         .requestMatchers(HttpMethod.GET, "/api/card-sets", "/api/card-sets/**",
                                 "/api/table-themes").permitAll()
+                        // ⭐ Приглашение по ссылке — единственная ручка столов без токена.
+                        // По ссылке приходит и тот, у кого учётки нет: он должен увидеть,
+                        // куда его зовут, ДО регистрации. Ответ намеренно без имён игроков.
+                        .requestMatchers(HttpMethod.GET, "/api/tables/invite/**").permitAll()
                         // ⭐ Сокет пропускается фильтром намеренно: браузерный WebSocket не умеет
                         // слать Authorization, поэтому его авторизует не Spring Security,
                         // а WsTicketHandshakeInterceptor по одноразовому тикету (ADR-005).

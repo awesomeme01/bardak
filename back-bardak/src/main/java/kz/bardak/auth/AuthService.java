@@ -42,7 +42,7 @@ public class AuthService {
             throw new ApiException(HttpStatus.FORBIDDEN, "INVALID_INVITE_CODE",
                     "Неверный код приглашения");
         }
-        if (users.existsByUsername(request.username())) {
+        if (users.existsByUsernameIgnoreCase(request.username())) {
             throw new ApiException(HttpStatus.CONFLICT, "USERNAME_TAKEN", "Логин уже занят");
         }
         final User user = users.save(new User(UUID.randomUUID(), request.username(), request.displayName(),
@@ -52,7 +52,7 @@ public class AuthService {
 
     @Transactional
     public AuthDtos.TokenPair login(final AuthDtos.LoginRequest request, final String userAgent) {
-        final User user = users.findByUsername(request.username())
+        final User user = users.findByUsernameIgnoreCase(request.username())
                 .filter(candidate -> passwordEncoder.matches(request.password(), candidate.passwordHash()))
                 .filter(User::isActive)
                 .orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED, "INVALID_CREDENTIALS",

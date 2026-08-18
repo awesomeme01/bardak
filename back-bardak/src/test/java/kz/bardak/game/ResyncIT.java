@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import kz.bardak.TestPostgres;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -30,8 +31,6 @@ import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.client.standard.StandardWebSocketClient;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
  * Догон после разрыва и идемпотентность команд.
@@ -39,7 +38,6 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * <p>Таймер хода поднят до минуты: тест про переподключение, а не про автодействие.
  */
 @Tag("integration")
-@Testcontainers
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = {"bardak.game.turn-timeout=60s", "bardak.game.disconnect-grace=60s"})
 class ResyncIT {
@@ -49,9 +47,8 @@ class ResyncIT {
     /** Пересдача после кости может снова начаться с кости — но не бесконечно. */
     private static final int DICE_ATTEMPTS = 5;
 
-    @Container
     @ServiceConnection
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16-alpine");
+    static final PostgreSQLContainer<?> POSTGRES = TestPostgres.INSTANCE;
 
     @Autowired
     private TestRestTemplate rest;

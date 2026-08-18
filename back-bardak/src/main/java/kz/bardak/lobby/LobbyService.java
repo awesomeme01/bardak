@@ -13,6 +13,7 @@ import kz.bardak.lobby.domain.TablePlayer;
 import kz.bardak.lobby.domain.TablePlayerRepository;
 import kz.bardak.lobby.domain.TableStatus;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
@@ -71,12 +72,65 @@ public class LobbyService {
     public GameTable create(final UUID hostUserId, final String name, final int maxPlayers,
                             final UUID cardSetId, final UUID themeId, final String rulesConfig,
                             final boolean isPrivate) {
+        // ⚠️ Игрок сидит за одним столом за раз. Без этого каждое нажатие «Создать стол»
+        // заводило новый: нетерпеливый двойной клик оставлял в лобби десяток одинаковых
+        // столов с одним хозяином, и разгребать их было некому.
+        releaseSeatBeforeNewTable(hostUserId);
         // save репозитория транзакционен сам по себе; своей @Transactional здесь быть
         // не должно — вызов из этого же класса всё равно прошёл бы мимо прокси.
         final GameTable table = tables.save(new GameTable(UUID.randomUUID(), newCode(), name,
                 hostUserId, maxPlayers, cardSetId, themeId, rulesConfig, isPrivate));
-        join(table.id(), hostUserId);
+        try {
+            join(table.id(), hostUserId);
+        } catch (final RuntimeException e) {
+            // ⚠️ Хозяина не удалось посадить — значит стол родился мёртвым: пустой,
+            // никому не нужный и видный всем в лобби. Такой убирается сразу, иначе
+            // проигравший гонку запрос оставляет мусор ровно там, где его больше всего видно.
+            closeIfDeserted(table.id());
+            throw e;
+        }
         return table;
+    }
+
+    /**
+     * Освободить место за прошлым столом перед созданием нового.
+     *
+     * <p>Стол, за которым не осталось никого, закрывается: пустой стол в списке — это
+     * приглашение, за которым никого нет.
+     *
+     * <p>⚠️ Посреди матча новый стол не создаётся вовсе — по той же причине, по которой
+     * из-за стола не встают: движок продолжал бы ждать ушедшего.
+     */
+    private void releaseSeatBeforeNewTable(final UUID userId) {
+        final GameTable previous = currentTableOf(userId).orElse(null);
+        if (previous == null) {
+            return;
+        }
+        if (previous.status() == TableStatus.IN_MATCH) {
+            throw new ApiException(HttpStatus.CONFLICT, "MATCH_IN_PROGRESS",
+                    "Сначала доиграй за текущим столом");
+        }
+        // ⚠️ Освобождение места — работа «по возможности», а не гарантия. Если строку уже
+        // удалил параллельный запрос того же игрока, цель достигнута чужими руками, и падать
+        // тут не на чем. Настоящую гарантию «один стол на игрока» держит уникальный индекс,
+        // а не этот метод.
+        try {
+            leave(previous.id(), userId);
+            closeIfDeserted(previous.id());
+        } catch (final ObjectOptimisticLockingFailureException | EmptyResultDataAccessException e) {
+            // Место уже освободили — так и требовалось.
+        }
+    }
+
+    /** Стол без единого игрока закрывается — он больше никому не нужен. */
+    private void closeIfDeserted(final UUID tableId) {
+        if (!players.findByTableIdOrderBySeatNo(tableId).isEmpty()) {
+            return;
+        }
+        tables.findById(tableId).ifPresent(table -> {
+            table.close(clock.instant());
+            tables.save(table);
+        });
     }
 
     /**
@@ -96,6 +150,16 @@ public class LobbyService {
         if (existing.isPresent()) {
             return existing.get();
         }
+        // ⚠️ Игрок сидит за одним столом за раз (индекс ux_table_players_user). Проверка
+        // здесь нужна не вместо индекса, а ради внятного ответа: без неё вставка падала бы
+        // на уникальности, retry-цикл исчерпывал попытки и врал «нет свободных мест» —
+        // про пустой только что созданный стол.
+        currentTableOf(userId)
+                .filter(seated -> !seated.id().equals(tableId))
+                .ifPresent(seated -> {
+                    throw new ApiException(HttpStatus.CONFLICT, "ALREADY_AT_TABLE",
+                            "Ты уже за столом «%s» — сначала встань из-за него".formatted(seated.name()));
+                });
         for (int attempt = 0; attempt < SEAT_ATTEMPTS; attempt++) {
             try {
                 final TablePlayer seat = seatAllocator.allocate(tableId, userId, table.maxPlayers());
@@ -105,7 +169,16 @@ public class LobbyService {
                 }
                 return seat;
             } catch (final DataIntegrityViolationException | ObjectOptimisticLockingFailureException e) {
-                // Место увели между выбором и вставкой — считаем расклад заново.
+                // Место увели между выбором и вставкой — считаем расклад заново. Но если
+                // увели не место, а самого игрока за другой стол (ux_table_players_user),
+                // пересчитывать нечего: сколько ни пробуй, второе место ему не положено.
+                currentTableOf(userId)
+                        .filter(seated -> !seated.id().equals(tableId))
+                        .ifPresent(seated -> {
+                            throw new ApiException(HttpStatus.CONFLICT, "ALREADY_AT_TABLE",
+                                    "Ты уже за столом «%s» — сначала встань из-за него"
+                                            .formatted(seated.name()));
+                        });
             }
         }
         throw new ApiException(HttpStatus.CONFLICT, "TABLE_FULL", "За столом нет свободных мест");

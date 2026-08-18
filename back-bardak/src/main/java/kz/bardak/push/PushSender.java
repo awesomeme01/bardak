@@ -88,6 +88,24 @@ public class PushSender {
         send(userId, turnPayload(tableName, tableId));
     }
 
+    /** Друг зовёт за стол. Того, кто в сети, зовут сокетом — сюда доходят только ушедшие. */
+    public void notifyInvite(final UUID userId, final String fromName, final String tableName,
+                             final String tableId) {
+        send(userId, invitePayload(fromName, tableName, tableId));
+    }
+
+    String invitePayload(final String fromName, final String tableName, final String tableId) {
+        final ObjectNode payload = objectMapper.createObjectNode()
+                .put("type", "TABLE_INVITE")
+                .put("title", "%s зовёт за стол".formatted(fromName))
+                .put("body", tableName == null || tableName.isBlank()
+                        ? "Тебя ждут за столом" : "Стол «%s» собирается".formatted(tableName));
+        if (tableId != null) {
+            payload.put("tableId", tableId);
+        }
+        return payload.toString();
+    }
+
     /**
      * Текст уведомления.
      *

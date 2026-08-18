@@ -11,6 +11,7 @@ import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import kz.bardak.TestPostgres;
 import kz.bardak.auth.domain.User;
 import kz.bardak.auth.domain.UserRepository;
 import kz.bardak.common.web.ApiException;
@@ -25,8 +26,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
  * Посадка за стол на настоящем Postgres.
@@ -35,13 +34,11 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * и сесть обязан ровно один.
  */
 @Tag("integration")
-@Testcontainers
 @SpringBootTest
 class LobbySeatingIT {
 
-    @Container
     @ServiceConnection
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16-alpine");
+    static final PostgreSQLContainer<?> POSTGRES = TestPostgres.INSTANCE;
 
     @Autowired
     private LobbyService lobby;
@@ -208,6 +205,101 @@ class LobbySeatingIT {
         // Закрытая вкладка не должна стоить партии: стол находится сам.
         assertThat(lobby.currentTableOf(guest)).get()
                 .satisfies(found -> assertThat(found.status().name()).isEqualTo("IN_MATCH"));
+    }
+
+    /**
+     * ⚠️ Регрессия: нетерпеливый двойной клик по «Создать стол» оставлял в лобби по столу
+     * на каждое нажатие — у одного игрока их накапливался десяток, и убирать их было некому.
+     */
+    @DisplayName("Should keep only the newest table When the same player creates twice")
+    @Test
+    void shouldKeepOnlyTheNewestTableWhenTheSamePlayerCreatesTwice() {
+        final UUID host = newUser("host-twice");
+        final GameTable first = createTable(host, 4);
+
+        final GameTable second = createTable(host, 4);
+
+        assertThat(second.id()).isNotEqualTo(first.id());
+        assertThat(lobby.currentTableOf(host)).get()
+                .satisfies(found -> assertThat(found.id()).isEqualTo(second.id()));
+        assertThat(lobby.openTables())
+                .as("брошенный пустой стол не остаётся висеть в лобби")
+                .noneSatisfy(open -> assertThat(open.id()).isEqualTo(first.id()));
+    }
+
+    @DisplayName("Should keep the guests table alive When the host leaves it for a new one")
+    @Test
+    void shouldKeepTheGuestsTableAliveWhenTheHostLeavesItForANewOne() {
+        final UUID host = newUser("host-moves");
+        final UUID guest = newUser("guest-stays");
+        final GameTable abandoned = createTable(host, 4);
+        lobby.join(abandoned.id(), guest);
+
+        createTable(host, 4);
+
+        assertThat(lobby.openTables())
+                .as("за столом остался игрок — закрывать его нельзя")
+                .anySatisfy(open -> assertThat(open.id()).isEqualTo(abandoned.id()));
+    }
+
+    /**
+     * ⚠️ Гонка, а не двойной клик: пять одновременных «Создать стол» успевали прочитать
+     * «я нигде не сижу» раньше, чем сосед вставлял строку, и игрок оказывался сразу за
+     * пятью столами. Ловится уникальным индексом на {@code table_players.user_id}.
+     */
+    @DisplayName("Should seat the player at exactly one table When creates race each other")
+    @Test
+    void shouldSeatThePlayerAtExactlyOneTableWhenCreatesRaceEachOther() throws Exception {
+        final UUID host = newUser("host-race");
+        final int attempts = 5;
+        final CyclicBarrier startTogether = new CyclicBarrier(attempts);
+        final ExecutorService pool = Executors.newFixedThreadPool(attempts);
+        try {
+            final List<Callable<Boolean>> creates = new java.util.ArrayList<>();
+            for (int attempt = 0; attempt < attempts; attempt++) {
+                creates.add(() -> {
+                    startTogether.await();
+                    try {
+                        createTable(host, 4);
+                        return true;
+                    } catch (final RuntimeException expected) {
+                        // Проигравшие гонку получают отказ — это и есть правильный исход.
+                        return false;
+                    }
+                });
+            }
+            pool.invokeAll(creates);
+
+            assertThat(lobby.currentTableOf(host))
+                    .as("игрок сидит за одним столом за раз, чем бы ни кончилась гонка")
+                    .isPresent();
+            assertThat(seatedTablesOf(host))
+                    .withFailMessage("Игрок оказался сразу за %d столами", seatedTablesOf(host))
+                    .isEqualTo(1);
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    /** Сколько столов реально держат этого игрока — считаем по открытым столам лобби. */
+    private long seatedTablesOf(final UUID userId) {
+        return lobby.openTables().stream()
+                .filter(open -> lobby.seats(open.id()).stream()
+                        .anyMatch(seat -> seat.userId().equals(userId)))
+                .count();
+    }
+
+    @DisplayName("Should refuse a new table When the player is in the middle of a match")
+    @Test
+    void shouldRefuseANewTableWhenThePlayerIsInTheMiddleOfAMatch() {
+        final UUID host = newUser("host-busy");
+        final GameTable table = createTable(host, 2);
+        lobby.join(table.id(), newUser("guest-busy"));
+        lobby.startMatch(table.id());
+
+        assertThatThrownBy(() -> createTable(host, 4))
+                .isInstanceOf(ApiException.class)
+                .hasMessageContaining("доиграй");
     }
 
     @DisplayName("Should refuse to close somebody else's table When a guest tries")
