@@ -41,3 +41,6 @@ tmp/
 # --- Локальные данные ---
 docker/pgdata/
 uploads/
+
+# --- Go ---
+back-go/bin/
