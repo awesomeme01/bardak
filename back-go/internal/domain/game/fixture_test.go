@@ -146,3 +146,8 @@ func (f *dealFixture) withLastAttack(cards ...Card) *dealFixture {
 }
 
 func (f *dealFixture) build() DealState { return f.state.Clone() }
+
+func (f *dealFixture) withRoundStarter(seatNo int) *dealFixture {
+	f.state.RoundStarterSeat = seatNo
+	return f
+}
