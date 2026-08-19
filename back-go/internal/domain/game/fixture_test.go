@@ -67,6 +67,16 @@ func (f *dealFixture) withNavesLevel(seatNo, level int) *dealFixture {
 	return f
 }
 
+// withJokerHungBy — джокер навешен жертве конкретным игроком: тот получит −1,
+// если жертва проиграет.
+func (f *dealFixture) withJokerHungBy(victimSeat, hangerSeat int) *dealFixture {
+	victim := f.state.MustPlayerAt(victimSeat).
+		WithNavesLevel(FullNavesScale().JokerLevel()).
+		WithHungCard(MustJoker(hangerSeat+1), hangerSeat)
+	f.state = f.state.WithPlayer(victim)
+	return f
+}
+
 func (f *dealFixture) withPhase(phase DealPhase) *dealFixture {
 	f.state.Phase = phase
 	return f
