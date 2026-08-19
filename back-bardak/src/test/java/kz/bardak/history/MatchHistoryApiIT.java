@@ -134,6 +134,9 @@ class MatchHistoryApiIT {
         final Player host = register("hist-g");
         final UUID tableId = createTable(host);
         final UUID matchId = matchLog.startMatch(tableId, 2, 5L, "{}").id();
+        // Места пишутся на старте матча — как в бою. Без них у матча нет участников,
+        // и спрашивающий не пройдёт проверку видимости раньше проверки «матч ещё идёт».
+        results.startMatch(matchId, List.of(host.id()));
 
         final ResponseEntity<JsonNode> response = get(host, "/api/matches/" + matchId + "/replay");
 
@@ -198,6 +201,65 @@ class MatchHistoryApiIT {
         // ⭐ Право приходит вместе со списком: экран не должен гадать, кому показывать
         // кнопку «закрыть сезон», и получать отказ уже после нажатия.
         assertThat(view.get("canManage").asBoolean()).isTrue();
+    }
+
+    @DisplayName("Should refuse a stranger history When the player is not a friend")
+    @Test
+    void shouldRefuseAStrangerHistoryWhenThePlayerIsNotAFriend() {
+        final Player owner = register("hist-owner");
+        final Player stranger = register("hist-outsider");
+
+        final ResponseEntity<JsonNode> response = rest.exchange(
+                "/api/matches?userId=" + owner.id(), HttpMethod.GET,
+                new HttpEntity<>(authorized(stranger)), JsonNode.class);
+
+        // ⭐ Рейтинг и статистика остаются открытыми — на них держится таблица лидеров.
+        // Закрыта именно история: «с кем и когда играл» посторонним знать незачем.
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+        assertThat(response.getBody().get("code").asText()).isEqualTo("NOT_FRIENDS");
+    }
+
+    @DisplayName("Should show the history When the players became friends")
+    @Test
+    void shouldShowTheHistoryWhenThePlayersBecameFriends() {
+        final Player owner = register("hist-mate-a");
+        final Player mate = register("hist-mate-b");
+        befriend(owner, mate);
+
+        final ResponseEntity<JsonNode> response = rest.exchange(
+                "/api/matches?userId=" + owner.id(), HttpMethod.GET,
+                new HttpEntity<>(authorized(mate)), JsonNode.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+    }
+
+    @DisplayName("Should refuse match details When nobody in it is a friend")
+    @Test
+    void shouldRefuseMatchDetailsWhenNobodyInItIsAFriend() {
+        final Player host = register("hist-priv-host");
+        final Player guest = register("hist-priv-guest");
+        final UUID matchId = finishedMatch(host, guest);
+        final Player stranger = register("hist-priv-outsider");
+
+        assertThat(rest.exchange("/api/matches/" + matchId, HttpMethod.GET,
+                new HttpEntity<>(authorized(stranger)), JsonNode.class).getStatusCode())
+                .isEqualTo(HttpStatus.FORBIDDEN);
+
+        // Свой матч участник видит по-прежнему.
+        assertThat(rest.exchange("/api/matches/" + matchId, HttpMethod.GET,
+                new HttpEntity<>(authorized(host)), JsonNode.class).getStatusCode())
+                .isEqualTo(HttpStatus.OK);
+    }
+
+    /** Взаимная дружба: заявка и согласие. */
+    private void befriend(final Player one, final Player two) {
+        final JsonNode profile = rest.exchange("/api/profile", HttpMethod.GET,
+                new HttpEntity<>(authorized(one)), JsonNode.class).getBody();
+        rest.exchange("/api/friends/requests", HttpMethod.POST,
+                new HttpEntity<>(Map.of("username", profile.get("username").asText()),
+                        authorized(two)), JsonNode.class);
+        rest.exchange("/api/friends/" + two.id() + "/accept", HttpMethod.POST,
+                new HttpEntity<>(Map.of(), authorized(one)), JsonNode.class);
     }
 
     /** Матч из одной раздачи: место 0 вышло первым, место 1 добралось до джокера. */

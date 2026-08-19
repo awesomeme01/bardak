@@ -7,6 +7,7 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Set;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
@@ -159,6 +160,16 @@ public class MatchHistoryService {
     }
 
     /** Место спрашивающего или {@code -1}, если он в матче не играл: тогда видно публичное. */
+    /**
+     * Кто играл в матче. Нужно границе, чтобы решить, показывать ли его посторонним.
+     */
+    @Transactional(readOnly = true)
+    public Set<UUID> participantsOf(final UUID matchId) {
+        return matchPlayers.findByMatchIdOrderBySeatNo(matchId).stream()
+                .map(MatchPlayerRecord::userId)
+                .collect(java.util.stream.Collectors.toSet());
+    }
+
     private int seatOf(final UUID matchId, final UUID userId) {
         return matchPlayers.findByMatchIdOrderBySeatNo(matchId).stream()
                 .filter(seat -> seat.userId().equals(userId))
