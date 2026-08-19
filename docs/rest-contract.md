@@ -377,9 +377,12 @@ Claims (ровно эти, других нет):
 `password_hash` = BCrypt с дефолтной стоимостью 10, `avatar`/`avatar_url` — `null`);
 строка в `refresh_tokens`.
 
-⚠️ Проверка занятости логина — `existsByUsernameIgnoreCase` + уникальный индекс. Гонка
-двух одновременных регистраций одного логина упадёт на индексе →
-`DataIntegrityViolationException` → **500 `INTERNAL_ERROR`**, а не 409.
+⚠️ Проверка занятости логина — `existsByUsernameIgnoreCase` + уникальный индекс.
+Проверка и вставка не атомарны, поэтому правду держит **база**, а не проверка.
+
+✅ **Исправлено 2026-08-19:** гонка двух одновременных регистраций одного логина теперь
+даёт **409 `USERNAME_TAKEN`**, а не 500. Раньше `DataIntegrityViolationException`
+проваливался в «что-то пошло не так». Закрыто тестом `ApiHardeningIT`.
 
 ### `POST /api/auth/login` — без токена
 
