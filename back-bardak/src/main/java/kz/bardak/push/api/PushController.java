@@ -55,8 +55,9 @@ public class PushController {
     }
 
     @DeleteMapping("/subscriptions")
-    public ResponseEntity<Void> unsubscribe(@Valid @RequestBody final UnsubscribeRequest request) {
-        subscriptions.unsubscribe(request.endpoint());
+    public ResponseEntity<Void> unsubscribe(@Valid @RequestBody final UnsubscribeRequest request,
+                                            @AuthenticationPrincipal final Jwt jwt) {
+        subscriptions.unsubscribe(request.endpoint(), UUID.fromString(jwt.getSubject()));
         return ResponseEntity.status(HttpStatus.NO_CONTENT).build();
     }
 

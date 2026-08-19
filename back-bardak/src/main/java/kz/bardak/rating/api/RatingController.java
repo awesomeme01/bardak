@@ -1,5 +1,6 @@
 package kz.bardak.rating.api;
 
+import jakarta.validation.Valid;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
@@ -46,7 +47,7 @@ public class RatingController {
 
     /** Закрыть текущий сезон и открыть следующий (ADR-037). */
     @PostMapping("/seasons")
-    public RatingDtos.SeasonView newSeason(@RequestBody final RatingDtos.CreateSeasonRequest request,
+    public RatingDtos.SeasonView newSeason(@Valid @RequestBody final RatingDtos.CreateSeasonRequest request,
                                            @AuthenticationPrincipal final Jwt jwt) {
         return rating.closeAndOpen(jwt.getClaimAsString("username"), request.name());
     }

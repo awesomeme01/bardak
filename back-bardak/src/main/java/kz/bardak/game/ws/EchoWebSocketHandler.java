@@ -114,16 +114,16 @@ public class EchoWebSocketHandler extends TextWebSocketHandler {
         }
 
         if (gameCommands.handles(incoming.type())) {
-            if (incoming.tableId() != null) {
-                sessionTables.put(session.getId(), UUID.fromString(incoming.tableId()));
+            if (!rememberTable(session, incoming, out)) {
+                return;
             }
             gameCommands.handle(incoming, (UUID) userOf(session), event -> sendRaw(out, event));
             return;
         }
 
         if (lobbyCommands.handles(incoming.type())) {
-            if (incoming.tableId() != null) {
-                sessionTables.put(session.getId(), UUID.fromString(incoming.tableId()));
+            if (!rememberTable(session, incoming, out)) {
+                return;
             }
             // Отправляем уже сериализованную строку: рассылка стола не должна знать
             // ни про сессии, ни про Jackson.
@@ -155,6 +155,31 @@ public class EchoWebSocketHandler extends TextWebSocketHandler {
     @Override
     public void handleTransportError(WebSocketSession session, Throwable exception) {
         log.warn("Ошибка транспорта WS: id={}, {}", session.getId(), exception.toString());
+    }
+
+    /**
+     * Запомнить стол сессии, разобрав идентификатор.
+     *
+     * <p>⚠️ Раньше здесь стоял голый {@code UUID.fromString}, и опечатка в идентификаторе
+     * РВАЛА СОЕДИНЕНИЕ: исключение из {@code handleTextMessage} Spring закрывает сокет
+     * с {@code SERVER_ERROR}. Клиент получал обрыв вместо ошибки, а заведённый ровно для
+     * этого код {@code TABLE_ID_INVALID} был достижим только при {@code tableId == null}.
+     *
+     * @return {@code false}, если идентификатор не разобран и ответ об ошибке уже отправлен
+     */
+    private boolean rememberTable(final WebSocketSession session, final Envelope incoming,
+                                  final WebSocketSession out) {
+        if (incoming.tableId() == null) {
+            send(out, error(incoming.id(), "TABLE_ID_INVALID", "Не указан стол"));
+            return false;
+        }
+        try {
+            sessionTables.put(session.getId(), UUID.fromString(incoming.tableId()));
+            return true;
+        } catch (IllegalArgumentException e) {
+            send(out, error(incoming.id(), "TABLE_ID_INVALID", "Идентификатор стола не разобран"));
+            return false;
+        }
     }
 
     private Envelope error(String commandId, String code, String message) {

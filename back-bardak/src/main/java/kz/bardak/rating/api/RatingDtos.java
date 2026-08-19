@@ -1,5 +1,7 @@
 package kz.bardak.rating.api;
 
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
@@ -39,6 +41,7 @@ public final class RatingDtos {
     public record SeasonsView(List<SeasonView> seasons, boolean canManage) {
     }
 
-    public record CreateSeasonRequest(String name) {
+    /** ⚠️ Валидация обязательна: без неё name = null доходил до Season.open и давал 500. */
+    public record CreateSeasonRequest(@NotBlank @Size(min = 1, max = 64) String name) {
     }
 }

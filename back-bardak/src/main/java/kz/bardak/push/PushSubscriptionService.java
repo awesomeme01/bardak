@@ -55,9 +55,19 @@ public class PushSubscriptionService {
         return subscriptions.save(existing);
     }
 
+    /**
+     * Отписать устройство.
+     *
+     * <p>⚠️ Владелец обязателен. Без него отписка была доступна любому вошедшему, кто знал
+     * чужой {@code endpoint}: устройство переставало получать уведомления о своём ходе,
+     * а его хозяин не мог понять, почему.
+     *
+     * <p>Отсутствие подписки ошибкой не считается: отписка идемпотентна, повторный вызов
+     * с того же устройства — обычное дело.
+     */
     @Transactional
-    public void unsubscribe(final String endpoint) {
-        subscriptions.deleteByEndpoint(endpoint);
+    public void unsubscribe(final String endpoint, final UUID userId) {
+        subscriptions.deleteByEndpointAndUserId(endpoint, userId);
     }
 
     @Transactional(readOnly = true)

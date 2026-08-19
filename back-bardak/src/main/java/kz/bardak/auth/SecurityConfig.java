@@ -43,6 +43,13 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(requests -> requests
+                        // ⭐ logout открыт НАМЕРЕННО, и это разбиралось отдельно.
+                        // Позвать его можно, лишь предъявив сам refresh-токен, а кто им
+                        // владеет — уже может выпустить себе access через /refresh. То есть
+                        // погашение не даёт злоумышленнику ничего сверх того, что у него есть.
+                        // ⚠️ Закрыть ручку хуже: выход после долгого простоя упрётся в 401,
+                        // клиент обновит пару, и в теле останется уже отозванный токен —
+                        // гашение не пройдёт, а refresh проживёт весь свой срок.
                         .requestMatchers(HttpMethod.POST, "/api/auth/register", "/api/auth/login",
                                 "/api/auth/refresh", "/api/auth/logout").permitAll()
                         .requestMatchers("/api/health", "/actuator/**", "/assets/**").permitAll()

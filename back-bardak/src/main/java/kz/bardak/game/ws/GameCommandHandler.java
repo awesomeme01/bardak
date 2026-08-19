@@ -154,16 +154,21 @@ public class GameCommandHandler {
                             "Ты не играешь за этим столом"));
             final DealCommand move = GameProtocol.toCommand(command.type(), seatNo, payloadOf(command));
             final MatchResult result = session.apply(move);
-            session.remember(command.id());
 
             if (result instanceof MatchResult.Rejected rejected) {
                 // Отклонённая попытка — часть истории стола, хотя состояние не меняет (§2.1).
+                //
+                // ⚠️ Отклонённую команду НЕ запоминаем как применённую. Раньше remember()
+                // стоял выше этой проверки, и повтор отклонённого хода — а клиент повторяет
+                // сам после обрыва (ADR-052) — возвращал снимок вместо причины отказа.
+                // Игрок так и не узнавал, почему ход не прошёл.
                 matchLog.appendRejected(session.matchId(), session.nextSeq(),
                         session.state().dealNo(), seatNo, command.type(), rejected.reason().name());
                 session.lastSeq(session.nextSeq());
                 sender.accept(serialize(error(command, rejected.reason().name(), "Ход отклонён")));
                 return;
             }
+            session.remember(command.id());
             final List<DealEvent> events = ((MatchResult.Applied) result).events();
             // ⭐ Сначала лог, потом рассылка (ADR-004): иначе после падения между ними
             // клиенты видели бы ход, которого в истории нет.

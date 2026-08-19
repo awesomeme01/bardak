@@ -12,4 +12,12 @@ public interface PushSubscriptionRepository extends JpaRepository<PushSubscripti
     Optional<PushSubscription> findByEndpoint(String endpoint);
 
     void deleteByEndpoint(String endpoint);
+
+    /**
+     * Удалить подписку, принадлежащую именно этому пользователю.
+     *
+     * <p>⚠️ Раньше отписка шла только по {@code endpoint}, без владельца: любой вошедший,
+     * знающий чужой адрес подписки, отписывал чужое устройство от уведомлений.
+     */
+    int deleteByEndpointAndUserId(String endpoint, UUID userId);
 }

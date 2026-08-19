@@ -6,6 +6,7 @@ import kz.bardak.auth.api.AuthDtos;
 import kz.bardak.auth.domain.User;
 import kz.bardak.auth.domain.UserRepository;
 import kz.bardak.common.web.ApiException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -45,8 +46,19 @@ public class AuthService {
         if (users.existsByUsernameIgnoreCase(request.username())) {
             throw new ApiException(HttpStatus.CONFLICT, "USERNAME_TAKEN", "Логин уже занят");
         }
-        final User user = users.save(new User(UUID.randomUUID(), request.username(), request.displayName(),
-                request.email(), passwordEncoder.encode(request.password())));
+        final User user;
+        try {
+            user = users.saveAndFlush(new User(UUID.randomUUID(), request.username(),
+                    request.displayName(), request.email(),
+                    passwordEncoder.encode(request.password())));
+        } catch (final DataIntegrityViolationException e) {
+            // ⚠️ Проверка выше и вставка не атомарны: двое, регистрирующих один логин
+            // одновременно, оба её проходят, и второй упирается в уникальный индекс
+            // (ux_users_username_lower). Раньше это давало 500 вместо готового кода.
+            //
+            // Правду держит база, а не проверка — ровно как с посадкой за стол (V9).
+            throw new ApiException(HttpStatus.CONFLICT, "USERNAME_TAKEN", "Логин уже занят");
+        }
         return issuePair(user, userAgent);
     }
 
