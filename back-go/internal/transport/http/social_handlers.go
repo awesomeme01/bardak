@@ -340,8 +340,15 @@ func (h SocialHandlers) writeSocialValidation(w http.ResponseWriter, r *http.Req
 // по месту.
 func (h SocialHandlers) writeFriendError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
+	// ⚠️ Тексты дословно как в Java, включая то, что у одного кода их ДВА: «Игрока с таким
+	// логином нет» при поиске по логину и «Игрок не найден», когда пропал сам спрашивающий.
+	// Differential сверяет сообщение посимвольно, и «улучшенная» формулировка светилась бы
+	// различием вечно.
+	case errors.Is(err, application.ErrFriendLoginNotFound):
+		WriteError(w, r, h.Log, NewFault(http.StatusNotFound, "USER_NOT_FOUND",
+			"Игрока с таким логином нет"))
 	case errors.Is(err, application.ErrUserNotFound):
-		WriteError(w, r, h.Log, ErrUserNotFound)
+		WriteError(w, r, h.Log, NewFault(http.StatusNotFound, "USER_NOT_FOUND", "Игрок не найден"))
 	case errors.Is(err, application.ErrCannotFriendSelf):
 		WriteError(w, r, h.Log, NewFault(http.StatusConflict,
 			"CANNOT_FRIEND_SELF", "С самим собой дружить не получится"))

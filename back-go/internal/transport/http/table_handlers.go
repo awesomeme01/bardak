@@ -11,7 +11,6 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/awesomeme01/bardak/back-go/internal/application"
-	"github.com/awesomeme01/bardak/back-go/internal/repository"
 )
 
 // LobbyUseCases — что нужно ручкам столов от сценариев.
@@ -213,10 +212,10 @@ func (h TableHandlers) current(w http.ResponseWriter, r *http.Request) {
 func (h TableHandlers) byID(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if _, err := uuid.Parse(id); err != nil {
-		// ⚠️ 500, а не 400. В Java невалидный UUID в пути валится в handleUnexpected
-		// (MethodArgumentTypeMismatchException), и различие в статусе всплыло бы в
-		// differential-тесте раньше, чем принесло бы кому-то пользу.
-		WriteError(w, r, h.Log, ErrInternal)
+		// ⚠️ 400, а не 500. Раньше Java валила такой запрос в «что-то пошло не так»,
+		// и клиент не мог отличить свою ошибку от поломки сервера. Починено в Java
+		// (ApiHardeningIT), здесь повторяется исправленное поведение.
+		WriteError(w, r, h.Log, ErrBadRequest)
 		return
 	}
 
@@ -267,8 +266,9 @@ func (h TableHandlers) close(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := chi.URLParam(r, "id")
+	// ⚠️ Та же починка, что и в byID: невалидный UUID — это 400 BAD_REQUEST.
 	if _, err := uuid.Parse(id); err != nil {
-		WriteError(w, r, h.Log, ErrInternal)
+		WriteError(w, r, h.Log, ErrBadRequest)
 		return
 	}
 
@@ -377,6 +377,3 @@ func valueOr(value *string) string {
 	}
 	return *value
 }
-
-// Проверка, что репозиторий столов подходит сценариям лобби, — на этапе компиляции.
-var _ application.TableStore = repository.Tables{}

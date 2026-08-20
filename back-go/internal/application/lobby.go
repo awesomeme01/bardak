@@ -72,6 +72,10 @@ type TableStore interface {
 	DisplayNamesOf(ctx context.Context, userIDs []string) (map[string]string, error)
 }
 
+// ⭐ Проверка на этапе компиляции: репозиторий столов удовлетворяет интерфейсу лобби.
+// Разъезд обнаруживается сборкой, а не первым запросом в бою.
+var _ TableStore = repository.Tables{}
+
 // Буквы кода приглашения: без похожих друг на друга — код диктуют голосом.
 const (
 	codeAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"

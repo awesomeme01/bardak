@@ -26,6 +26,7 @@ import (
 	"github.com/awesomeme01/bardak/back-go/internal/observability"
 	"github.com/awesomeme01/bardak/back-go/internal/repository"
 	apihttp "github.com/awesomeme01/bardak/back-go/internal/transport/http"
+	"github.com/awesomeme01/bardak/back-go/internal/transport/ws"
 )
 
 func main() {
@@ -76,13 +77,44 @@ func run() error {
 		Log:     log,
 	})
 
+	// ── Репозитории ─────────────────────────────────────────────────────────
 	users := repository.NewUsers(pool)
 	refreshTokens := repository.NewRefreshTokens(pool)
+	cardSets := repository.NewCardSets(pool)
+	themes := repository.NewTableThemes(pool)
+	tables := repository.NewTables(pool)
+	ratings := repository.NewRatings(pool)
+	history := repository.NewMatchHistory(pool)
+	friendships := repository.NewFriendships(pool)
+	pushes := repository.NewPushSubscriptions(pool)
+
+	// ── Сценарии ────────────────────────────────────────────────────────────
 	tokens := auth.NewTokenService(cfg.JWTSecret, 15*time.Minute, time.Now)
+	tickets := auth.NewTickets(auth.TicketTTL, time.Now)
+
 	authService := application.NewAuthService(users, refreshTokens, tokens,
 		cfg.IsInviteCodeValid, 15*time.Minute, 30*24*time.Hour, time.Now, log)
+	profileService := application.NewProfileService(users)
+	lobbyService := application.NewLobbyService(tables, time.Now, log)
+	ratingService := application.NewRatingService(ratings, users, cfg.IsSeasonAdmin, time.Now)
+	statsService := application.NewStatsService(ratings)
+	// ⭐ Присутствие и доставка приглашений живут в памяти узла: со вторым узлом это
+	// сломалось бы, но второй узел отменён решением (ADR-061), и это осознанная плата.
+	presence := application.NewPresence()
+	friendService := application.NewFriendService(friendships, users, presence,
+		presence, application.TableInviteLookup{Tables: tables}, time.Now)
+	historyService := application.NewHistoryService(history, friendService)
+	pushService := application.NewPushSubscriptionService(pushes, cfg.VAPIDPublic, cfg.VAPIDPrivate)
 
+	// ── Ручки ───────────────────────────────────────────────────────────────
 	apihttp.AuthHandlers{Auth: authService, Log: log}.Routes(router)
+	apihttp.ProfileHandlers{Profile: profileService, Auth: authService, Log: log}.Routes(router)
+	apihttp.CatalogHandlers{CardSets: cardSets, Themes: themes, Log: log}.Routes(router)
+	apihttp.TableHandlers{Lobby: lobbyService, Log: log}.Routes(router)
+	apihttp.RatingHandlers{Rating: ratingService, Stats: statsService, Log: log}.Routes(router)
+	apihttp.HistoryHandlers{History: historyService, Log: log}.Routes(router)
+	apihttp.SocialHandlers{Friends: friendService, Push: pushService, Log: log}.Routes(router)
+	ws.TicketHandler{Tickets: tickets, Log: log}.Routes(router)
 
 	// ⚠️ Неизвестный путь — 404 в общем формате, а не 500. В Java этого не было,
 	// и всякая опечатка в адресе выглядела как поломка сервера.

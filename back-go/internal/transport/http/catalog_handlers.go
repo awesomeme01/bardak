@@ -129,10 +129,9 @@ func (h CatalogHandlers) cardSets(w http.ResponseWriter, r *http.Request) {
 func (h CatalogHandlers) manifest(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if _, err := uuid.Parse(id); err != nil {
-		// ⚠️ Невалидный UUID — это 500, а не 400: в Java разбор пути падает
-		// MethodArgumentTypeMismatchException, которого обработчик ошибок не знает.
-		// Повторено дословно; чинить надо сначала в Java, иначе бэкенды разойдутся.
-		WriteError(w, r, h.Log, ErrInternal)
+		// ⚠️ 400, а не 500: починено в Java (ApiHardeningIT) — клиент должен отличать
+		// свою ошибку от поломки сервера.
+		WriteError(w, r, h.Log, ErrBadRequest)
 		return
 	}
 

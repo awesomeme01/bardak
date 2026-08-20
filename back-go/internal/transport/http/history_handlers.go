@@ -12,7 +12,6 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/awesomeme01/bardak/back-go/internal/application"
-	"github.com/awesomeme01/bardak/back-go/internal/repository"
 )
 
 // История матчей: список, детали и реплей.
@@ -73,12 +72,12 @@ type DealSummaryView struct {
 
 // DealSeatView — итог места в раздаче.
 type DealSeatView struct {
-	SeatNo           int                    `json:"seatNo"`
-	Place            *int                   `json:"place,omitempty"`
-	HungCards        []string               `json:"hungCards"`
-	NavesLevelBefore *string                `json:"navesLevelBefore,omitempty"`
-	NavesLevelAfter  *string                `json:"navesLevelAfter,omitempty"`
-	LevelChanges     []DealLevelChangeView  `json:"levelChanges"`
+	SeatNo           int                   `json:"seatNo"`
+	Place            *int                  `json:"place,omitempty"`
+	HungCards        []string              `json:"hungCards"`
+	NavesLevelBefore *string               `json:"navesLevelBefore,omitempty"`
+	NavesLevelAfter  *string               `json:"navesLevelAfter,omitempty"`
+	LevelChanges     []DealLevelChangeView `json:"levelChanges"`
 }
 
 // DealLevelChangeView — почему уровень навесов изменился и на сколько.
@@ -135,9 +134,10 @@ func (h HistoryHandlers) list(w http.ResponseWriter, r *http.Request) {
 	if raw := strings.TrimSpace(r.URL.Query().Get("userId")); raw != "" {
 		parsed, err := uuid.Parse(raw)
 		if err != nil {
-			// ⚠️ 500, а не 400: в Java непреобразуемый параметр проваливается в общий
-			// обработчик Exception. Поведение эталона, а не идеал; чинить — только вместе.
-			WriteError(w, r, h.Log, ErrInternal)
+			// ⚠️ 400, а не 500: Java ловит MethodArgumentTypeMismatchException отдельным
+			// обработчиком (ApiExceptionHandler.handleBadRequest). Раньше это был 500,
+			// и клиент не мог отличить свою ошибку от поломки сервера.
+			WriteError(w, r, h.Log, ErrBadRequest)
 			return
 		}
 		whose = parsed.String()
@@ -220,8 +220,9 @@ func (h HistoryHandlers) matchRequest(w http.ResponseWriter, r *http.Request) (s
 	}
 	parsed, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
-		// ⚠️ Как и с userId: невалидный UUID в пути в Java — это 500, а не 400.
-		WriteError(w, r, h.Log, ErrInternal)
+		// ⚠️ Как и с userId: непреобразуемый UUID в пути до контроллера не доходит
+		// и отвечает 400 BAD_REQUEST.
+		WriteError(w, r, h.Log, ErrBadRequest)
 		return "", "", false
 	}
 	return me.UserID, parsed.String(), true
@@ -331,7 +332,3 @@ func historyInstant(value *time.Time) *time.Time {
 	utc := value.UTC()
 	return &utc
 }
-
-// historyPlayerNames — вспомогалка тестов не нужна; тип оставлен неиспользуемым нарочно
-// не был. См. history_handlers_test.go.
-var _ = repository.HistoryPlayer{}

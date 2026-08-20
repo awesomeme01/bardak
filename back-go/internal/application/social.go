@@ -24,6 +24,14 @@ import (
 // «пары нет вовсе» отвечает 404, «звать можно только друга» — 403. Статус берётся
 // по месту, поэтому и ошибки две.
 var (
+	// ErrFriendLoginNotFound — логина, по которому зовут в друзья, нет.
+	//
+	// ⚠️ Отдельно от ErrUserNotFound: код у них один (USER_NOT_FOUND), а сообщение
+	// в Java разное — «Игрока с таким логином нет» при поиске по логину и «Игрок
+	// не найден», когда пропал сам спрашивающий. Текст уходит клиенту, поэтому
+	// склеивать их нельзя.
+	ErrFriendLoginNotFound = errors.New("игрока с таким логином нет")
+
 	ErrCannotFriendSelf    = errors.New("с самим собой дружить не получится")
 	ErrAlreadyFriends      = errors.New("уже друзья")
 	ErrRequestAlreadySent  = errors.New("заявка уже отправлена")
@@ -142,7 +150,7 @@ func (s FriendService) Request(ctx context.Context, userID, username string) (Fr
 	target, err := s.users.FindByUsernameIgnoreCase(ctx, strings.TrimSpace(username))
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
-			return Friend{}, ErrUserNotFound
+			return Friend{}, ErrFriendLoginNotFound
 		}
 		return Friend{}, err
 	}
