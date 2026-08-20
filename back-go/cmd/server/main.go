@@ -20,8 +20,12 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/awesomeme01/bardak/back-go/internal/application"
+	"github.com/awesomeme01/bardak/back-go/internal/auth"
 	"github.com/awesomeme01/bardak/back-go/internal/config"
 	"github.com/awesomeme01/bardak/back-go/internal/observability"
+	"github.com/awesomeme01/bardak/back-go/internal/repository"
+	apihttp "github.com/awesomeme01/bardak/back-go/internal/transport/http"
 )
 
 func main() {
@@ -62,11 +66,32 @@ func run() error {
 	router.Use(middleware.RealIP)
 	router.Use(traceMiddleware)
 	router.Use(middleware.Recoverer)
+	// ⚠️ Авторизация ДО маршрутизации, как в Java: неизвестный путь без токена отвечает
+	// 401, а не 404 — сервер не сообщает, существует ли адрес, тому, кто не представился.
+	router.Use(apihttp.Authenticate(auth.NewTokenService(cfg.JWTSecret, 15*time.Minute, time.Now)))
 
 	router.Method(http.MethodGet, "/api/health", observability.Health{
 		DB:      poolAdapter{pool},
 		Version: version(),
 		Log:     log,
+	})
+
+	users := repository.NewUsers(pool)
+	refreshTokens := repository.NewRefreshTokens(pool)
+	tokens := auth.NewTokenService(cfg.JWTSecret, 15*time.Minute, time.Now)
+	authService := application.NewAuthService(users, refreshTokens, tokens,
+		cfg.IsInviteCodeValid, 15*time.Minute, 30*24*time.Hour, time.Now, log)
+
+	apihttp.AuthHandlers{Auth: authService, Log: log}.Routes(router)
+
+	// ⚠️ Неизвестный путь — 404 в общем формате, а не 500. В Java этого не было,
+	// и всякая опечатка в адресе выглядела как поломка сервера.
+	router.NotFound(func(w http.ResponseWriter, r *http.Request) {
+		apihttp.WriteError(w, r, log, apihttp.ErrNotFound)
+	})
+	router.MethodNotAllowed(func(w http.ResponseWriter, r *http.Request) {
+		apihttp.WriteError(w, r, log, apihttp.NewFault(http.StatusMethodNotAllowed,
+			"METHOD_NOT_ALLOWED", "Метод не поддержан"))
 	})
 
 	server := &http.Server{

@@ -30,6 +30,9 @@ type Fault struct {
 	Status  int
 	Code    string
 	Message string
+	// Details — разбор по полям для ошибки валидации. Пустая карта не сериализуется:
+	// в Java ApiError помечен NON_EMPTY.
+	Details map[string]any
 }
 
 func (f Fault) Error() string { return f.Code + ": " + f.Message }
@@ -77,7 +80,9 @@ func WriteError(w http.ResponseWriter, r *http.Request, log *slog.Logger, fault 
 			log.Info("запрос отклонён", "trace", traceID, "code", fault.Code, "message", fault.Message)
 		}
 	}
-	WriteJSON(w, fault.Status, APIError{Code: fault.Code, Message: fault.Message, TraceID: traceID})
+	WriteJSON(w, fault.Status, APIError{
+		Code: fault.Code, Message: fault.Message, TraceID: traceID, Details: fault.Details,
+	})
 }
 
 // DecodeJSON разбирает тело запроса.
