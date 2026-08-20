@@ -58,13 +58,21 @@ var (
 )
 
 // WriteJSON отдаёт тело с нужным статусом.
+//
+// ⚠️ Экранирование HTML ВЫКЛЮЧЕНО намеренно. Кодировщик Go по умолчанию превращает
+// `<`, `>` и `&` в \u003c, \u003e и \u0026, а Jackson их не трогает. На сегодняшних
+// данных это незаметно, но первое же имя за столом с амперсандом дало бы расхождение
+// в побайтном сравнении — и искали бы его долго, потому что глазами оба ответа
+// выглядят одинаково.
 func WriteJSON(w http.ResponseWriter, status int, body any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if body == nil {
 		return
 	}
-	_ = json.NewEncoder(w).Encode(body)
+	encoder := json.NewEncoder(w)
+	encoder.SetEscapeHTML(false)
+	_ = encoder.Encode(body)
 }
 
 // WriteError отдаёт ошибку в общем формате.
