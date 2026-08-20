@@ -337,7 +337,8 @@ func (s LobbyService) Join(ctx context.Context, tableID, userID string) (reposit
 			if refusal := s.refuseIfSeatedElsewhere(ctx, userID, tableID); refusal != nil {
 				return repository.TablePlayer{}, refusal
 			}
-			return repository.TablePlayer{}, AlreadyAtTableError{}
+			// Строку успели убрать, пока мы разбирались, — расклад снова годен для попытки.
+			continue
 		default:
 			return repository.TablePlayer{}, err
 		}

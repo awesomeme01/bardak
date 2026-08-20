@@ -68,11 +68,11 @@ type SeasonsView struct {
 //
 // Пересчёт рейтинга по итогам матча живёт не здесь: сюда приходят только за готовым.
 type RatingService struct {
-	ratings      RatingStore
-	users        RatingUserStore
+	ratings       RatingStore
+	users         RatingUserStore
 	isSeasonAdmin func(string) bool
-	now          func() time.Time
-	newID        func() string
+	now           func() time.Time
+	newID         func() string
 }
 
 // NewRatingService собирает сценарии рейтинга.
