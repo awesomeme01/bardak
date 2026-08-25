@@ -1,6 +1,10 @@
 package config
 
-import "testing"
+import (
+	"os"
+	"testing"
+	"time"
+)
 
 // ⭐ Регистр кода приглашения — не мелочь: поле ввода на клиенте приводит его к верхнему
 // регистру, а в настройках он записан строчными. Строгое сравнение однажды уже не пускало
@@ -80,5 +84,52 @@ func TestAutoMoveIsOffByDefault(t *testing.T) {
 	}
 	if cfg.Port != 8088 {
 		t.Errorf("порт по умолчанию %d, ждали 8088", cfg.Port)
+	}
+}
+
+// ⚠️ Умолчания времён стола обязаны совпадать с Java (30 с и 60 с): различие в умолчании
+// не поймает ни один differential — оба бэкенда ответят «как настроено», а настроены
+// будут по-разному.
+func TestGameTimingsDefaultToJavaValues(t *testing.T) {
+	// t.Setenv, а затем снятие: так значение вернётся после теста, даже если оно было.
+	t.Setenv("BARDAK_TURN_TIMEOUT", "")
+	t.Setenv("BARDAK_DISCONNECT_GRACE", "")
+	os.Unsetenv("BARDAK_TURN_TIMEOUT")
+	os.Unsetenv("BARDAK_DISCONNECT_GRACE")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("конфигурация не собралась: %v", err)
+	}
+
+	if cfg.TurnTimeout != 30*time.Second {
+		t.Errorf("ход длится %v, в Java 30s", cfg.TurnTimeout)
+	}
+	if cfg.DisconnectGrace != 60*time.Second {
+		t.Errorf("пропавшего ждут %v, в Java 60s", cfg.DisconnectGrace)
+	}
+}
+
+func TestGameTimingsComeFromTheEnvironment(t *testing.T) {
+	t.Setenv("BARDAK_TURN_TIMEOUT", "1s")
+	t.Setenv("BARDAK_DISCONNECT_GRACE", "2500ms")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("конфигурация не собралась: %v", err)
+	}
+
+	if cfg.TurnTimeout != time.Second || cfg.DisconnectGrace != 2500*time.Millisecond {
+		t.Errorf("времена стола прочитаны неверно: %v / %v", cfg.TurnTimeout, cfg.DisconnectGrace)
+	}
+}
+
+// Нулевой таймаут хода означал бы, что сервер ходит за игрока мгновенно: лучше отказ
+// на старте, чем стол, играющий сам с собой.
+func TestZeroTurnTimeoutIsRefused(t *testing.T) {
+	t.Setenv("BARDAK_TURN_TIMEOUT", "0s")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("нулевой таймаут хода принят")
 	}
 }

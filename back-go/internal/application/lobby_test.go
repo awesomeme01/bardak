@@ -39,6 +39,46 @@ func newFakeTables() *fakeTables {
 	}
 }
 
+func (f *fakeTables) SetSeatReady(_ context.Context, tableID, userID string,
+	ready bool) (repository.TablePlayer, error) {
+	state := repository.SeatJoined
+	if ready {
+		state = repository.SeatReady
+	}
+	for index, seat := range f.seats {
+		if seat.TableID == tableID && seat.UserID == userID {
+			f.seats[index].State = state
+			return f.seats[index], nil
+		}
+	}
+	return repository.TablePlayer{}, repository.ErrNotFound
+}
+
+func (f *fakeTables) StartMatch(_ context.Context, id string) error {
+	table, ok := f.tables[id]
+	if !ok || table.Status != repository.TableWaiting {
+		return repository.ErrWrongTableStatus
+	}
+	table.Status = repository.TableInMatch
+	f.tables[id] = table
+	return nil
+}
+
+func (f *fakeTables) FinishMatch(_ context.Context, id string) error {
+	table, ok := f.tables[id]
+	if !ok || table.Status != repository.TableInMatch {
+		return repository.ErrWrongTableStatus
+	}
+	table.Status = repository.TableWaiting
+	f.tables[id] = table
+	for index, seat := range f.seats {
+		if seat.TableID == id {
+			f.seats[index].State = repository.SeatJoined
+		}
+	}
+	return nil
+}
+
 func (f *fakeTables) FindOpen(context.Context) ([]repository.GameTable, error) {
 	open := make([]repository.GameTable, 0)
 	for _, table := range f.tables {

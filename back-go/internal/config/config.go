@@ -34,8 +34,23 @@ type Config struct {
 	// ⚠️ По умолчанию ВЫКЛЮЧЕНО: ход остаётся за игроком, стол просто ждёт.
 	AutoMove bool
 
+	// TurnTimeout — сколько отведено на ход, DisconnectGrace — сколько ждут пропавшего
+	// со связи, прежде чем отменить матч (§5.1–5.2).
+	//
+	// ⚠️ В Java обе величины зашиты в application.yml без переменной окружения. Здесь
+	// они читаются из окружения, но УМОЛЧАНИЯ те же — 30 с и 60 с: иначе два бэкенда,
+	// поднятые рядом, вели бы себя по-разному ровно там, где это никем не сравнивается.
+	// Переменные нужны стендам и тестам, где ждать полминуты нечем.
+	TurnTimeout     time.Duration
+	DisconnectGrace time.Duration
+
 	WSOrigins        []string
 	WSOriginPatterns []string
+
+	// FrontendPath и AssetsPath — собранный фронт и картинки карт. Пусто — не раздаём:
+	// в проде перед сервером может стоять Caddy, и тогда файлы отдаёт он.
+	FrontendPath string
+	AssetsPath   string
 
 	VAPIDPublic  string
 	VAPIDPrivate string
@@ -64,6 +79,15 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("BARDAK_AUTO_MOVE: %w", err)
 	}
 
+	turnTimeout, err := duration(env("BARDAK_TURN_TIMEOUT", "30s"))
+	if err != nil {
+		return Config{}, fmt.Errorf("BARDAK_TURN_TIMEOUT: %w", err)
+	}
+	disconnectGrace, err := duration(env("BARDAK_DISCONNECT_GRACE", "60s"))
+	if err != nil {
+		return Config{}, fmt.Errorf("BARDAK_DISCONNECT_GRACE: %w", err)
+	}
+
 	return Config{
 		Port:             port,
 		DatabaseURL:      env("BARDAK_DB_URL", "postgres://bardak:bardak@localhost:5432/bardak"),
@@ -71,13 +95,30 @@ func Load() (Config, error) {
 		InviteCodes:      list(env("BARDAK_INVITE_CODES", "bardak-2026")),
 		SeasonAdmins:     list(env("BARDAK_SEASON_ADMINS", "")),
 		AutoMove:         autoMove,
+		TurnTimeout:      turnTimeout,
+		DisconnectGrace:  disconnectGrace,
 		WSOrigins:        list(env("BARDAK_WS_ORIGINS", "http://localhost:8088,http://localhost:5173")),
 		WSOriginPatterns: list(env("BARDAK_WS_ORIGIN_PATTERNS", "http://192.168.*.*:8088,http://10.*.*.*:8088,http://172.16.*.*:8088")),
+		FrontendPath:     env("BARDAK_FRONTEND_PATH", "../front-bardak/dist"),
+		AssetsPath:       env("BARDAK_ASSETS_PATH", "../back-bardak/assets"),
 		VAPIDPublic:      env("BARDAK_VAPID_PUBLIC", ""),
 		VAPIDPrivate:     env("BARDAK_VAPID_PRIVATE", ""),
 		VAPIDSubject:     env("BARDAK_VAPID_SUBJECT", "mailto:admin@bardak.local"),
 		ShutdownTimeout:  20 * time.Second,
 	}, nil
+}
+
+// duration разбирает срок в записи Go («30s»). Ноль и отрицательные не принимаются:
+// нулевой таймаут хода означал бы, что сервер ходит за игрока мгновенно.
+func duration(raw string) (time.Duration, error) {
+	value, err := time.ParseDuration(strings.TrimSpace(raw))
+	if err != nil {
+		return 0, err
+	}
+	if value <= 0 {
+		return 0, fmt.Errorf("срок %q должен быть положительным", raw)
+	}
+	return value, nil
 }
 
 func env(key, fallback string) string {

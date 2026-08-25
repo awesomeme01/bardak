@@ -44,7 +44,13 @@ type MatchEvent struct {
 	Type      string
 	ActorSeat *int
 	Payload   string
-	CreatedAt time.Time
+	// PrivateToSeat — кому событие видно, если не всем. Пусто — публичное.
+	//
+	// ⚠️ Видимость ЗАПИСЫВАЕТСЯ вместе с событием, а не пересчитывается по правилам при
+	// чтении. Иначе правило видимости жило бы в двух местах и однажды разошлось бы —
+	// а разошлось бы оно в сторону «показали чужое».
+	PrivateToSeat *int
+	CreatedAt     time.Time
 }
 
 // MatchLog — журнал матча, снимки и сам матч.
@@ -101,9 +107,10 @@ func (r MatchLog) Append(ctx context.Context, matchID string, firstSeq int, deal
 	batch := &pgx.Batch{}
 	seq := firstSeq
 	for _, event := range events {
-		batch.Queue(`insert into match_events (match_id, seq, deal_no, type, actor_seat, payload)
-		             values ($1, $2, $3, $4, $5, $6::jsonb)`,
-			matchID, seq, dealNo, event.Type, event.ActorSeat, event.Payload)
+		batch.Queue(`insert into match_events (match_id, seq, deal_no, type, actor_seat, payload,
+		                 private_to_seat)
+		             values ($1, $2, $3, $4, $5, $6::jsonb, $7)`,
+			matchID, seq, dealNo, event.Type, event.ActorSeat, event.Payload, event.PrivateToSeat)
 		seq++
 	}
 
@@ -121,10 +128,19 @@ func (r MatchLog) Append(ctx context.Context, matchID string, firstSeq int, deal
 //
 // ⭐ Отказ — часть истории стола, хотя состояние не меняет: по нему видно, что игрок
 // пытался сделать, и разбор спорной партии без этого неполон.
+//
+// ⚠️ Попытку видит ТОЛЬКО её автор (`private_to_seat = actorSeat`): остальным полагается
+// лишь факт и рубашка (§2.1). Публичная запись дала бы соседям читать чужие намерения —
+// какую карту человек пробовал положить и почему ему отказали.
+//
+// ⚠️ Тип события — `MOVE_REJECTED`, как в Java. `ATTEMPT_REJECTED` из плана в её коде
+// не существует, и своё имя здесь означало бы, что клиент, догоняющий лог, получит
+// событие, которого не знает.
 func (r MatchLog) AppendRejected(ctx context.Context, matchID string, seq, dealNo, actorSeat int,
 	commandType, reason string) error {
-	const query = `insert into match_events (match_id, seq, deal_no, type, actor_seat, payload)
-	               values ($1, $2, $3, 'ATTEMPT_REJECTED', $4, $5::jsonb)`
+	const query = `insert into match_events (match_id, seq, deal_no, type, actor_seat, payload,
+	                   private_to_seat)
+	               values ($1, $2, $3, 'MOVE_REJECTED', $4, $5::jsonb, $4)`
 	payload := fmt.Sprintf(`{"command":%q,"reason":%q}`, commandType, reason)
 	if _, err := r.pool.Exec(ctx, query, matchID, seq, dealNo, actorSeat, payload); err != nil {
 		return fmt.Errorf("запись отклонённого хода: %w", err)
@@ -133,8 +149,11 @@ func (r MatchLog) AppendRejected(ctx context.Context, matchID string, seq, dealN
 }
 
 // Since — события матча начиная с номера.
+//
+// ⚠️ Отдаёт их СЫРЫМИ, вместе с записанной видимостью: фильтр по месту смотрящего
+// накладывает вызывающий. Сырой лог наружу не уходит никогда — в нём лежат чужие карты.
 func (r MatchLog) Since(ctx context.Context, matchID string, afterSeq int) ([]MatchEvent, error) {
-	const query = `select seq, deal_no, type, actor_seat, payload::text, created_at
+	const query = `select seq, deal_no, type, actor_seat, payload::text, private_to_seat, created_at
 	               from match_events where match_id = $1 and seq > $2 order by seq`
 	rows, err := r.pool.Query(ctx, query, matchID, afterSeq)
 	if err != nil {
@@ -146,7 +165,7 @@ func (r MatchLog) Since(ctx context.Context, matchID string, afterSeq int) ([]Ma
 	for rows.Next() {
 		var event MatchEvent
 		if err := rows.Scan(&event.Seq, &event.DealNo, &event.Type, &event.ActorSeat,
-			&event.Payload, &event.CreatedAt); err != nil {
+			&event.Payload, &event.PrivateToSeat, &event.CreatedAt); err != nil {
 			return nil, fmt.Errorf("разбор события матча: %w", err)
 		}
 		events = append(events, event)

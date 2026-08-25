@@ -149,6 +149,23 @@ func (r *TableRuntime) Unsubscribe(userID string, sub *listener) {
 	sub.close()
 }
 
+// Drop убирает подписку игрока, какой бы она ни была.
+//
+// ⚠️ Отличается от Unsubscribe тем, что не требует самой подписки: по обрыву связи
+// известен только игрок. Сравнивать там нечего — соединение у игрока одно.
+func (r *TableRuntime) Drop(userID string) {
+	r.mu.Lock()
+	sub, ok := r.listeners[userID]
+	if ok {
+		delete(r.listeners, userID)
+	}
+	r.mu.Unlock()
+
+	if ok {
+		sub.close()
+	}
+}
+
 // SendTo отправляет одному игроку.
 //
 // ⚠️ Медленный клиент НЕ блокирует игру: переполненная очередь означает, что он не

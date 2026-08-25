@@ -180,11 +180,16 @@ func TestRejectedAttemptIsRecorded(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(events) != 1 || events[0].Type != "ATTEMPT_REJECTED" {
+	if len(events) != 1 || events[0].Type != "MOVE_REJECTED" {
 		t.Fatal("отклонённая попытка не записана — разбор спорной партии был бы неполон")
 	}
 	if !contains(events[0].Payload, "NOT_YOUR_TURN") {
 		t.Errorf("причина отказа потеряна: %s", events[0].Payload)
+	}
+	// ⚠️ Свою неудачную попытку видит только автор: иначе сосед читал бы чужие намерения —
+	// какую карту человек пробовал положить и почему ему отказали.
+	if events[0].PrivateToSeat == nil || *events[0].PrivateToSeat != 2 {
+		t.Errorf("отклонённая попытка видна не только автору: %v", events[0].PrivateToSeat)
 	}
 }
 
@@ -195,4 +200,35 @@ func contains(haystack, needle string) bool {
 		}
 	}
 	return false
+}
+
+// ⭐ Видимость события ЗАПИСЫВАЕТСЯ вместе с ним и переживает чтение: по ней потом
+// фильтруется догон после обрыва. Не запиши её — вскрытая скрытая карта уехала бы
+// на RESYNC всем за столом, а глазами это выглядело бы совершенно нормально.
+func TestEventVisibilitySurvivesTheLog(t *testing.T) {
+	log, matchID, ctx := matchFixture(t)
+	owner := 1
+
+	_, err := log.Append(ctx, matchID, 1, 1, []MatchEvent{
+		{Type: "CARD_ATTACKED", ActorSeat: &owner, Payload: `{"cardCode":"A-spades"}`},
+		{Type: "FACE_DOWN_REVEALED", ActorSeat: &owner, Payload: `{"cardCode":"6-clubs"}`,
+			PrivateToSeat: &owner},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	events, err := log.Since(ctx, matchID, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("прочитано %d событий, записано 2", len(events))
+	}
+	if events[0].PrivateToSeat != nil {
+		t.Errorf("публичное событие стало приватным: %v", events[0].PrivateToSeat)
+	}
+	if events[1].PrivateToSeat == nil || *events[1].PrivateToSeat != owner {
+		t.Errorf("приватность вскрытой карты потеряна: %v", events[1].PrivateToSeat)
+	}
 }

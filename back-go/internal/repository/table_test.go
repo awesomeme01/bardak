@@ -323,3 +323,96 @@ func TestDisplayNamesOf(t *testing.T) {
 		t.Errorf("пустой список должен давать пустую карту без запроса: %v (%d)", err, len(empty))
 	}
 }
+
+// Переход стола в матч и обратно.
+//
+// ⚠️ Половина смысла здесь принадлежит базе: переход обусловлен текущим статусом, и
+// именно это не даёт двум одновременным MATCH_START завести за столом два матча.
+func TestTableGoesIntoMatchAndBack(t *testing.T) {
+	pool := testDB(t)
+	tables, users := NewTables(pool), NewUsers(pool)
+	ctx := context.Background()
+
+	host := seatTableUser(t, users, "Хозяин")
+	table := seatTable(t, tables, host, false)
+	if _, err := tables.InsertSeat(ctx, TablePlayer{TableID: table.ID, UserID: host,
+		SeatNo: 0, State: SeatReady}); err != nil {
+		t.Fatalf("хозяин не сел: %v", err)
+	}
+
+	if err := tables.StartMatch(ctx, table.ID); err != nil {
+		t.Fatalf("стол не перешёл в матч: %v", err)
+	}
+	inMatch, err := tables.FindByID(ctx, table.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inMatch.Status != TableInMatch {
+		t.Fatalf("статус %q, ждали IN_MATCH", inMatch.Status)
+	}
+	if inMatch.Version <= table.Version {
+		t.Errorf("версия не выросла: было %d, стало %d", table.Version, inMatch.Version)
+	}
+
+	// ⭐ Второй старт не проходит: стол уже не ждёт. Это и есть защита от двух матчей
+	// за одним столом — проверка «матч уже идёт» и переход не атомарны, а этот update да.
+	if err := tables.StartMatch(ctx, table.ID); !errors.Is(err, ErrWrongTableStatus) {
+		t.Fatalf("второй старт прошёл: %v", err)
+	}
+
+	if err := tables.FinishMatch(ctx, table.ID); err != nil {
+		t.Fatalf("стол не вернулся в лобби: %v", err)
+	}
+	back, err := tables.FindByID(ctx, table.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if back.Status != TableWaiting {
+		t.Fatalf("статус %q, ждали WAITING", back.Status)
+	}
+
+	// ⭐ Готовность снята со всех: следующий матч начинается по общему согласию,
+	// а не потому, что галочка осталась с прошлого раза.
+	seats, err := tables.Seats(ctx, table.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(seats) != 1 || seats[0].IsReady() {
+		t.Fatalf("готовность не сброшена: %+v", seats)
+	}
+}
+
+func TestSeatReadyIsSetAndCleared(t *testing.T) {
+	pool := testDB(t)
+	tables, users := NewTables(pool), NewUsers(pool)
+	ctx := context.Background()
+
+	host := seatTableUser(t, users, "Готовый")
+	table := seatTable(t, tables, host, false)
+	if _, err := tables.InsertSeat(ctx, TablePlayer{TableID: table.ID, UserID: host,
+		SeatNo: 0, State: SeatJoined}); err != nil {
+		t.Fatal(err)
+	}
+
+	ready, err := tables.SetSeatReady(ctx, table.ID, host, true)
+	if err != nil {
+		t.Fatalf("готовность не поставилась: %v", err)
+	}
+	if !ready.IsReady() {
+		t.Fatalf("состояние места %q, ждали READY", ready.State)
+	}
+
+	back, err := tables.SetSeatReady(ctx, table.ID, host, false)
+	if err != nil {
+		t.Fatalf("готовность не снялась: %v", err)
+	}
+	if back.IsReady() {
+		t.Fatalf("состояние места %q, ждали JOINED", back.State)
+	}
+
+	// Не за этим столом — отказ, а не молчаливое ничего: иначе клиент считал бы,
+	// что готовность принята.
+	if _, err := tables.SetSeatReady(ctx, table.ID, uuid.NewString(), true); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("готовность за чужой стол прошла: %v", err)
+	}
+}

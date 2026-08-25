@@ -27,6 +27,8 @@ var (
 	ErrAlreadyAtTable   = errors.New("игрок уже за другим столом")
 	ErrNoDefaultCardSet = errors.New("не настроен набор карт по умолчанию")
 	ErrNoDefaultTheme   = errors.New("не настроена тема стола по умолчанию")
+	ErrNotAtTable       = errors.New("игрок не за этим столом")
+	ErrTableNotReady    = errors.New("не все за столом готовы")
 )
 
 // MatchInProgressError — отказ «посреди матча» с текстом того места, где он случился.
@@ -67,6 +69,9 @@ type TableStore interface {
 	SeatOf(ctx context.Context, userID string) (repository.TablePlayer, error)
 	InsertSeat(ctx context.Context, seat repository.TablePlayer) (repository.TablePlayer, error)
 	DeleteSeat(ctx context.Context, tableID, userID string) (bool, error)
+	SetSeatReady(ctx context.Context, tableID, userID string, ready bool) (repository.TablePlayer, error)
+	StartMatch(ctx context.Context, id string) error
+	FinishMatch(ctx context.Context, id string) error
 	DefaultCardSetID(ctx context.Context) (string, error)
 	DefaultThemeID(ctx context.Context) (string, error)
 	DisplayNamesOf(ctx context.Context, userIDs []string) (map[string]string, error)
@@ -371,6 +376,62 @@ func (s LobbyService) Leave(ctx context.Context, tableID, userID string) error {
 		return MatchInProgressError{Message: "Посреди матча из-за стола не встают"}
 	}
 	_, err = s.tables.DeleteSeat(ctx, tableID, userID)
+	return err
+}
+
+// SetReady отмечает готовность игрока за столом.
+//
+// ⚠️ Место ищется по паре «стол + игрок», а не по одному игроку: сидеть он может только
+// за одним столом, но команда приходит с идентификатором стола, и готовность за чужой
+// стол ставить нельзя.
+func (s LobbyService) SetReady(ctx context.Context, tableID, userID string,
+	ready bool) (repository.TablePlayer, error) {
+	seat, err := s.tables.SetSeatReady(ctx, tableID, userID, ready)
+	if errors.Is(err, repository.ErrNotFound) {
+		return repository.TablePlayer{}, ErrNotAtTable
+	}
+	if err != nil {
+		return repository.TablePlayer{}, err
+	}
+	return seat, nil
+}
+
+// IsReadyToStart — хватает ли игроков и все ли подтвердили готовность.
+//
+// ⭐ Двое — минимум: в одиночку матч не играется, а стартовать его в одиночку клиент
+// пытается регулярно (кнопка есть, соперников ещё нет).
+func (s LobbyService) IsReadyToStart(ctx context.Context, tableID string) (bool, error) {
+	seats, err := s.tables.Seats(ctx, tableID)
+	if err != nil {
+		return false, err
+	}
+	if len(seats) < 2 {
+		return false, nil
+	}
+	for _, seat := range seats {
+		if !seat.IsReady() {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+// StartMatch переводит стол в матч: новые игроки за него уже не сядут.
+func (s LobbyService) StartMatch(ctx context.Context, tableID string) error {
+	err := s.tables.StartMatch(ctx, tableID)
+	if errors.Is(err, repository.ErrWrongTableStatus) {
+		return MatchInProgressError{Message: "Матч уже идёт"}
+	}
+	return err
+}
+
+// FinishMatch возвращает стол в лобби и снимает готовность со всех.
+func (s LobbyService) FinishMatch(ctx context.Context, tableID string) error {
+	err := s.tables.FinishMatch(ctx, tableID)
+	if errors.Is(err, repository.ErrWrongTableStatus) {
+		// Стол уже вернулся в лобби (или закрыт) — цель достигнута, а не поломка.
+		return nil
+	}
 	return err
 }
 

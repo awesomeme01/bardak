@@ -21,6 +21,11 @@ import (
 // ⭐ Разбор идёт по ИМЕНИ ограничения, а не по повторному чтению состояния, как в Java:
 // повторное чтение отвечает на вопрос «что там сейчас», а нужен ответ «на чём именно
 // упала вставка» — между этими двумя моментами состояние успевает поменяться ещё раз.
+// ErrWrongTableStatus — стол уже не в том состоянии, которого требовала команда:
+// матч успели начать, стол успели закрыть. Отдельная ошибка, а не «не найден»: игроку
+// это разные новости.
+var ErrWrongTableStatus = errors.New("стол не в том состоянии")
+
 var (
 	ErrSeatTaken       = errors.New("место за столом уже занято")
 	ErrSeatedElsewhere = errors.New("игрок уже сидит за другим столом")
@@ -189,6 +194,64 @@ func (r Tables) Close(ctx context.Context, id string, at time.Time) error {
 		return ErrNotFound
 	}
 	return nil
+}
+
+// StartMatch переводит стол в матч: новые игроки за него уже не сядут.
+//
+// ⚠️ Обновляется ТОЛЬКО стол, который ждёт. Иначе второй MATCH_START, пришедший от
+// второго игрока в ту же секунду, тоже прошёл бы — и за столом завелось бы два матча,
+// каждый со своей раздачей.
+func (r Tables) StartMatch(ctx context.Context, id string) error {
+	return r.switchStatus(ctx, id, TableWaiting, TableInMatch)
+}
+
+// FinishMatch возвращает стол в лобби.
+//
+// ⭐ Готовность сбрасывается всем: следующий матч должен начаться по общему согласию,
+// а не потому, что галочка осталась с прошлого раза.
+func (r Tables) FinishMatch(ctx context.Context, id string) error {
+	if err := r.switchStatus(ctx, id, TableInMatch, TableWaiting); err != nil {
+		return err
+	}
+	_, err := r.pool.Exec(ctx,
+		`update table_players set state = $2 where table_id = $1`, id, SeatJoined)
+	if err != nil {
+		return fmt.Errorf("сброс готовности: %w", err)
+	}
+	return nil
+}
+
+// switchStatus — переход стола из ожидаемого состояния в новое.
+//
+// Возвращает ErrWrongTableStatus, если стол уже не в том состоянии: это не поломка,
+// а гонка двух команд, и вызывающий отвечает игроку по-человечески.
+func (r Tables) switchStatus(ctx context.Context, id, from, to string) error {
+	tag, err := r.pool.Exec(ctx,
+		`update game_tables set status = $3, version = version + 1
+		 where id = $1 and status = $2`, id, from, to)
+	if err != nil {
+		return fmt.Errorf("смена статуса стола: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrWrongTableStatus
+	}
+	return nil
+}
+
+// SetSeatReady отмечает готовность игрока за столом.
+func (r Tables) SetSeatReady(ctx context.Context, tableID, userID string,
+	ready bool) (TablePlayer, error) {
+	state := SeatJoined
+	if ready {
+		state = SeatReady
+	}
+	seat, err := r.oneSeat(ctx,
+		`update table_players set state = $3 where table_id = $1 and user_id = $2
+		 returning `+seatColumns, tableID, userID, state)
+	if err != nil {
+		return TablePlayer{}, err
+	}
+	return seat, nil
 }
 
 // Seats — все места за столом по возрастанию номера.

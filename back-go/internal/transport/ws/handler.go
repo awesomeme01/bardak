@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/coder/websocket"
@@ -28,6 +29,18 @@ type TicketRedeemer interface {
 	Redeem(value string) (string, bool)
 }
 
+// Client — одно соединение глазами маршрутизатора.
+//
+// ⭐ Отправок ДВЕ, и это не дублирование. Send — прямой ответ этому соединению (ошибка,
+// снимок по запросу). SendRaw качает очередь подписки на стол: там лежат уже собранные
+// сообщения, общие для всех подписчиков, и разбирать их обратно в конверт ради типа
+// значило бы делать двойную работу на каждом ходе за каждым столом.
+type Client struct {
+	UserID  string
+	Send    func(Envelope)
+	SendRaw func([]byte)
+}
+
 // CommandRouter — куда уходят разобранные команды.
 //
 // ⭐ Обработчик сокета не знает ни правил, ни столов: его дело — разобрать конверт
@@ -36,10 +49,10 @@ type TicketRedeemer interface {
 type CommandRouter interface {
 	// Handles — берётся ли этот тип команды.
 	Handles(commandType string) bool
-	// Handle обрабатывает команду; send отправляет ответ лично этому соединению.
-	Handle(ctx context.Context, envelope Envelope, userID string, send func(Envelope))
+	// Handle обрабатывает команду.
+	Handle(ctx context.Context, envelope Envelope, client Client)
 	// Disconnect вызывается при обрыве.
-	Disconnect(ctx context.Context, tableID, userID string)
+	Disconnect(ctx context.Context, tableID string, client Client)
 }
 
 // Handler — точка входа /ws.
@@ -47,7 +60,16 @@ type Handler struct {
 	Tickets TicketRedeemer
 	Routers []CommandRouter
 	Origins []string
-	Log     *slog.Logger
+
+	// Base — контекст СЕРВЕРА, а не соединения.
+	//
+	// ⚠️ Команда стола исполняется в очереди и переживает своё соединение: игрок мог
+	// закрыть вкладку сразу после хода. Возьми она контекст сокета — запись хода в базу
+	// отменялась бы на полпути вместе с соединением, а матч оставался бы с состоянием
+	// в памяти и без записи в журнале. Живой прогон нашёл ровно это.
+	Base context.Context
+
+	Log *slog.Logger
 }
 
 // ServeHTTP выполняет рукопожатие и ведёт соединение.
@@ -72,10 +94,33 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer conn.CloseNow()
 	conn.SetReadLimit(readLimit)
 
-	ctx, cancel := context.WithCancel(r.Context())
+	// ⚠️ Ни чтение, ни запись НЕ БЕРУТ контекст HTTP-запроса. После апгрейда соединение
+	// перехвачено, и net/http гасит контекст запроса почти сразу — сокет при этом живой.
+	// Взять его — значит через мгновение молча перестать отправлять (`conn.Write` падает
+	// с «context canceled», а игрок видит зависший стол) и оборвать чтение.
+	//
+	// Живой прогон нашёл именно это: первые сообщения доходили, следующие — нет.
+	base := h.Base
+	if base == nil {
+		base = context.Background()
+	}
+	// Жизнь соединения: рвётся своим закрытием, обрывом или остановкой сервера.
+	ctx, cancel := context.WithCancel(base)
 	defer cancel()
 
-	send := h.sender(ctx, conn)
+	// Контекст стола живёт со всем сервером: команда переживает своё соединение.
+	tableCtx := base
+
+	sendRaw := h.rawSender(ctx, conn)
+	send := func(envelope Envelope) {
+		raw, err := json.Marshal(envelope)
+		if err != nil {
+			return
+		}
+		sendRaw(raw)
+	}
+	client := Client{UserID: userID, Send: send, SendRaw: sendRaw}
+
 	send(Event("CONNECTED", nil, nil, map[string]any{
 		"userId":  userID,
 		"session": uuid.NewString(),
@@ -85,7 +130,7 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// операционной системы, а игроки за столом ждут ушедшего, которого уже нет.
 	go h.heartbeat(ctx, conn, cancel)
 
-	h.readLoop(ctx, conn, userID, send)
+	h.readLoop(ctx, tableCtx, conn, client)
 }
 
 func (h Handler) heartbeat(ctx context.Context, conn *websocket.Conn, cancel context.CancelFunc) {
@@ -107,8 +152,8 @@ func (h Handler) heartbeat(ctx context.Context, conn *websocket.Conn, cancel con
 	}
 }
 
-func (h Handler) readLoop(ctx context.Context, conn *websocket.Conn, userID string,
-	send func(Envelope)) {
+func (h Handler) readLoop(ctx, tableCtx context.Context, conn *websocket.Conn, client Client) {
+	send := client.Send
 	var lastTable string
 
 	for {
@@ -116,7 +161,7 @@ func (h Handler) readLoop(ctx context.Context, conn *websocket.Conn, userID stri
 		if err != nil {
 			// Обрыв — обычное дело: вкладку закрыли, телефон уснул.
 			for _, router := range h.Routers {
-				router.Disconnect(ctx, lastTable, userID)
+				router.Disconnect(tableCtx, lastTable, client)
 			}
 			return
 		}
@@ -156,7 +201,7 @@ func (h Handler) readLoop(ctx context.Context, conn *websocket.Conn, userID stri
 				break
 			}
 			lastTable = *envelope.TableID
-			router.Handle(ctx, envelope, userID, send)
+			router.Handle(tableCtx, envelope, client)
 			routed = true
 			break
 		}
@@ -167,18 +212,21 @@ func (h Handler) readLoop(ctx context.Context, conn *websocket.Conn, userID stri
 	}
 }
 
-// sender — отправка с таймаутом. Возвращается замыканием, чтобы обработчики команд
-// не знали ни про соединение, ни про контекст.
-func (h Handler) sender(ctx context.Context, conn *websocket.Conn) func(Envelope) {
-	return func(envelope Envelope) {
-		raw, err := json.Marshal(envelope)
-		if err != nil {
-			return
-		}
+// rawSender — отправка готового сообщения с таймаутом. Возвращается замыканием, чтобы
+// обработчики команд не знали ни про соединение, ни про контекст.
+//
+// ⚠️ Запись сериализуется мьютексом: сообщения приходят из ДВУХ источников — прямой ответ
+// с goroutine сокета и рассылка стола со своей. Две одновременные записи в один
+// websocket.Conn перемешали бы кадры, а выглядело бы это как «клиент получил мусор».
+func (h Handler) rawSender(ctx context.Context, conn *websocket.Conn) func([]byte) {
+	var mu sync.Mutex
+	return func(raw []byte) {
+		mu.Lock()
+		defer mu.Unlock()
 		writeCtx, done := context.WithTimeout(ctx, writeTimeout)
 		defer done()
 		if err := conn.Write(writeCtx, websocket.MessageText, raw); err != nil && h.Log != nil {
-			h.Log.Debug("не удалось отправить", "type", envelope.Type, "err", err)
+			h.Log.Debug("не удалось отправить", "err", err)
 		}
 	}
 }
