@@ -22,6 +22,11 @@ dist-ssr/
 .vscode/
 !.vscode/extensions.json
 
+# --- Инструменты агентов ---
+# .agents/skills — переустановка тех же скиллов, что уже лежат в .claude/skills.
+# Артефакт установщика, не содержимое проекта: источник правды — .claude/skills.
+.agents/
+
 # --- OS ---
 .DS_Store
 Thumbs.db
