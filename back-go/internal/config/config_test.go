@@ -133,3 +133,32 @@ func TestZeroTurnTimeoutIsRefused(t *testing.T) {
 		t.Fatal("нулевой таймаут хода принят")
 	}
 }
+
+// ⚠️ Окно тишины уведомлений тоже обязано совпадать с Java (2 минуты): различие здесь
+// не увидит никто, кроме игрока, которому звонят вдвое чаще, чем задумано.
+func TestPushQuietWindowDefaultsToJavaValue(t *testing.T) {
+	t.Setenv("BARDAK_PUSH_QUIET_FOR", "")
+	os.Unsetenv("BARDAK_PUSH_QUIET_FOR")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("конфигурация не собралась: %v", err)
+	}
+
+	if cfg.PushQuietFor != 2*time.Minute {
+		t.Errorf("окно тишины %v, в Java 2m", cfg.PushQuietFor)
+	}
+}
+
+func TestPushQuietWindowComesFromTheEnvironment(t *testing.T) {
+	t.Setenv("BARDAK_PUSH_QUIET_FOR", "45s")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("конфигурация не собралась: %v", err)
+	}
+
+	if cfg.PushQuietFor != 45*time.Second {
+		t.Errorf("окно тишины прочитано неверно: %v", cfg.PushQuietFor)
+	}
+}

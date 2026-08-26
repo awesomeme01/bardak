@@ -21,6 +21,7 @@ import (
 	"github.com/awesomeme01/bardak/back-go/internal/auth"
 	"github.com/awesomeme01/bardak/back-go/internal/config"
 	"github.com/awesomeme01/bardak/back-go/internal/observability"
+	"github.com/awesomeme01/bardak/back-go/internal/push"
 	"github.com/awesomeme01/bardak/back-go/internal/repository"
 	apihttp "github.com/awesomeme01/bardak/back-go/internal/transport/http"
 	"github.com/awesomeme01/bardak/back-go/internal/transport/protocol"
@@ -61,6 +62,16 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool,
 	dealHistory := repository.NewDealHistory(pool)
 	friendships := repository.NewFriendships(pool)
 	pushes := repository.NewPushSubscriptions(pool)
+
+	// ── Уведомления ─────────────────────────────────────────────────────────
+	// ⭐ Свой отправитель, а не сценарий подписки: подписки заводит браузер через REST,
+	// а зовёт к столу стол. Совпадение имён в Java стоило отдельного комментария там же.
+	pushSender := push.NewSender(pushes, push.Options{
+		PublicKey:  cfg.VAPIDPublic,
+		PrivateKey: cfg.VAPIDPrivate,
+		Subject:    cfg.VAPIDSubject,
+	}, time.Now, log)
+	turnNotifier := push.NewTurnNotifier(pushSender, cfg.PushQuietFor, time.Now, log)
 
 	// ── Сценарии ────────────────────────────────────────────────────────────
 	tokens := auth.NewTokenService(cfg.JWTSecret, 15*time.Minute, time.Now)
@@ -112,7 +123,7 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool,
 			ws.GameRouter{
 				Matches: matchService, Results: resultService, Deals: dealRecorder,
 				Log: matchLog, Lobby: lobbyService, State: codec,
-				Registry: registry, Clock: turnClock,
+				Registry: registry, Clock: turnClock, Notifier: turnNotifier,
 				AutoMove: cfg.AutoMove, TurnTimeout: cfg.TurnTimeout,
 				DisconnectGrace: cfg.DisconnectGrace, Logger: log,
 			},
@@ -139,6 +150,9 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool,
 	return router, func() {
 		turnClock.StopAll()
 		registry.CloseAll()
+		// ⚠️ Отправитель гасится ПОСЛЕДНИМ: у стола на выходе могут быть недоставленные
+		// зовы, и остановленная раньше очередь потеряла бы их молча.
+		pushSender.Stop()
 	}
 }
 

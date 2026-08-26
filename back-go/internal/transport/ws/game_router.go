@@ -10,6 +10,7 @@ import (
 
 	"github.com/awesomeme01/bardak/back-go/internal/application"
 	"github.com/awesomeme01/bardak/back-go/internal/domain/game"
+	"github.com/awesomeme01/bardak/back-go/internal/push"
 	"github.com/awesomeme01/bardak/back-go/internal/repository"
 	"github.com/awesomeme01/bardak/back-go/internal/transport/protocol"
 )
@@ -57,7 +58,21 @@ type MatchLogPort interface {
 type MatchLobbyPort interface {
 	FinishMatch(ctx context.Context, tableID string) error
 	Leave(ctx context.Context, tableID, userID string) error
+	ByID(ctx context.Context, tableID string) (application.TableSnapshot, error)
 }
+
+// TurnNotifierPort — зов к столу того, кого за ним нет.
+//
+// ⭐ Интерфейс на стороне потребителя, и он же — выключатель: nil означает, что звать
+// некому и незачем. Уведомления не должны быть условием игры.
+type TurnNotifierPort interface {
+	TurnOf(userID, tableID string, present bool, nameOf func() string)
+	PausedFor(userID, tableID string, secondsLeft int64, nameOf func() string)
+	Present(userID string)
+}
+
+// ⭐ Проверка сборкой: зов к столу подходит сокету.
+var _ TurnNotifierPort = (*push.TurnNotifier)(nil)
 
 // StateCodecPort — снимок состояния матча.
 type StateCodecPort interface {
@@ -80,6 +95,9 @@ type GameRouter struct {
 	State    StateCodecPort
 	Registry *TableRegistry
 	Clock    *application.TurnClock
+
+	// Notifier — зов к столу отсутствующих. nil — уведомлений нет вовсе.
+	Notifier TurnNotifierPort
 
 	// AutoMove — ходить ли за молчащего. ⚠️ Выключено — часов нет вовсе: ход ждёт
 	// своего хозяина сколько угодно.
@@ -128,7 +146,10 @@ func (r GameRouter) Disconnect(ctx context.Context, tableID string, client Clien
 			"turnMillisLeft": left.Milliseconds(),
 			"graceSeconds":   int(r.DisconnectGrace.Seconds()),
 		})))
-		// ⭐ У пропавшего есть ровно это окно, чтобы вернуться.
+		// ⭐ Позвать пропавшего: у него есть ровно это окно, чтобы вернуться. Это и есть
+		// главный повод для уведомления — цена молчания здесь не «неудобно», а отменённый
+		// матч у всех за столом.
+		r.callBack(ctx, session.TableID, client.UserID, int64(r.DisconnectGrace.Seconds()))
 		r.Clock.ScheduleAbort(tableID, r.DisconnectGrace, func() {
 			_ = runtime.Submit(func() { r.abort(ctx, runtime, session, client.UserID) })
 		})
@@ -304,6 +325,10 @@ func (r GameRouter) resumeIfSeated(runtime *TableRuntime, session *application.M
 		return
 	}
 	r.Clock.CancelAbort(session.TableID)
+	if r.Notifier != nil {
+		// Игрок вернулся: следующий его ход снова достоин звонка.
+		r.Notifier.Present(client.UserID)
+	}
 	r.Clock.Resume(session.TableID)
 	runtime.Broadcast(encode(Event("MATCH_RESUMED", nil, &session.TableID, map[string]any{})))
 }
@@ -320,10 +345,12 @@ func (r GameRouter) restartTurnClock(ctx context.Context, runtime *TableRuntime,
 		r.Clock.Cancel(session.TableID)
 		return
 	}
-	if _, onTheClock := application.SeatOnTheClock(state.Deal); !onTheClock {
+	seat, onTheClock := application.SeatOnTheClock(state.Deal)
+	if !onTheClock {
 		r.Clock.Cancel(session.TableID)
 		return
 	}
+	r.callToTable(ctx, runtime, session, seat)
 	// ⭐ Часы идут, только если стол согласился ходить за молчащего. Без этого ход просто
 	// ждёт своего хозяина — сколько угодно, и никто его не отбирает.
 	if !r.AutoMove {
@@ -333,6 +360,47 @@ func (r GameRouter) restartTurnClock(ctx context.Context, runtime *TableRuntime,
 	r.Clock.Start(session.TableID, r.TurnTimeout, func() {
 		_ = runtime.Submit(func() { r.applyTimeout(ctx, runtime, session) })
 	})
+}
+
+// callToTable зовёт к столу того, чей ход.
+//
+// ⭐ «Нет за столом» определяется по ПОДПИСКЕ на события стола, а не по сокету вообще:
+// игрок мог открыть приложение и уйти в другой стол или в историю. Само уведомление
+// уходит с чужой goroutine — на goroutine стола ждать ответа push-сервиса нельзя (ADR-007).
+func (r GameRouter) callToTable(ctx context.Context, runtime *TableRuntime,
+	session *application.MatchSession, seat int) {
+	if r.Notifier == nil {
+		return
+	}
+	userID, _ := session.Naming(seat)
+	if userID == "" {
+		return
+	}
+	r.Notifier.TurnOf(userID, session.TableID, runtime.Subscribed(userID),
+		r.tableNameOf(ctx, session.TableID))
+}
+
+// callBack зовёт обратно пропавшего, из-за которого матч встал на паузу.
+func (r GameRouter) callBack(ctx context.Context, tableID, userID string, secondsLeft int64) {
+	if r.Notifier == nil {
+		return
+	}
+	r.Notifier.PausedFor(userID, tableID, secondsLeft, r.tableNameOf(ctx, tableID))
+}
+
+// tableNameOf — имя стола для текста уведомления, добываемое только если звонок состоится.
+//
+// ⚠️ Имя — украшение уведомления, а не его условие: стол мог закрыться, база — ответить
+// ошибкой, и молчать из-за этого нельзя. Текст без имени у отправителя предусмотрен.
+func (r GameRouter) tableNameOf(ctx context.Context, tableID string) func() string {
+	return func() string {
+		snapshot, err := r.Lobby.ByID(ctx, tableID)
+		if err != nil {
+			r.warn("имя стола для уведомления не прочиталось", "table", tableID, "err", err)
+			return ""
+		}
+		return snapshot.Table.Name
+	}
 }
 
 // applyTimeout — ход не сделан за отведённое время, сервер делает самое безобидное (§5.1).

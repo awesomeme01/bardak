@@ -56,6 +56,10 @@ type Config struct {
 	VAPIDPrivate string
 	VAPIDSubject string
 
+	// PushQuietFor — сколько молчать после звонка одному игроку. Ход может вернуться
+	// к нему через несколько секунд, и без паузы партия превратилась бы в очередь звонков.
+	PushQuietFor time.Duration
+
 	ShutdownTimeout time.Duration
 }
 
@@ -87,6 +91,10 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, fmt.Errorf("BARDAK_DISCONNECT_GRACE: %w", err)
 	}
+	pushQuietFor, err := duration(env("BARDAK_PUSH_QUIET_FOR", "2m"))
+	if err != nil {
+		return Config{}, fmt.Errorf("BARDAK_PUSH_QUIET_FOR: %w", err)
+	}
 
 	return Config{
 		Port:             port,
@@ -104,6 +112,7 @@ func Load() (Config, error) {
 		VAPIDPublic:      env("BARDAK_VAPID_PUBLIC", ""),
 		VAPIDPrivate:     env("BARDAK_VAPID_PRIVATE", ""),
 		VAPIDSubject:     env("BARDAK_VAPID_SUBJECT", "mailto:admin@bardak.local"),
+		PushQuietFor:     pushQuietFor,
 		ShutdownTimeout:  20 * time.Second,
 	}, nil
 }

@@ -131,8 +131,10 @@ func (f *fakeDeals) RecordFinished(context.Context, string, game.MatchState, gam
 }
 
 type fakeMatchLobby struct {
-	finished int
-	left     []string
+	finished  int
+	left      []string
+	tableName string
+	nameErr   error
 }
 
 func (f *fakeMatchLobby) FinishMatch(context.Context, string) error {
@@ -143,6 +145,15 @@ func (f *fakeMatchLobby) FinishMatch(context.Context, string) error {
 func (f *fakeMatchLobby) Leave(_ context.Context, _, userID string) error {
 	f.left = append(f.left, userID)
 	return nil
+}
+
+func (f *fakeMatchLobby) ByID(_ context.Context, tableID string) (application.TableSnapshot, error) {
+	if f.nameErr != nil {
+		return application.TableSnapshot{}, f.nameErr
+	}
+	return application.TableSnapshot{
+		Table: repository.GameTable{ID: tableID, Name: f.tableName},
+	}, nil
 }
 
 type stubState struct{}
@@ -535,4 +546,248 @@ func TestMatchOverPayloadCarriesPlacesAndRatings(t *testing.T) {
 	if !ok || len(cards) != 1 {
 		t.Fatalf("последняя атака в итоге: %v", payload["lastAttackCards"])
 	}
+}
+
+// Зов к столу отсутствующих.
+//
+// ⭐ Уведомление — единственный способ вернуть человека вовремя, и единственный способ
+// довести его до «отключить уведомления». Поэтому проверяется не факт отправки, а КОМУ
+// оно уходит: тому, кого за столом нет, и только ему.
+
+type fakeNotifier struct {
+	mu      sync.Mutex
+	turns   []notified
+	paused  []notified
+	present []string
+}
+
+type notified struct {
+	userID    string
+	tableID   string
+	tableName string
+	present   bool
+	seconds   int64
+}
+
+func (f *fakeNotifier) TurnOf(userID, tableID string, present bool, nameOf func() string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.turns = append(f.turns, notified{userID: userID, tableID: tableID,
+		tableName: nameOf(), present: present})
+}
+
+func (f *fakeNotifier) PausedFor(userID, tableID string, secondsLeft int64, nameOf func() string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.paused = append(f.paused, notified{userID: userID, tableID: tableID,
+		tableName: nameOf(), seconds: secondsLeft})
+}
+
+func (f *fakeNotifier) Present(userID string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.present = append(f.present, userID)
+}
+
+// lastTurn ждёт зова к столу.
+//
+// ⚠️ Ждёт, а не читает сразу: рассылка уходит РАНЬШЕ, чем перезапускаются часы хода,
+// и всё это исполняется на goroutine стола. Проверка сразу после рассылки проходила бы
+// через раз — тот самый флак, который на деле означает «тест торопится».
+func (f *fakeNotifier) lastTurn(t *testing.T) notified {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		f.mu.Lock()
+		if len(f.turns) > 0 {
+			last := f.turns[len(f.turns)-1]
+			f.mu.Unlock()
+			return last
+		}
+		f.mu.Unlock()
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("к столу никого не позвали")
+	return notified{}
+}
+
+// awaitPaused ждёт зова пропавшего обратно.
+func (f *fakeNotifier) awaitPaused(t *testing.T) notified {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		f.mu.Lock()
+		if len(f.paused) > 0 {
+			call := f.paused[0]
+			f.mu.Unlock()
+			return call
+		}
+		f.mu.Unlock()
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("пропавшего не позвали обратно")
+	return notified{}
+}
+
+// awaitPresent ждёт отметки о возвращении игрока.
+func (f *fakeNotifier) awaitPresent(t *testing.T, userID string) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		f.mu.Lock()
+		for _, seen := range f.present {
+			if seen == userID {
+				f.mu.Unlock()
+				return
+			}
+		}
+		f.mu.Unlock()
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("вернувшийся %s так и остался «ушедшим»", userID)
+}
+
+// onTheClockUser — кому сейчас принадлежит ход, и кто за столом второй.
+func onTheClockUser(t *testing.T, session *application.MatchSession) (string, string) {
+	t.Helper()
+	seat, ok := application.SeatOnTheClock(session.State().Deal)
+	if !ok {
+		t.Fatal("сразу после раздачи ход никому не принадлежит")
+	}
+	onClock, _ := session.Naming(seat)
+	for _, other := range session.Seats {
+		if other.UserID != onClock {
+			return onClock, other.UserID
+		}
+	}
+	t.Fatal("за столом один игрок")
+	return "", ""
+}
+
+func TestTurnCallsThePlayerWhoIsNotAtTheTable(t *testing.T) {
+	router, matches, _, lobby, _ := gameFixture(t)
+	notifier := &fakeNotifier{}
+	router.Notifier = notifier
+	lobby.tableName = "Вечерний"
+	// Матч начинает НЕ тот, чей ход: у обладателя хода вкладка закрыта.
+	onClock, starter := onTheClockUser(t, matches.session)
+	socket := newCollector()
+
+	router.Handle(context.Background(), envelopeOf("MATCH_START", ""), socket.client(starter))
+	socket.nextBroadcast(t)
+
+	call := notifier.lastTurn(t)
+	if call.userID != onClock || call.present {
+		t.Fatalf("позвали не отсутствующего обладателя хода: %+v", call)
+	}
+	if call.tableName != "Вечерний" || call.tableID != tableID {
+		t.Fatalf("позвали без стола: %+v", call)
+	}
+}
+
+func TestTurnStaysSilentWhenThePlayerIsSubscribedToTheTable(t *testing.T) {
+	router, matches, _, _, _ := gameFixture(t)
+	notifier := &fakeNotifier{}
+	router.Notifier = notifier
+	onClock, _ := onTheClockUser(t, matches.session)
+	socket := newCollector()
+
+	// Ход принадлежит тому, кто сам же и начал матч: он смотрит на стол.
+	router.Handle(context.Background(), envelopeOf("MATCH_START", ""), socket.client(onClock))
+	socket.nextBroadcast(t)
+
+	// ⭐ Присутствие считается по ПОДПИСКЕ на события стола: маршрутизатор обязан
+	// сказать зову «он здесь», а решение молчать принимает уже зов.
+	call := notifier.lastTurn(t)
+	if call.userID != onClock || !call.present {
+		t.Fatalf("зову соврали о присутствии игрока: %+v", call)
+	}
+}
+
+func TestTurnCallIsMadeEvenWhenTheTableDoesNotMoveForTheSilent(t *testing.T) {
+	router, matches, _, _, _ := gameFixture(t)
+	notifier := &fakeNotifier{}
+	router.Notifier = notifier
+	router.AutoMove = false
+	onClock, starter := onTheClockUser(t, matches.session)
+	socket := newCollector()
+
+	router.Handle(context.Background(), envelopeOf("MATCH_START", ""), socket.client(starter))
+	socket.nextBroadcast(t)
+
+	// ⚠️ Часов при выключенном автодействии нет вовсе — ход ждёт хозяина сколько угодно.
+	// Именно поэтому звать его надо тем более: иначе стол стоит молча и бесконечно.
+	if notifier.lastTurn(t).userID != onClock {
+		t.Fatalf("без автодействия зов пропал: %+v", notifier.turns)
+	}
+}
+
+func TestPauseCallsTheMissingPlayerBack(t *testing.T) {
+	router, _, _, lobby, _ := gameFixture(t)
+	notifier := &fakeNotifier{}
+	router.Notifier = notifier
+	lobby.tableName = "Вечерний"
+	socket := newCollector()
+	router.Handle(context.Background(), envelopeOf("MATCH_START", ""), socket.client("user-a"))
+	socket.nextBroadcast(t)
+
+	router.Disconnect(context.Background(), tableID, socket.client("user-a"))
+	socket.nextBroadcast(t)
+
+	call := notifier.awaitPaused(t)
+	if call.userID != "user-a" || call.tableName != "Вечерний" {
+		t.Fatalf("позвали не того или не за тот стол: %+v", call)
+	}
+	// Человеку важно, сколько у него осталось: это окно и есть весь смысл зова.
+	if call.seconds != int64(router.DisconnectGrace.Seconds()) {
+		t.Fatalf("не сказали, сколько ждут: %+v", call)
+	}
+}
+
+func TestReturningToTheTableMakesTheNextTurnWorthACallAgain(t *testing.T) {
+	router, _, _, _, _ := gameFixture(t)
+	notifier := &fakeNotifier{}
+	router.Notifier = notifier
+	socket := newCollector()
+	router.Handle(context.Background(), envelopeOf("MATCH_START", ""), socket.client("user-a"))
+	socket.nextBroadcast(t)
+
+	router.Handle(context.Background(), envelopeOf("STATE_REQUEST", ""), socket.client("user-b"))
+	socket.nextDirect(t)
+
+	notifier.awaitPresent(t, "user-b")
+}
+
+func TestTurnCallSurvivesATableWithoutAName(t *testing.T) {
+	router, matches, _, lobby, _ := gameFixture(t)
+	notifier := &fakeNotifier{}
+	router.Notifier = notifier
+	lobby.nameErr = repository.ErrNotFound
+	onClock, starter := onTheClockUser(t, matches.session)
+	socket := newCollector()
+
+	router.Handle(context.Background(), envelopeOf("MATCH_START", ""), socket.client(starter))
+	socket.nextBroadcast(t)
+
+	// ⚠️ Имя — украшение уведомления, а не его условие: у отправителя текст без имени
+	// предусмотрен, и молчать из-за неудачного запроса в базу нельзя.
+	call := notifier.lastTurn(t)
+	if call.userID != onClock || call.tableName != "" {
+		t.Fatalf("стол без имени сорвал зов: %+v", call)
+	}
+}
+
+func TestTableWithoutANotifierPlaysAsUsual(t *testing.T) {
+	router, _, log, _, _ := gameFixture(t)
+	router.Notifier = nil
+	socket := newCollector()
+	router.Handle(context.Background(), envelopeOf("MATCH_START", ""), socket.client("user-a"))
+	socket.nextBroadcast(t)
+
+	// Уведомления — не условие игры: без них стол обязан работать ровно так же.
+	router.Disconnect(context.Background(), tableID, socket.client("user-a"))
+	if paused := socket.nextBroadcast(t); paused.Type != "MATCH_PAUSED" {
+		t.Fatalf("без уведомлений стол сломался: пришло %q", paused.Type)
+	}
+	_ = log
 }

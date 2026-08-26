@@ -227,8 +227,8 @@ func turnPayload(tableName, tableID string) map[string]string {
 		"title": "Твой ход",
 		"body":  "За столом ждут тебя",
 	}
-	if tableName != "" {
-		payload["body"] = fmt.Sprintf("Стол «%s» ждёт", tableName)
+	if name := strings.TrimSpace(tableName); name != "" {
+		payload["body"] = fmt.Sprintf("Стол «%s» ждёт", name)
 	}
 	return withTable(payload, tableID)
 }
@@ -237,8 +237,8 @@ func turnPayload(tableName, tableID string) map[string]string {
 // отведённое время отменится совсем.
 func pausedPayload(tableName, tableID string, secondsLeft int64) map[string]string {
 	where := "Партия"
-	if tableName != "" {
-		where = fmt.Sprintf("Стол «%s»", tableName)
+	if name := strings.TrimSpace(tableName); name != "" {
+		where = fmt.Sprintf("Стол «%s»", name)
 	}
 	return withTable(map[string]string{
 		"type":  "MATCH_PAUSED",
@@ -254,8 +254,8 @@ func invitePayload(fromName, tableName, tableID string) map[string]string {
 		"title": fmt.Sprintf("%s зовёт за стол", fromName),
 		"body":  "Тебя ждут за столом",
 	}
-	if tableName != "" {
-		payload["body"] = fmt.Sprintf("Стол «%s» собирается", tableName)
+	if name := strings.TrimSpace(tableName); name != "" {
+		payload["body"] = fmt.Sprintf("Стол «%s» собирается", name)
 	}
 	return withTable(payload, tableID)
 }

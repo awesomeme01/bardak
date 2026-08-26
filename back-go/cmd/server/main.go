@@ -19,6 +19,7 @@ import (
 
 	"github.com/awesomeme01/bardak/back-go/internal/config"
 	"github.com/awesomeme01/bardak/back-go/internal/observability"
+	"github.com/awesomeme01/bardak/back-go/internal/push"
 	"github.com/awesomeme01/bardak/back-go/internal/server"
 )
 
@@ -35,6 +36,15 @@ func run() error {
 	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf("конфигурация: %w", err)
+	}
+
+	// ⭐ Кривые ключи VAPID — поломка, и узнать о ней надо ПРИ СТАРТЕ, а не при первом
+	// же ходе: иначе сервер поднимется здоровым, а уведомления окажутся мёртвыми ровно
+	// тогда, когда понадобятся. Так же ведёт себя Java.
+	if err := push.CheckKeys(push.Options{
+		PublicKey: cfg.VAPIDPublic, PrivateKey: cfg.VAPIDPrivate,
+	}); err != nil {
+		return fmt.Errorf("уведомления: %w", err)
 	}
 
 	// ⭐ Контекст рвётся по SIGTERM и SIGINT: под Docker приходит первый, из терминала —

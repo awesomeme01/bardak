@@ -234,3 +234,15 @@ func (l *listener) Closed() <-chan struct{} { return l.closed }
 func (l *listener) close() {
 	l.oneShot.Do(func() { close(l.closed) })
 }
+
+// Subscribed — подписан ли игрок на события этого стола прямо сейчас.
+//
+// ⭐ Это и есть «игрок за столом» для уведомлений: подписка заводится посадкой и
+// умирает вместе с соединением. Считать присутствие по живому сокету вообще было бы
+// неверно — игрок мог открыть приложение и уйти в другой стол или в историю.
+func (r *TableRuntime) Subscribed(userID string) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	_, ok := r.listeners[userID]
+	return ok
+}
