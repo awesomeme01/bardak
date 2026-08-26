@@ -69,6 +69,23 @@ func run() error {
 	handler, shutdownTables := server.Build(ctx, cfg, pool, log)
 	defer shutdownTables()
 
+	// Служебный сервер: pprof и счётчики рантайма. По умолчанию выключен.
+	stopDiagnostics := observability.Diagnostics{
+		Pool: func() observability.PoolStats {
+			stats := pool.Stat()
+			return observability.PoolStats{
+				Total:             stats.TotalConns(),
+				Idle:              stats.IdleConns(),
+				Acquired:          stats.AcquiredConns(),
+				MaxConns:          stats.MaxConns(),
+				AcquireCount:      stats.AcquireCount(),
+				EmptyAcquireCount: stats.EmptyAcquireCount(),
+			}
+		},
+		Log: log,
+	}.Serve(ctx, cfg.DiagnosticsAddr)
+	defer stopDiagnostics()
+
 	httpServer := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.Port),
 		Handler:           handler,
@@ -78,7 +95,7 @@ func run() error {
 	errs := make(chan error, 1)
 	go func() {
 		log.Info("сервер поднят", "port", cfg.Port, "autoMove", cfg.AutoMove,
-			"version", server.Version())
+			"production", cfg.Production, "version", server.Version())
 		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errs <- err
 		}

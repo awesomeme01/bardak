@@ -60,8 +60,34 @@ type Config struct {
 	// к нему через несколько секунд, и без паузы партия превратилась бы в очередь звонков.
 	PushQuietFor time.Duration
 
+	// Production — сервер поднят для настоящей игры, а не для разработки
+	// (BARDAK_ENV=prod).
+	//
+	// ⚠️ Единственное, что этот флаг делает, — ЗАПРЕЩАЕТ опасные умолчания. Игровое
+	// поведение от него не зависит ни в чём: сервер, который в проде играет иначе,
+	// чем на машине разработчика, невозможно отладить.
+	Production bool
+
+	// RateLimit и RateLimitWindow — сколько запросов с одного адреса пускать к дверям
+	// (вход, регистрация, тикет к сокету) за окно. Ноль — предела нет.
+	RateLimit       int
+	RateLimitWindow time.Duration
+
+	// DiagnosticsAddr — адрес служебного сервера (pprof и счётчики). Пусто — выключен.
+	//
+	// ⚠️ Умолчание пустое, и localhost в примерах не случайность: профили показывают
+	// внутренности процесса целиком, и открывать их наружу нельзя.
+	DiagnosticsAddr string
+
 	ShutdownTimeout time.Duration
 }
+
+// devJWTSecret — секрет для разработки. Он ЗАХАРДКОЖЕН намеренно: поднимать локальный
+// сервер должно быть просто. Ровно поэтому в проде он запрещён — см. Load.
+const devJWTSecret = "dev-only-secret-change-me-32-bytes-minimum!!"
+
+// devInviteCode — код приглашения по умолчанию, тоже только для разработки.
+const devInviteCode = "bardak-2026"
 
 // MinJWTSecretLen — HS256 требует ключ не короче 256 бит.
 const MinJWTSecretLen = 32
@@ -73,9 +99,26 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("BARDAK_PORT: %w", err)
 	}
 
-	secret := env("BARDAK_JWT_SECRET", "dev-only-secret-change-me-32-bytes-minimum!!")
+	production := strings.EqualFold(strings.TrimSpace(env("BARDAK_ENV", "dev")), "prod")
+
+	secret := env("BARDAK_JWT_SECRET", devJWTSecret)
 	if len(secret) < MinJWTSecretLen {
 		return Config{}, fmt.Errorf("BARDAK_JWT_SECRET короче %d байт: HS256 такой ключ не примет", MinJWTSecretLen)
+	}
+
+	// ⚠️ Прод с незаданными переменными — это сервер с ИЗВЕСТНЫМ секретом: токен к нему
+	// подделывает любой, кто читал этот репозиторий, а войти можно по коду из README.
+	// Молчаливый старт здесь опаснее отказа: сервер выглядел бы здоровым.
+	inviteCodes := list(env("BARDAK_INVITE_CODES", devInviteCode))
+	if production {
+		if secret == devJWTSecret {
+			return Config{}, fmt.Errorf("BARDAK_ENV=prod с секретом для разработки: " +
+				"задай BARDAK_JWT_SECRET, иначе токены подделает любой, кто видел этот репозиторий")
+		}
+		if len(inviteCodes) == 1 && inviteCodes[0] == devInviteCode {
+			return Config{}, fmt.Errorf("BARDAK_ENV=prod с кодом приглашения по умолчанию: " +
+				"задай BARDAK_INVITE_CODES, иначе зарегистрируется кто угодно")
+		}
 	}
 
 	autoMove, err := strconv.ParseBool(env("BARDAK_AUTO_MOVE", "false"))
@@ -96,11 +139,22 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("BARDAK_PUSH_QUIET_FOR: %w", err)
 	}
 
+	// ⭐ Двадцать попыток в минуту с адреса. Человеку столько не нужно даже с забытым
+	// паролем и переподключениями, а перебор пароля это останавливает.
+	rateLimit, err := strconv.Atoi(env("BARDAK_RATE_LIMIT", "20"))
+	if err != nil {
+		return Config{}, fmt.Errorf("BARDAK_RATE_LIMIT: %w", err)
+	}
+	rateLimitWindow, err := duration(env("BARDAK_RATE_LIMIT_WINDOW", "1m"))
+	if err != nil {
+		return Config{}, fmt.Errorf("BARDAK_RATE_LIMIT_WINDOW: %w", err)
+	}
+
 	return Config{
 		Port:             port,
 		DatabaseURL:      env("BARDAK_DB_URL", "postgres://bardak:bardak@localhost:5432/bardak"),
 		JWTSecret:        []byte(secret),
-		InviteCodes:      list(env("BARDAK_INVITE_CODES", "bardak-2026")),
+		InviteCodes:      inviteCodes,
 		SeasonAdmins:     list(env("BARDAK_SEASON_ADMINS", "")),
 		AutoMove:         autoMove,
 		TurnTimeout:      turnTimeout,
@@ -113,6 +167,10 @@ func Load() (Config, error) {
 		VAPIDPrivate:     env("BARDAK_VAPID_PRIVATE", ""),
 		VAPIDSubject:     env("BARDAK_VAPID_SUBJECT", "mailto:admin@bardak.local"),
 		PushQuietFor:     pushQuietFor,
+		Production:       production,
+		RateLimit:        rateLimit,
+		RateLimitWindow:  rateLimitWindow,
+		DiagnosticsAddr:  env("BARDAK_DIAGNOSTICS_ADDR", ""),
 		ShutdownTimeout:  20 * time.Second,
 	}, nil
 }

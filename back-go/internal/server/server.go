@@ -38,6 +38,10 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool,
 	router.Use(middleware.RealIP)
 	router.Use(traceMiddleware)
 	router.Use(middleware.Recoverer)
+	// ⭐ Предел частоты — ПЕРЕД авторизацией: перебор пароля не должен стоить сервер
+	// проверки токена, а тикет к сокету берут вообще без него.
+	router.Use(apihttp.NewRateLimit(cfg.RateLimit, cfg.RateLimitWindow, time.Now, log).Middleware)
+
 	// ⚠️ Авторизация ДО маршрутизации, как в Java: неизвестный путь без токена отвечает
 	// 401, а не 404 — сервер не сообщает, существует ли адрес, тому, кто не представился.
 	router.Use(apihttp.Authenticate(auth.NewTokenService(cfg.JWTSecret, 15*time.Minute, time.Now)))

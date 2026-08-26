@@ -162,3 +162,60 @@ func TestPushQuietWindowComesFromTheEnvironment(t *testing.T) {
 		t.Errorf("окно тишины прочитано неверно: %v", cfg.PushQuietFor)
 	}
 }
+
+// Прод с незаданными переменными — сервер с ИЗВЕСТНЫМ секретом и известным кодом
+// приглашения.
+//
+// ⚠️ Проверяется отказ, а не предупреждение: сервер, поднявшийся с секретом из
+// репозитория, выглядит здоровым, и узнают об этом по чужим токенам.
+func TestProductionRefusesTheDevelopmentSecret(t *testing.T) {
+	t.Setenv("BARDAK_ENV", "prod")
+	t.Setenv("BARDAK_JWT_SECRET", "")
+	os.Unsetenv("BARDAK_JWT_SECRET")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("прод поднялся с секретом для разработки")
+	}
+}
+
+func TestProductionRefusesTheDefaultInviteCode(t *testing.T) {
+	t.Setenv("BARDAK_ENV", "prod")
+	t.Setenv("BARDAK_JWT_SECRET", "секрет-достаточной-длины-для-HS256-подписи")
+	t.Setenv("BARDAK_INVITE_CODES", "")
+	os.Unsetenv("BARDAK_INVITE_CODES")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("прод поднялся с кодом приглашения из README")
+	}
+}
+
+func TestProductionStartsWithItsOwnSecrets(t *testing.T) {
+	t.Setenv("BARDAK_ENV", "prod")
+	t.Setenv("BARDAK_JWT_SECRET", "секрет-достаточной-длины-для-HS256-подписи")
+	t.Setenv("BARDAK_INVITE_CODES", "свой-код-приглашения")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("прод со своими секретами не поднялся: %v", err)
+	}
+	if !cfg.Production {
+		t.Fatal("BARDAK_ENV=prod не распознан")
+	}
+}
+
+// ⚠️ Обратная сторона: локальный запуск обязан остаться запуском в одну команду.
+// Требовать секреты на машине разработчика — верный способ получить их в git.
+func TestDevelopmentStartsWithoutAnyEnvironment(t *testing.T) {
+	for _, name := range []string{"BARDAK_ENV", "BARDAK_JWT_SECRET", "BARDAK_INVITE_CODES"} {
+		t.Setenv(name, "")
+		os.Unsetenv(name)
+	}
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("локальный запуск потребовал настройки: %v", err)
+	}
+	if cfg.Production {
+		t.Fatal("сервер без BARDAK_ENV считает себя продом")
+	}
+}
