@@ -87,7 +87,8 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool,
 	// сломалось бы, но второй узел отменён решением (ADR-061), и это осознанная плата.
 	presence := application.NewPresence()
 	friendService := application.NewFriendService(friendships, users, presence,
-		presence, application.TableInviteLookup{Tables: tables}, time.Now)
+		inviteWithPush{direct: presence, push: pushSender},
+		application.TableInviteLookup{Tables: tables}, time.Now)
 	historyService := application.NewHistoryService(history, friendService)
 	pushService := application.NewPushSubscriptionService(pushes, cfg.VAPIDPublic, cfg.VAPIDPrivate)
 
