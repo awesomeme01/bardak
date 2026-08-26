@@ -16,6 +16,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/awesomeme01/bardak/back-go/internal/config"
 	"github.com/awesomeme01/bardak/back-go/internal/observability"
@@ -351,6 +352,41 @@ func (c *client) post(path string, body any, token string, into any) {
 	}
 }
 
+// get читает ручку от лица клиента и валится на любом ответе, кроме 200.
+func (c *client) get(path string, into any) {
+	c.t.Helper()
+	status, payload := c.getRaw(path)
+	if status != http.StatusOK {
+		c.t.Fatalf("GET %s ответил %d: %s", path, status, payload)
+	}
+	if into != nil {
+		if err := json.Unmarshal(payload, into); err != nil {
+			c.t.Fatalf("GET %s: ответ не разобран: %v (%s)", path, err, payload)
+		}
+	}
+}
+
+// getRaw возвращает код и тело как есть: нужен там, где проверяется ОТКАЗ.
+func (c *client) getRaw(path string) (int, []byte) {
+	c.t.Helper()
+	request, err := http.NewRequest(http.MethodGet, c.base+path, nil)
+	if err != nil {
+		c.t.Fatal(err)
+	}
+	if c.token != "" {
+		request.Header.Set("Authorization", "Bearer "+c.token)
+	}
+
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		c.t.Fatalf("GET %s: %v", path, err)
+	}
+	defer response.Body.Close()
+
+	payload, _ := io.ReadAll(response.Body)
+	return response.StatusCode, payload
+}
+
 // ── разбор состояния ────────────────────────────────────────────────────────
 
 type stateSync struct {
@@ -547,6 +583,197 @@ func TestMatchIsPlayedToTheEndAndCounted(t *testing.T) {
 	if tableStatus != "WAITING" {
 		t.Fatalf("после матча стол в состоянии %q: собраться заново нельзя", tableStatus)
 	}
+
+	// ── что отдают ручки, до которых доходит только сыгранный матч ───────────
+	//
+	// ⭐ Ниже проверяется то, чего не проверяет ни один другой прогон: история, разбор
+	// и реплей читаются ТОЛЬКО после настоящего матча, и до сих пор их правильность
+	// держалась на обработчиках с выдуманными данными. Тот же матч, что выше проверен
+	// в базе, теперь читается так, как его читает экран.
+	checkHistoryAfterMatch(t, ctx, pool, tableID, host, guest, httpServer.URL)
+}
+
+// checkHistoryAfterMatch читает историю, разбор, реплей и рейтинг сыгранного матча.
+func checkHistoryAfterMatch(t *testing.T, ctx context.Context, pool *pgxpool.Pool,
+	tableID string, host, guest *client, base string) {
+	t.Helper()
+
+	// Список матчей: заодно отсюда берётся идентификатор матча — тот, что видит экран,
+	// а не тот, что достали бы запросом в базу.
+	var list []struct {
+		ID          string `json:"id"`
+		TableID     string `json:"tableId"`
+		Status      string `json:"status"`
+		DealsPlayed int    `json:"dealsPlayed"`
+		MyPlace     *int   `json:"myPlace"`
+		MyDelta     *string
+	}
+	host.get("/api/matches", &list)
+
+	matchID := ""
+	for _, item := range list {
+		if item.TableID == tableID {
+			matchID = item.ID
+			if item.Status != "FINISHED" {
+				t.Fatalf("в истории матч со статусом %q", item.Status)
+			}
+			if item.DealsPlayed == 0 {
+				t.Fatal("в истории матч без сыгранных раздач")
+			}
+			if item.MyPlace == nil {
+				t.Fatal("в истории нет своего места: экран показал бы матч без результата")
+			}
+		}
+	}
+	if matchID == "" {
+		t.Fatalf("сыгранный матч не попал в свою же историю: %d записей", len(list))
+	}
+
+	// Разбор матча: раздачи с местами и уровнями навесов.
+	var details struct {
+		Match struct {
+			ID      string `json:"id"`
+			Status  string `json:"status"`
+			Players []struct {
+				SeatNo int  `json:"seatNo"`
+				Place  *int `json:"place"`
+			} `json:"players"`
+		} `json:"match"`
+		Deals []struct {
+			DealNo int `json:"dealNo"`
+			Seats  []struct {
+				SeatNo int `json:"seatNo"`
+			} `json:"seats"`
+		} `json:"deals"`
+	}
+	host.get("/api/matches/"+matchID, &details)
+	if details.Match.ID != matchID || len(details.Match.Players) != 2 {
+		t.Fatalf("разбор матча пуст: %+v", details.Match)
+	}
+	if len(details.Deals) == 0 {
+		t.Fatal("разбор матча без раздач: экран показал бы пустой матч")
+	}
+	for _, deal := range details.Deals {
+		if len(deal.Seats) != 2 {
+			t.Fatalf("в раздаче %d мест %d, ждали 2", deal.DealNo, len(deal.Seats))
+		}
+	}
+
+	// ⭐ Реплей: главное здесь — что чужая рука не уезжает задним числом. Проверяется
+	// не «похоже на правду», а точным числом: игроку видно ВСЁ, кроме событий, приватных
+	// чужому месту. Разойдись фильтр — сойдётся и число.
+	hostSeat := checkReplay(t, ctx, pool, matchID, host)
+	guestSeat := checkReplay(t, ctx, pool, matchID, guest)
+	if hostSeat == guestSeat {
+		t.Fatalf("оба игрока считают себя местом %d", hostSeat)
+	}
+
+	// Рейтинг после матча: точка истории с этим матчем.
+	for _, player := range []*client{host, guest} {
+		var rating struct {
+			MatchesPlayed int `json:"matchesPlayed"`
+			History       []struct {
+				MatchID string `json:"matchId"`
+				Place   int    `json:"place"`
+			} `json:"history"`
+		}
+		player.get("/api/rating/me", &rating)
+		if rating.MatchesPlayed == 0 {
+			t.Fatalf("%s сыграл матч, а в рейтинге их ноль", player.name)
+		}
+		found := false
+		for _, point := range rating.History {
+			if point.MatchID == matchID {
+				found = true
+				if point.Place < 1 {
+					t.Fatalf("%s: место в истории рейтинга %d", player.name, point.Place)
+				}
+			}
+		}
+		if !found {
+			t.Fatalf("%s: матч не попал в историю рейтинга", player.name)
+		}
+
+		var stats struct {
+			Matches     int `json:"matches"`
+			Wins        int `json:"wins"`
+			Losses      int `json:"losses"`
+			DealsPlayed int `json:"dealsPlayed"`
+		}
+		player.get("/api/stats/me", &stats)
+		if stats.Matches == 0 || stats.Wins+stats.Losses == 0 || stats.DealsPlayed == 0 {
+			t.Fatalf("%s: статистика после матча пуста: %+v", player.name, stats)
+		}
+	}
+
+	// ⚠️ Посторонний не читает чужую партию вовсе — ни разбор, ни реплей. Друзьям она
+	// видна, но дружбы здесь нет, и ответ обязан быть отказом, а не пустым телом.
+	stranger := newClient(t, base, "посторонний")
+	for _, path := range []string{"/api/matches/" + matchID, "/api/matches/" + matchID + "/replay"} {
+		if status, body := stranger.getRaw(path); status != http.StatusForbidden {
+			t.Fatalf("посторонний получил %s с кодом %d: %s", path, status, body)
+		}
+	}
+}
+
+// checkReplay читает реплей глазами игрока и возвращает его место.
+func checkReplay(t *testing.T, ctx context.Context, pool *pgxpool.Pool, matchID string,
+	player *client) int {
+	t.Helper()
+
+	var replay struct {
+		MatchID string `json:"matchId"`
+		Status  string `json:"status"`
+		MySeat  int    `json:"mySeat"`
+		Events  []struct {
+			Seq  int    `json:"seq"`
+			Type string `json:"type"`
+		} `json:"events"`
+	}
+	player.get("/api/matches/"+matchID+"/replay", &replay)
+
+	if replay.MySeat < 0 {
+		t.Fatalf("%s играл матч, а реплей считает его посторонним", player.name)
+	}
+	if len(replay.Events) == 0 {
+		t.Fatalf("%s: реплей сыгранного матча пуст", player.name)
+	}
+	previous := 0
+	for _, event := range replay.Events {
+		if event.Seq <= previous {
+			t.Fatalf("%s: реплей идёт не по порядку: %d после %d", player.name, event.Seq, previous)
+		}
+		previous = event.Seq
+		if event.Type == "" {
+			t.Fatalf("%s: событие реплея без имени (seq %d)", player.name, event.Seq)
+		}
+	}
+
+	// Точное число: всё, кроме приватного ЧУЖОМУ месту.
+	var expected int
+	err := pool.QueryRow(ctx, `select count(*) from match_events
+	                           where match_id = $1
+	                             and (private_to_seat is null or private_to_seat = $2)`,
+		matchID, replay.MySeat).Scan(&expected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(replay.Events) != expected {
+		t.Fatalf("%s: в реплее %d событий, видимых ему — %d: фильтр приватности разошёлся",
+			player.name, len(replay.Events), expected)
+	}
+
+	// Приватные события в матче вообще есть — иначе проверка выше ничего не значит.
+	var private int
+	if err := pool.QueryRow(ctx, `select count(*) from match_events
+	                              where match_id = $1 and private_to_seat is not null`,
+		matchID).Scan(&private); err != nil {
+		t.Fatal(err)
+	}
+	if private == 0 {
+		t.Log("⚠️ в этом матче не оказалось приватных событий — проверка фильтра прошла вхолостую")
+	}
+	return replay.MySeat
 }
 
 // playUntilMatchOver гоняет обоих «роботов», пока матч не кончится, и возвращает
