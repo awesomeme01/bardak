@@ -25,9 +25,10 @@ type Row interface {
 // migrations}, ts}. По этой ручке смотрят «жив ли сервер» и люди, и скрипты
 // (tools/smoke/run.sh ждёт именно её), поэтому менять форму нельзя даже к лучшему.
 //
-// ⭐ Число миграций читается из flyway_schema_history, а не из таблицы goose. В окне
-// отката схемой владеет Java: она её накатывала, она же откатит, если Go придётся снять.
-// Go читает чужую служебную таблицу сознательно — чтобы обе версии отвечали одинаково.
+// ⭐ Число миграций читается из СВОЕЙ таблицы версий: схемой теперь владеет Go (MD-006).
+// Форма ответа при этом не меняется ни на поле — по ней смотрят и люди, и tools/smoke/run.sh,
+// а на живой базе число совпадает с прежним: миграции те же самые, просто учтены своим
+// мигратором.
 type Health struct {
 	DB      Pinger
 	Version string
@@ -68,7 +69,7 @@ func (h Health) checkDatabase(ctx context.Context) map[string]any {
 
 	var migrations int
 	if err := h.DB.QueryRow(ctx,
-		"select count(*) from flyway_schema_history where success = true").Scan(&migrations); err != nil {
+		"select count(*) from schema_migrations").Scan(&migrations); err != nil {
 		if h.Log != nil {
 			h.Log.Warn("не прочитать историю миграций", "err", err)
 		}

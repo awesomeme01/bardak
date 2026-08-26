@@ -18,6 +18,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/awesomeme01/bardak/back-go/internal/config"
+	"github.com/awesomeme01/bardak/back-go/internal/migrate"
 	"github.com/awesomeme01/bardak/back-go/internal/observability"
 	"github.com/awesomeme01/bardak/back-go/internal/push"
 	"github.com/awesomeme01/bardak/back-go/internal/server"
@@ -65,6 +66,14 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("база недоступна: %w", err)
 	}
+
+	// ⭐ Схему приводит в порядок сам сервер, как это делала Java с Flyway (MD-006):
+	// база и приложение обязаны выезжать одной командой, иначе однажды выедет только одно.
+	applied, err := migrate.Apply(ctx, pool, log)
+	if err != nil {
+		return fmt.Errorf("схема базы: %w", err)
+	}
+	log.Info("схема готова", "migrations", applied)
 
 	handler, shutdownTables := server.Build(ctx, cfg, pool, log)
 	defer shutdownTables()
