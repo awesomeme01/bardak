@@ -61,6 +61,10 @@ type Handler struct {
 	Routers []CommandRouter
 	Origins []string
 
+	// Presence — реестр «кто сейчас в сети». Может быть nil: игра от него не зависит,
+	// от него зависят друзья.
+	Presence PresenceRegistry
+
 	// Base — контекст СЕРВЕРА, а не соединения.
 	//
 	// ⚠️ Команда стола исполняется в очереди и переживает своё соединение: игрок мог
@@ -70,6 +74,16 @@ type Handler struct {
 	Base context.Context
 
 	Log *slog.Logger
+}
+
+// PresenceRegistry — то, что сокету нужно от присутствия.
+//
+// ⭐ Присутствие — это ЖИВОЙ СОКЕТ, и заводится оно здесь, а не в лобби и не за столом:
+// друг «в сети» ровно пока открыто соединение, и через это же соединение до него доходит
+// приглашение за стол. Java делает так же (EchoWebSocketHandler).
+type PresenceRegistry interface {
+	// Attach регистрирует канал доставки и возвращает функцию отключения.
+	Attach(userID, channelID string, send func([]byte)) func()
 }
 
 // ServeHTTP выполняет рукопожатие и ведёт соединение.
@@ -121,9 +135,22 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	client := Client{UserID: userID, Send: send, SendRaw: sendRaw}
 
+	sessionID := uuid.NewString()
+
+	// ⭐ В сети — с этой секунды и ровно до закрытия сокета. Отметка времени врала бы
+	// в обе стороны: закрывший вкладку числился бы онлайн ещё минуту, а задумавшийся
+	// над ходом успел бы «уйти».
+	//
+	// ⚠️ Канал доставки — sendRaw, а не send: приглашение за стол приходит уже собранным
+	// конвертом, и заворачивать его второй раз значит отправить игроку конверт в конверте.
+	if h.Presence != nil {
+		detach := h.Presence.Attach(userID, sessionID, sendRaw)
+		defer detach()
+	}
+
 	send(Event("CONNECTED", nil, nil, map[string]any{
 		"userId":  userID,
-		"session": uuid.NewString(),
+		"session": sessionID,
 	}))
 
 	// ⭐ Heartbeat своей goroutine: без него мёртвое соединение висит до таймаута

@@ -7,6 +7,7 @@ package testsupport
 import (
 	"context"
 	"fmt"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -35,6 +36,11 @@ var (
 )
 
 // Postgres — пул к тестовой базе. Докера нет — тест пропускается, а не падает.
+//
+// ⭐ `BARDAK_TEST_DB_URL` подставляет ГОТОВУЮ базу вместо контейнера. Заведено не для
+// удобства: Docker на машине умеет ломаться целиком (демон отвечает 500, VM недоступна),
+// и без этой лазейки в такой день не проверить вообще ничего, что касается базы —
+// а пропуск в сводке `go test` выглядит как `ok`.
 func Postgres(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	testPoolOnce.Do(startTestDB)
@@ -46,6 +52,20 @@ func Postgres(t *testing.T) *pgxpool.Pool {
 
 func startTestDB() {
 	ctx := context.Background()
+
+	if url := os.Getenv("BARDAK_TEST_DB_URL"); url != "" {
+		pool, err := pgxpool.New(ctx, url)
+		if err != nil {
+			testPoolErr = fmt.Errorf("BARDAK_TEST_DB_URL: %w", err)
+			return
+		}
+		if err := applyMigrations(ctx, pool); err != nil {
+			testPoolErr = fmt.Errorf("миграции: %w", err)
+			return
+		}
+		testPool = pool
+		return
+	}
 
 	container, err := postgres.Run(ctx, "postgres:16-alpine",
 		postgres.WithDatabase("bardak"),

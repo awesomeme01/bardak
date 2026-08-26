@@ -32,11 +32,13 @@ import (
 // тестов, — этот тест и есть попытка сделать её частью прогона.
 
 type client struct {
-	t     *testing.T
-	name  string
-	base  string
-	token string
-	conn  *websocket.Conn
+	t        *testing.T
+	name     string
+	base     string
+	token    string
+	userID   string
+	username string
+	conn     *websocket.Conn
 	// pending — что уже пришло, но ещё не разобрано ждущим.
 	pending []envelope
 }
@@ -188,12 +190,17 @@ func newClient(t *testing.T, base, name string) *client {
 	}
 	var response struct {
 		AccessToken string `json:"accessToken"`
+		User        struct {
+			ID string `json:"id"`
+		} `json:"user"`
 	}
 	c.post("/api/auth/register", body, "", &response)
 	if response.AccessToken == "" {
 		t.Fatalf("регистрация не выдала токен")
 	}
 	c.token = response.AccessToken
+	c.userID = response.User.ID
+	c.username = login
 	return c
 }
 
@@ -980,4 +987,95 @@ func TestReadyRightAfterJoinIsAccepted(t *testing.T) {
 		host.close()
 		guest.close()
 	}
+}
+
+// Присутствие: друг «в сети» ровно пока открыт его сокет.
+//
+// ⚠️ Этот тест появился после находки, которую не увидели ШЕСТЬДЕСЯТ модульных тестов
+// и вся сверка контрактов: `Presence.Attach` в Go не звал НИКТО. Реестр присутствия был,
+// сценарий друзей его читал, а класть в него было некому — друзья не загорались в сети
+// никогда, и приглашение за стол не доходило по сокету ни разу, молча уезжая в push.
+//
+// ⭐ Поймал это прогон настоящих ботов (tools/smoke/friends.mjs) — не тест. Живая связка
+// снова оказалась строже: обработчик сокета вообще не имел тестов, а «ручка есть, событие
+// есть» проверке присутствия не помеха.
+func TestFriendIsOnlineWhileTheSocketIsOpen(t *testing.T) {
+	pool := testsupport.Postgres(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cfg := config.Config{
+		JWTSecret:       []byte("тестовый-секрет-достаточной-длины-32+"),
+		InviteCodes:     []string{"bardak-2026"},
+		TurnTimeout:     30 * time.Second,
+		DisconnectGrace: 10 * time.Second,
+		ShutdownTimeout: time.Second,
+	}
+	handler, shutdown := server.Build(ctx, cfg, pool, observability.NewLogger())
+	defer shutdown()
+	httpServer := httptest.NewServer(handler)
+	defer httpServer.Close()
+
+	host := newClient(t, httpServer.URL, "хозяин")
+	friend := newClient(t, httpServer.URL, "друг")
+	makeFriends(t, host, friend)
+
+	if online(t, host, friend.userID) {
+		t.Fatal("друг без сокета числится в сети")
+	}
+
+	friend.connect()
+	if !online(t, host, friend.userID) {
+		t.Fatal("друг с открытым сокетом не в сети: присутствие не заводится")
+	}
+
+	// ⭐ И то, ради чего присутствие вообще нужно: приглашение уходит по сокету, а не в push.
+	tableID := host.createTable()
+	var invite struct {
+		Delivered bool `json:"delivered"`
+	}
+	host.post("/api/friends/"+friend.userID+"/invite",
+		map[string]any{"tableId": tableID}, host.token, &invite)
+	if !invite.Delivered {
+		t.Fatal("приглашение не доставлено по сокету, хотя друг в сети")
+	}
+	if got := friend.await("TABLE_INVITE"); got.Type != "TABLE_INVITE" {
+		t.Fatalf("другу пришло %q вместо приглашения", got.Type)
+	}
+
+	friend.close()
+	// Закрытие сокета видно не мгновенно: сервер узнаёт о нём из своего цикла чтения.
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) && online(t, host, friend.userID) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if online(t, host, friend.userID) {
+		t.Fatal("после закрытия сокета друг всё ещё в сети")
+	}
+}
+
+// makeFriends заводит дружбу: заявка и согласие.
+func makeFriends(t *testing.T, from, to *client) {
+	t.Helper()
+	from.post("/api/friends/requests", map[string]any{"username": to.username}, from.token, nil)
+	to.post("/api/friends/"+from.userID+"/accept", map[string]any{}, to.token, nil)
+}
+
+// online — видит ли спрашивающий друга в сети.
+func online(t *testing.T, asking *client, friendID string) bool {
+	t.Helper()
+	var friends struct {
+		Friends []struct {
+			UserID string `json:"userId"`
+			Online bool   `json:"online"`
+		} `json:"friends"`
+	}
+	asking.get("/api/friends", &friends)
+	for _, item := range friends.Friends {
+		if item.UserID == friendID {
+			return item.Online
+		}
+	}
+	t.Fatalf("%s не видит друга %s в своём списке", asking.name, friendID)
+	return false
 }

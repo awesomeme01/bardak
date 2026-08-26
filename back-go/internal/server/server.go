@@ -122,8 +122,9 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool,
 	// Игровые и лоббийные типы не пересекаются, но проверять это должен порядок,
 	// а не совпадение двух списков.
 	router.Method(http.MethodGet, "/ws", ws.Handler{
-		Tickets: tickets,
-		Base:    ctx,
+		Tickets:  tickets,
+		Presence: presence,
+		Base:     ctx,
 		Routers: []ws.CommandRouter{
 			ws.GameRouter{
 				Matches: matchService, Results: resultService, Deals: dealRecorder,
