@@ -7,26 +7,34 @@
 
 | Часть | Технологии |
 |---|---|
-| Бэкенд | Java 21, Spring Boot 3, Spring Security (JWT), Spring WebSocket, Spring Data JPA, PostgreSQL, Flyway, Gradle (Kotlin DSL) |
+| Бэкенд | **Go 1.26**, чистая `net/http` + chi, `pgx`, сокет на `coder/websocket` |
+| Бэкенд (легаси) | Java 21, Spring Boot 3 — эталон миграции, ещё нужен работающим (см. ниже) |
 | Фронтенд | Svelte 5 (Vite), PWA, Service Worker, Web Push |
 | Связь | REST — всё вне живой партии; WebSocket — партия и live-уведомления |
-| Окружение | Docker Compose (Postgres, позже Redis) |
+| Окружение | Docker Compose (Postgres 16) |
 
 ## Запуск
 
-Нужны Docker и **Java 21** (на машине по умолчанию активна Java 8 — отсюда явный `JAVA_HOME`):
+Нужны Docker и **Go 1.26**.
 
 ```bash
-docker compose up -d                                          # Postgres
-cd back-bardak
-JAVA_HOME=$(/usr/libexec/java_home -v 21) ./gradlew bootRun
+docker compose up -d                  # Postgres
+cd back-go && go run ./cmd/server
 ```
 
 Открыть **http://localhost:8088/**. Порт 8088, потому что 8080 занят Docker Desktop;
 меняется через `BARDAK_PORT`. Код приглашения для регистрации — `bardak-2026`
 (`BARDAK_INVITE_CODES`).
 
-Spring отдаёт **собранный** фронт из `front-bardak/dist/`, поэтому после правок фронта:
+⚠️ **Схему базы создаёт Flyway из Java-бэкенда** (MD-004): в окне отката два мигратора
+на одну схему завели бы две служебные таблицы с разным представлением о накатанном.
+На пустой базе один раз нужен запуск Java:
+
+```bash
+cd back-bardak && JAVA_HOME=$(/usr/libexec/java_home -v 21) ./gradlew bootRun
+```
+
+Сервер отдаёт **собранный** фронт из `front-bardak/dist/`, поэтому после правок фронта:
 
 ```bash
 cd front-bardak && npm run build      # нужен Node 20+, на машине по умолчанию Node 10
@@ -49,13 +57,18 @@ echo "http://$(ipconfig getifaddr en0):8088/"
 ### Проверки
 
 ```bash
-cd back-bardak && ./gradlew check     # 279 юнит + 93 интеграционных (Testcontainers)
+cd back-go && go test ./...           # домен, репозитории, сокет и сквозной матч
 cd front-bardak && npm run check      # svelte-check: имена и типы в разметке
 tools/smoke/run.sh                    # боты играют составы 2–5 против живого сервера
 tools/smoke/loadtest.mjs ramp         # сколько столов держит один узел (M9)
+node tests/contract/compare.mjs       # differential: Java на :8088 против Go на :8099
 ```
 
-⭐ Дымовые проверки — не дублирование `check`: они ловят то, что живёт на стыке слоёв.
+⭐ Тесты Go поднимают **настоящий Postgres** через Testcontainers, а сквозной прогон
+играет матч целиком по настоящему сокету — от регистрации до `MATCH_OVER`. Он нашёл
+две поломки, которых не нашли шестьдесят модульных тестов: живая игра строже тестов.
+
+⭐ Дымовые проверки — не дублирование `go test`: они ловят то, что живёт на стыке слоёв.
 Подробности и разбор кодов отказов — в [tools/smoke/README.md](tools/smoke/README.md).
 
 ⚠️ `npm run check` — не украшение. **`vite build` собирает разметку с несуществующим
@@ -63,48 +76,67 @@ tools/smoke/loadtest.mjs ramp         # сколько столов держит
 переименование пропса. Проверено обратно — вносим `{compact}` в шаблон, сборка зелёная,
 `check` красный.
 
+Легаси-бэкенд проверяется своим способом: `cd back-bardak && ./gradlew check`
+(279 юнит + 93 интеграционных на Testcontainers).
+
 ## Структура репозитория
 
 ```
 bardak/
-├── back-bardak/    # Spring Boot: движок, WS-протокол, миграции, ассеты карт
+├── back-go/        # Go: домен, REST, сокет, столы — основной бэкенд
+├── back-bardak/    # Spring Boot: эталон миграции + ассеты карт (легаси)
 ├── front-bardak/   # Svelte-PWA: лобби, стол, история, реплей, друзья
-├── planning/       # проектная документация — единственный источник контекста
+├── planning/       # проектная документация игры — единственный источник контекста
+├── docs/           # миграция Java → Go: соответствие, матрица тестов, справочник
+├── tests/contract/ # differential: один и тот же сценарий против двух бэкендов
 ├── tools/smoke/    # боты играют настоящие матчи против живого сервера
 └── docker-compose.yml
 ```
 
+### Почему Java всё ещё в репозитории
+
+Не по забывчивости. Три причины, каждая снимается работой, а не решением:
+
+1. **Differential по сокету не гонялся ни разу** — а он сравнивает живую Java с Go.
+2. **Схема базы принадлежит Flyway** до самого cutover (MD-004).
+3. **Ассеты карт лежат в `back-bardak/assets/card-sets/`**, и раздаёт их Go-сервер.
+
 ## С чего начать чтение
 
-1. [planning/00-overview.md](planning/00-overview.md) — что за проект и что входит в MVP
-2. [planning/08-roadmap.md](planning/08-roadmap.md) — этапы и текущий
-3. [planning/11-worklog.md](planning/11-worklog.md) — где остановились в прошлый раз
-4. [planning/10-open-questions.md](planning/10-open-questions.md) — что не решено
-5. **[planning/RULES-INPUT.md](planning/RULES-INPUT.md)** — форма для описания правил игры;
-   пока не заполнена, а без неё не начать движок
+1. [planning/11-worklog.md](planning/11-worklog.md) — где остановились в прошлый раз
+2. [docs/parity-report.md](docs/parity-report.md) — что в миграции доказано, а что нет
+3. [planning/00-overview.md](planning/00-overview.md) — что за проект и что входит в MVP
+4. [planning/03-domain-rules.md](planning/03-domain-rules.md) — правила бардака формально
+5. [docs/README.md](docs/README.md) — указатель по документам миграции
 
 Остальное — по мере надобности:
 [01-knowledge-map](planning/01-knowledge-map.md) ·
 [02-architecture](planning/02-architecture.md) ·
-[03-domain-rules](planning/03-domain-rules.md) ·
 [04-db-schema](planning/04-db-schema.md) ·
 [05-api-contracts](planning/05-api-contracts.md) ·
 [06-card-design-system](planning/06-card-design-system.md) ·
 [07-rating-system](planning/07-rating-system.md) ·
-[09-decisions](planning/09-decisions.md)
+[08-roadmap](planning/08-roadmap.md) ·
+[09-decisions](planning/09-decisions.md) ·
+[10-open-questions](planning/10-open-questions.md) ·
+[12-design-brief](planning/12-design-brief.md) ·
+[RULES-INPUT](planning/RULES-INPUT.md) — исходник вопросов по правилам, отработал 9 августа
 
 ## Текущий статус
 
-**M0–M8 закрыты.** Игра играется: столы на 2–5 человек, полные правила бардака с навесами,
+**Игра сделана: M0–M9 закрыты.** Столы на 2–5 человек, полные правила бардака с навесами,
 переводами и джокерами, рейтинг с историей и реплеем, PWA с уведомлениями, друзья
 с онлайн-статусом и приглашением за стол. Работает по локальной сети.
 
-Дальше — **M9, измерить и сократить** (ADR-061): бэкенд не расширяем, а упрощаем.
-Postgres плюс Java-сервис — это уже много для игры на вечер вдвоём-втроём.
-- нагрузочная проверка: сколько столов держит один узел;
-- что из бэкенда можно убрать, не потеряв игру;
-- Redis, второй инстанс и sticky routing **отменены**: присутствие в памяти узла —
-  окончательное решение для текущего размера задачи.
+**Идёт миграция на Go** (ADR-061 — бэкенд не расширяем, а сокращаем). Перенесено и
+проверено: домен целиком, REST целиком (differential не показывает различий), WebSocket
+вчерне целиком, матч играется от посадки до итога с рейтингом, push-уведомления.
 
-Долгов по этому списку не осталось: `svelte-check` стоит (`npm run check` во `front-bardak`),
-реплей переехал на отдельный экран.
+Осталось до конца миграции:
+
+- differential **по сокету** — не гонялся ни разу;
+- golden-фикстуры — не сняты;
+- матрица тестов — 338 строк ещё `pending`;
+- полный прогон **настоящего фронта** против Go — не делался ни разу.
+
+Подробности и честные оговорки — в [docs/parity-report.md](docs/parity-report.md).
