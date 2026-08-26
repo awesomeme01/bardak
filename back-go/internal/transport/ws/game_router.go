@@ -274,7 +274,44 @@ func (r GameRouter) execute(ctx context.Context, envelope Envelope, tableID stri
 
 	r.broadcast(runtime, session, firstSeq, outcome.Events)
 	r.restartTurnClock(ctx, runtime, session)
+	if r.abortIfStuck(ctx, runtime, session) {
+		return
+	}
 	r.finishIfOver(ctx, runtime, session)
+}
+
+// abortIfStuck отменяет матч, если раздача перестала двигаться.
+//
+// ⚠️ Проверяется ПОСЛЕ рассылки: игроки должны увидеть последний ход и лишь затем узнать,
+// что матч отменён. И до finishIfOver — иначе заклинившая раздача, до конца матча
+// не доходящая, никогда бы сюда и не добралась.
+//
+// ⭐ Отмена, а не «пропустить ход»: сервер не знает, какой ход разомкнёт цикл, и гадать
+// в этом месте опаснее, чем честно закончить партию. Рейтинг не трогается — это отмена.
+func (r GameRouter) abortIfStuck(ctx context.Context, runtime *TableRuntime,
+	session *application.MatchSession) bool {
+	if !session.DealIsStuck() {
+		return false
+	}
+
+	state := session.State()
+	// Громко: срабатывание предохранителя — это НАХОДКА, а не рядовое событие. Без записи
+	// с местом и фазой воспроизвести цикл будет не по чему.
+	if r.Logger != nil {
+		r.Logger.Error("раздача не двигается — отменяю матч",
+			"table", session.TableID, "match", session.MatchID,
+			"deal", state.DealNo, "moves", session.MovesInDeal(),
+			"phase", state.Deal.Phase, "attackRight", state.Deal.AttackRightSeat,
+			"defender", state.Deal.DefenderSeat)
+	}
+
+	r.Clock.Cancel(session.TableID)
+	r.Clock.CancelAbort(session.TableID)
+	r.abortMatch(ctx, session, "Раздача перестала двигаться")
+	runtime.Broadcast(encode(Event("MATCH_ABORTED", nil, &session.TableID, map[string]any{
+		"reason": "DEAL_STUCK",
+	})))
+	return true
 }
 
 // broadcast рассылает события и персональные снимки.
@@ -440,6 +477,9 @@ func (r GameRouter) applyTimeout(ctx context.Context, runtime *TableRuntime,
 		map[string]any{"seatNo": auto.SeatNo()})))
 	r.broadcast(runtime, session, firstSeq, outcome.Events)
 	r.restartTurnClock(ctx, runtime, session)
+	if r.abortIfStuck(ctx, runtime, session) {
+		return
+	}
 	r.finishIfOver(ctx, runtime, session)
 }
 

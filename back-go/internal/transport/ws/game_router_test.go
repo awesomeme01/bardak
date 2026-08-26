@@ -168,7 +168,12 @@ func (stubState) EncodeState(game.MatchState) (string, error) { return "сним
 // Та же ловушка описана в Java (SnapshotRestoreIT).
 func startedSession(t *testing.T) *application.MatchSession {
 	t.Helper()
-	config := game.DefaultRulesConfig()
+	return startedSessionWith(t, game.DefaultRulesConfig())
+}
+
+// startedSessionWith — та же сессия, но с заданными правилами стола.
+func startedSessionWith(t *testing.T, config game.RulesConfig) *application.MatchSession {
+	t.Helper()
 	engine := game.NewMatchEngineFor(config)
 
 	for seed := int64(1); seed < 200; seed++ {
@@ -790,4 +795,67 @@ func TestTableWithoutANotifierPlaysAsUsual(t *testing.T) {
 		t.Fatalf("без уведомлений стол сломался: пришло %q", paused.Type)
 	}
 	_ = log
+}
+
+// Предохранитель от заклинившей раздачи (риск «3018 ходов», ADR-051).
+//
+// ⭐ Проверяется не «счётчик считает», а ПОСЛЕДСТВИЕ: стол, который перестал двигаться,
+// обязан отпустить людей — с отменой матча, записью в журнал и возвратом стола в лобби.
+// Без этого зацикленная раздача держит игроков до утра и не оставляет следов.
+func TestStuckDealAbortsTheMatchAndFreesTheTable(t *testing.T) {
+	router, matches, _, lobby, _ := gameFixture(t)
+	// Предохранитель на один ход: первый же ход делает раздачу «слишком длинной».
+	config := game.DefaultRulesConfig()
+	config.MaxMovesPerDeal = 1
+	matches.session = startedSessionWith(t, config)
+	socket := newCollector()
+	router.Handle(context.Background(), envelopeOf("MATCH_START", ""), socket.client("user-a"))
+	socket.nextBroadcast(t)
+
+	attacker := userAtSeat(matches.session, matches.session.State().Deal.AttackRightSeat)
+	router.Handle(context.Background(), attackCommand(t, matches.session, "ход-1"),
+		socket.client(attacker))
+
+	// Сначала игроки видят сам ход, и только потом — что матч отменён.
+	aborted := Envelope{}
+	for i := 0; i < 12; i++ {
+		message := socket.nextBroadcast(t)
+		if message.Type == "MATCH_ABORTED" {
+			aborted = message
+			break
+		}
+	}
+	if aborted.Type != "MATCH_ABORTED" {
+		t.Fatalf("заклинившая раздача не отменила матч: стол молчит")
+	}
+	var payload map[string]any
+	_ = json.Unmarshal(aborted.Payload, &payload)
+	if payload["reason"] != "DEAL_STUCK" {
+		t.Fatalf("причина отмены %v, ждали DEAL_STUCK: без причины разбирать будет нечего", payload)
+	}
+	if lobby.finished == 0 {
+		t.Fatal("стол не вернулся в лобби: сесть за него больше нельзя")
+	}
+}
+
+// ⚠️ Обратная сторона: предохранитель не должен срабатывать в НОРМАЛЬНОЙ игре.
+// Матч целиком укладывается в 200–500 ходов, поэтому умолчание в тысячу ходов
+// на ОДНУ раздачу недостижимо — и один ход не смеет его тронуть.
+func TestNormalMoveDoesNotTripTheSafetyLimit(t *testing.T) {
+	router, matches, log, lobby, _ := gameFixture(t)
+	socket := newCollector()
+	router.Handle(context.Background(), envelopeOf("MATCH_START", ""), socket.client("user-a"))
+	socket.nextBroadcast(t)
+
+	attacker := userAtSeat(matches.session, matches.session.State().Deal.AttackRightSeat)
+	router.Handle(context.Background(), attackCommand(t, matches.session, "ход-1"),
+		socket.client(attacker))
+	socket.nextBroadcast(t)
+
+	if lobby.finished != 0 || log.status == repository.MatchAborted {
+		t.Fatalf("предохранитель сработал на первом же ходу: статус %q", log.status)
+	}
+	if matches.session.MovesInDeal() != 1 {
+		t.Fatalf("ходов в раздаче насчитано %d, ждали 1", matches.session.MovesInDeal())
+	}
 }

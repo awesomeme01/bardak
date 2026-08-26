@@ -27,13 +27,16 @@ func TestRulesConfigFallsBackToDefaultsWhenEmpty(t *testing.T) {
 
 func TestRulesConfigReadsEveryField(t *testing.T) {
 	raw := `{"dealSize":5,"maxAttackFirstRound":4,"maxAttackPerRound":7,
-	         "transfersEnabled":false,"jokersEnabled":false,
+	         "transfersEnabled":false,"jokersEnabled":false,"maxMovesPerDeal":50,
 	         "naves":{"enabled":false,"scale":["9","10","J","Q","K","A"]}}`
 
 	got := ParseRulesConfig(raw, nil)
 
 	if got.DealSize != 5 || got.MaxAttackFirstRound != 4 || got.MaxAttackPerRound != 7 {
 		t.Fatalf("числа разобраны неверно: %+v", got)
+	}
+	if got.MaxMovesPerDeal != 50 {
+		t.Fatalf("предохранитель раздачи разобран неверно: %d", got.MaxMovesPerDeal)
 	}
 	if got.TransfersEnabled || got.JokersEnabled || got.NavesEnabled {
 		t.Fatalf("флаги разобраны неверно: %+v", got)
@@ -54,6 +57,11 @@ func TestRulesConfigKeepsDefaultsForMissingFields(t *testing.T) {
 	}
 	if got.MaxAttackPerRound != defaults.MaxAttackPerRound {
 		t.Fatalf("отсутствующий лимит затёрт: %d", got.MaxAttackPerRound)
+	}
+	// ⚠️ Столы, созданные до появления предохранителя, обязаны получить его умолчание,
+	// а не ноль: ноль означал бы «предохранитель выключен» ровно там, где он и нужен.
+	if got.MaxMovesPerDeal != defaults.MaxMovesPerDeal {
+		t.Fatalf("предохранитель отсутствующего поля равен %d", got.MaxMovesPerDeal)
 	}
 	if got.DealSize != 5 {
 		t.Fatalf("заданное поле не прочитано: %d", got.DealSize)

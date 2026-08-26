@@ -85,6 +85,13 @@ type RulesConfig struct {
 	JokersEnabled       bool
 	NavesEnabled        bool
 	NavesScale          NavesScale
+	// MaxMovesPerDeal — предохранитель: сколько ходов раздача имеет право прожить.
+	//
+	// ⚠️ Это НЕ игровое правило, а страховка от заклинившей раздачи. Матч целиком
+	// укладывается в 200–500 ходов, так что тысяча на ОДНУ раздачу недостижима в игре
+	// и достижима только в цикле, который её не двигает (ADR-051). Лучше отменённый
+	// матч с записью в журнале, чем стол, за которым люди сидят до утра.
+	MaxMovesPerDeal int
 }
 
 // DefaultRulesConfig — стартовая точка стола, а не константы движка.
@@ -97,6 +104,7 @@ func DefaultRulesConfig() RulesConfig {
 		JokersEnabled:       true,
 		NavesEnabled:        true,
 		NavesScale:          FullNavesScale(),
+		MaxMovesPerDeal:     1000,
 	}
 }
 
@@ -128,6 +136,7 @@ func (c RulesConfig) Validate() error {
 		{c.DealSize, "dealSize"},
 		{c.MaxAttackFirstRound, "maxAttackFirstRound"},
 		{c.MaxAttackPerRound, "maxAttackPerRound"},
+		{c.MaxMovesPerDeal, "maxMovesPerDeal"},
 	} {
 		if check.value <= 0 {
 			return fmt.Errorf("%s должен быть положительным, получено: %d", check.name, check.value)

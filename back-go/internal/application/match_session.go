@@ -30,6 +30,15 @@ type MatchSession struct {
 	engine  *game.MatchEngine
 	config  game.RulesConfig
 	applied *appliedCommands
+
+	// movesInDeal и movesDealNo — предохранитель от заклинившей раздачи.
+	//
+	// ⭐ Счётчик живёт в СЕССИИ, а не в состоянии раздачи, и намеренно: состояние
+	// уезжает в снимок, а снимок ещё читает Java. Лишнее поле там — расхождение
+	// в окне отката ради страховки, которая переживать перезапуск не обязана:
+	// зацикленная раздача — это то, что происходит здесь и сейчас.
+	movesInDeal int
+	movesDealNo int
 }
 
 // SeatOwner — кто сидит на месте.
@@ -125,8 +134,41 @@ func (s *MatchSession) Apply(command game.DealCommand) (game.MatchOutcome, error
 	}
 	if outcome.Applied {
 		s.state = outcome.State
+		s.countMove()
 	}
 	return outcome, nil
+}
+
+// countMove ведёт счёт ходов текущей раздачи. Зовётся под уже взятым замком.
+func (s *MatchSession) countMove() {
+	if s.state.DealNo != s.movesDealNo {
+		s.movesDealNo = s.state.DealNo
+		s.movesInDeal = 0
+	}
+	s.movesInDeal++
+}
+
+// DealIsStuck — раздача выбрала все ходы, отведённые ей правилами стола.
+//
+// ⚠️ Срабатывание означает не «игроки заигрались», а ЦИКЛ законных ходов, не двигающий
+// раздачу: ровно то, от чего стоит защита ADR-051. Один такой прогон уже случился
+// (3018 ходов в первой раздаче) и не воспроизвёлся — поэтому здесь предохранитель,
+// а не починка невоспроизводимого.
+func (s *MatchSession) DealIsStuck() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	// ⭐ Граница взята НЕ СТРОГОЙ намеренно. При тысяче ходов разница в один ход
+	// не значит ничего, зато предохранитель проверяется настоящим ходом через
+	// маршрутизатор (лимит 1 — и первый же ход его трогает), а не подпоркой в тесте,
+	// подкручивающей счётчик в обход игры.
+	return s.config.MaxMovesPerDeal > 0 && s.movesInDeal >= s.config.MaxMovesPerDeal
+}
+
+// MovesInDeal — сколько ходов прожила текущая раздача.
+func (s *MatchSession) MovesInDeal() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.movesInDeal
 }
 
 // IsOver — матч закончен.

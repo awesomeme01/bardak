@@ -38,6 +38,7 @@ func ParseRulesConfig(raw string, log *slog.Logger) game.RulesConfig {
 	readInt(node, "maxAttackPerRound", &config.MaxAttackPerRound)
 	readBool(node, "transfersEnabled", &config.TransfersEnabled)
 	readBool(node, "jokersEnabled", &config.JokersEnabled)
+	readInt(node, "maxMovesPerDeal", &config.MaxMovesPerDeal)
 
 	var naves map[string]json.RawMessage
 	if encoded, ok := node["naves"]; ok {
