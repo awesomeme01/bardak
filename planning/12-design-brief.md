@@ -186,5 +186,5 @@
 
 - Скриншоты текущего состояния (оно рабочее, но нарисовано «чтобы играть», а не «чтобы
   смотреть»).
-- Набор карт `classic`: 54 PNG 500×726 в `back-bardak/assets/card-sets/classic/`.
+- Набор карт `classic`: 54 PNG 500×726 в `assets/card-sets/classic/`.
 - Коды карт: `6-diamonds` … `A-spades`, `Joker-1` … `Joker-5`, `back`.

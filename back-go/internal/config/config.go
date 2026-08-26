@@ -108,7 +108,7 @@ func Load() (Config, error) {
 		WSOrigins:        list(env("BARDAK_WS_ORIGINS", "http://localhost:8088,http://localhost:5173")),
 		WSOriginPatterns: list(env("BARDAK_WS_ORIGIN_PATTERNS", "http://192.168.*.*:8088,http://10.*.*.*:8088,http://172.16.*.*:8088")),
 		FrontendPath:     env("BARDAK_FRONTEND_PATH", "../front-bardak/dist"),
-		AssetsPath:       env("BARDAK_ASSETS_PATH", "../back-bardak/assets"),
+		AssetsPath:       env("BARDAK_ASSETS_PATH", "../assets"),
 		VAPIDPublic:      env("BARDAK_VAPID_PUBLIC", ""),
 		VAPIDPrivate:     env("BARDAK_VAPID_PRIVATE", ""),
 		VAPIDSubject:     env("BARDAK_VAPID_SUBJECT", "mailto:admin@bardak.local"),

@@ -115,7 +115,7 @@ DDL — в `04-db-schema.md`.
 На MVP — статика, отдаваемая бэком из каталога:
 
 ```
-back-bardak/assets/card-sets/<set-code>/
+assets/card-sets/<set-code>/
 ├── 6-diamonds.png   7-diamonds.png   …   A-diamonds.png
 ├── 6-hearts.png     7-hearts.png     …   A-hearts.png
 ├── 6-spades.png     7-spades.png     …   A-spades.png
@@ -123,7 +123,7 @@ back-bardak/assets/card-sets/<set-code>/
 ├── Joker.png
 └── back.png
 
-back-bardak/assets/themes/<theme-code>/background.jpg
+assets/themes/<theme-code>/background.jpg
 ```
 
 Доступ через абстракцию:
@@ -192,7 +192,7 @@ GET /api/card-sets/{id}/manifest        → манифест
 
 Заглушки не понадобилось: набор по умолчанию — настоящий, импортирован из
 public-domain набора vector-playing-cards (подробности и внесённые изменения —
-`back-bardak/assets/card-sets/CREDITS.md`).
+`assets/card-sets/CREDITS.md`).
 
 - `classic` — PNG 500×726, набор по умолчанию;
 - `classic-svg` — тот же дизайн вектором.
