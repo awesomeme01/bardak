@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -35,6 +36,16 @@ var (
 	testPoolErr  error
 )
 
+// databaseNameOf — имя базы из строки подключения; пустое, если разобрать не вышло.
+func databaseNameOf(url string) string {
+	withoutQuery, _, _ := strings.Cut(url, "?")
+	slash := strings.LastIndex(withoutQuery, "/")
+	if slash < 0 {
+		return ""
+	}
+	return withoutQuery[slash+1:]
+}
+
 // Postgres — пул к тестовой базе. Докера нет — тест пропускается, а не падает.
 //
 // ⭐ `BARDAK_TEST_DB_URL` подставляет ГОТОВУЮ базу вместо контейнера. Заведено не для
@@ -54,9 +65,24 @@ func startTestDB() {
 	ctx := context.Background()
 
 	if url := os.Getenv("BARDAK_TEST_DB_URL"); url != "" {
+		// ⚠️ Имя базы обязано содержать "test". Схема ниже ВЫЧИЩАЕТСЯ целиком, и цена
+		// опечатки в адресе — чужая база. Проверка дешёвая, а ошибка неисправима.
+		if !strings.Contains(databaseNameOf(url), "test") {
+			testPoolErr = fmt.Errorf(
+				"BARDAK_TEST_DB_URL указывает на базу без \"test\" в имени: схема вычищается, так рисковать нельзя")
+			return
+		}
+
 		pool, err := pgxpool.New(ctx, url)
 		if err != nil {
 			testPoolErr = fmt.Errorf("BARDAK_TEST_DB_URL: %w", err)
+			return
+		}
+		// ⭐ Чистая схема на каждый прогон — ровно то, что даёт контейнер. Без этого
+		// тесты, опирающиеся на пустую базу, падают через раз от чужих данных:
+		// сезон с той же датой из прошлого прогона встаёт в списке выше свежего.
+		if _, err := pool.Exec(ctx, `drop schema public cascade; create schema public`); err != nil {
+			testPoolErr = fmt.Errorf("очистка тестовой базы: %w", err)
 			return
 		}
 		if err := applyMigrations(ctx, pool); err != nil {

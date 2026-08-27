@@ -8,20 +8,23 @@ import "github.com/awesomeme01/bardak/back-go/internal/domain/game"
 // только null: `mySeat: 0` и `deckLeft: 0` обязаны остаться, а `trumpSuit` при споре
 // за козырь — исчезнуть (MD-003).
 type StateSync struct {
-	TableID           string       `json:"tableId"`
-	DealNo            int          `json:"dealNo"`
-	Phase             string       `json:"phase"`
-	TrumpSuit         *string      `json:"trumpSuit,omitempty"`
-	TrumpCard         *string      `json:"trumpCard,omitempty"`
-	ProtectedSuit     *string      `json:"protectedSuit,omitempty"`
-	DeckLeft          int          `json:"deckLeft"`
-	DiscardCount      int          `json:"discardCount"`
-	MyHand            []string     `json:"myHand"`
-	IHaveHiddenCard   bool         `json:"iHaveHiddenCard"`
-	MySeat            int          `json:"mySeat"`
-	Table             []SlotView   `json:"table"`
-	Players           []SeatState  `json:"players"`
-	RoundStarterSeat  int          `json:"roundStarterSeat"`
+	TableID         string      `json:"tableId"`
+	DealNo          int         `json:"dealNo"`
+	Phase           string      `json:"phase"`
+	TrumpSuit       *string     `json:"trumpSuit,omitempty"`
+	TrumpCard       *string     `json:"trumpCard,omitempty"`
+	ProtectedSuit   *string     `json:"protectedSuit,omitempty"`
+	DeckLeft        int         `json:"deckLeft"`
+	DiscardCount    int         `json:"discardCount"`
+	MyHand          []string    `json:"myHand"`
+	IHaveHiddenCard bool        `json:"iHaveHiddenCard"`
+	MySeat          int         `json:"mySeat"`
+	Table           []SlotView  `json:"table"`
+	Players         []SeatState `json:"players"`
+	// ⚠️ На проводе поле зовётся attackerSeat, а внутри — roundStarterSeat (кто начал
+	// раунд). Java отдаёт именно attackerSeat, и это отмечено в аудите
+	// (java-reference/websocket-contract.md §6.3). Отдать внутреннее имя — сломать клиента.
+	RoundStarterSeat  int          `json:"attackerSeat"`
 	DefenderSeat      int          `json:"defenderSeat"`
 	CanAttackSeat     int          `json:"canAttackSeat"`
 	HangingVictimSeat *int         `json:"hangingVictimSeat,omitempty"`
@@ -37,12 +40,15 @@ type SlotView struct {
 
 // SeatState — место за столом глазами смотрящего.
 type SeatState struct {
-	SeatNo        int      `json:"seatNo"`
-	UserID        string   `json:"userId"`
-	DisplayName   string   `json:"displayName"`
-	CardsCount    int      `json:"cardsCount"`
-	HasHiddenCard bool     `json:"hasHiddenCard"`
-	HungCards     []string `json:"hungCards"`
+	SeatNo        int    `json:"seatNo"`
+	UserID        string `json:"userId"`
+	DisplayName   string `json:"displayName"`
+	CardsCount    int    `json:"cardsCount"`
+	HasHiddenCard bool   `json:"hasHiddenCard"`
+	// ⚠️ На проводе — hung, а не hungCards. Внутреннее имя и имя в СНИМКЕ состояния
+	// (state_codec.go) действительно hungCards, но живая проекция у Java зовётся hung,
+	// и фронт читает именно её.
+	HungCards     []string `json:"hung"`
 	NavesLevel    int      `json:"navesLevel"`
 	NextNavesRank *string  `json:"nextNavesRank,omitempty"`
 	NextIsJoker   bool     `json:"nextIsJoker"`
