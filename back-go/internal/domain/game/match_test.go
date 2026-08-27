@@ -286,6 +286,33 @@ func TestRefusesAnyCommandWhenTheMatchIsOver(t *testing.T) {
 
 // ── Пересдача, когда козырь назвали, а козырей нет ───────────────────────────
 
+// ⚠️ Регрессия живой партии: после «бито» стол пуст и фаза снова ATTACK — ровно как
+// в начале раздачи. Прежний сторож пересдачи различал их только по фазе и столу, и
+// стоило козырям осесть в отбое, как раздача молча пересдавалась ПОСРЕДИ матча: навесы
+// стирались, «кто выиграл» не наступало никогда. Пересдача — только в момент выбора
+// козыря костью.
+func TestDoesNotReshuffleMidDealWhenTrumpsAreGone(t *testing.T) {
+	// Ход, после которого стол пуст и фаза ATTACK, но козырь выбран давным-давно:
+	// среди событий хода выбора козыря нет.
+	after := aDeal().withPlayers(2).withPhase(PhaseAttack).build()
+	engine, _, _, dealer := stubMatch(
+		AppliedResult(after, []DealEvent{NewRoundBeaten(0, nil)}), outcomeWithLevels())
+	dealer.trumpInHands = false
+	levels := []int{1, 3}
+	state := NewMatchState(MatchInDeal, levels, 1, anyMatchSeed,
+		aDeal().withPlayers(2).build(), nil)
+
+	outcome := applyOrFail(t, engine, state, PassCommand{Seat: 0})
+
+	if len(dealer.seeds) != 0 {
+		t.Fatalf("раздача пересдана посреди матча (seed %v), а пересдавать было нечего",
+			dealer.seeds)
+	}
+	if !slices.Equal(outcome.State.NavesLevels, levels) {
+		t.Errorf("уровни навесов пострадали: %v, ждали %v", outcome.State.NavesLevels, levels)
+	}
+}
+
 // ⭐ Козырь могли назвать костью — и назвать масть, которой нет ни у кого (§1.2).
 // Тогда первый ход определять не из чего, и раздача пересдаётся (OQ-22).
 func TestReshufflesWhenNobodyHoldsTheChosenTrump(t *testing.T) {

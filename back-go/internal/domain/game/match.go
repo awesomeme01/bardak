@@ -263,24 +263,42 @@ func (e *MatchEngine) Apply(state MatchState, command DealCommand) (MatchOutcome
 	if move.State.Phase == PhaseDealOver {
 		return e.closeDeal(state, move)
 	}
-	deal, err := e.reshuffleIfNobodyHasTrump(state, move.State)
-	if err != nil {
-		return MatchOutcome{}, err
+	deal := move.State
+	// ⚠️ Пересдача проверяется ТОЛЬКО в момент, когда козырь назвали костью: это
+	// единственная команда, после которой козырь становится известен при нетронутых
+	// руках. Прежний сторож «фаза ATTACK и пустой стол» наступал после КАЖДОГО «бито» —
+	// и стоило козырям осесть в отбое, как движок молча пересдавал раздачу посреди
+	// матча, стирая навесы. Живая партия нашла ровно это.
+	if trumpChosenBy(move.Events) {
+		reshuffled, err := e.reshuffleIfNobodyHasTrump(state, deal)
+		if err != nil {
+			return MatchOutcome{}, err
+		}
+		deal = reshuffled
 	}
 	return AppliedMatch(state.WithDeal(deal), move.Events), nil
 }
 
-// reshuffleIfNobodyHasTrump — пересдача, когда козырь назвали, а козырей ни у кого нет.
+// trumpChosenBy — назвали ли этим ходом козырь костью.
+func trumpChosenBy(events []DealEvent) bool {
+	for _, event := range events {
+		if _, ok := event.(TrumpChosen); ok {
+			return true
+		}
+	}
+	return false
+}
+
+// reshuffleIfNobodyHasTrump — пересдача, когда козырь назвали костью, а этой масти
+// нет ни у кого (§1.2, OQ-22): первый ход определять не из чего. Случай «козырь
+// с нижней карты и ни у кого на руках» дальше StartDeal не выходит — сдающий
+// пересдаёт его сам.
 //
-// ⭐ Козырь могли назвать костью — и назвать масть, которой нет ни у кого (§1.2). Тогда
-// первый ход определять не из чего, и раздача пересдаётся, как и при козыре с нижней
-// карты (OQ-22).
-//
-// ⚠️ Проверка привязана к началу раздачи: фаза ATTACK и пустой стол. Позже по ходу
-// раздачи козырей на руках может не остаться совершенно законно — пересдавать там нечего.
+// ⚠️ Вызывается только сразу после выбора козыря костью (см. Apply): позже по ходу
+// раздачи козырей на руках может не остаться совершенно законно — они в отбое или
+// во взятых картах, и пересдавать там нечего.
 func (e *MatchEngine) reshuffleIfNobodyHasTrump(state MatchState, deal DealState) (DealState, error) {
-	if !deal.HasTrump() || deal.Phase != PhaseAttack || len(deal.Table) != 0 ||
-		e.dealer.HasAnyTrumpInHands(deal) {
+	if !deal.HasTrump() || e.dealer.HasAnyTrumpInHands(deal) {
 		return deal, nil
 	}
 	seed := e.dealer.ReshuffleSeed(DealSeed(state.MatchSeed, state.DealNo), 0)

@@ -356,10 +356,12 @@
                             {suitGlyph(game.trumpSuit)}
                         </span>
                     {/if}
-                    <Card faceDown width={52} style="position:absolute; left:34px; top:2px"/>
-                    <Card faceDown width={52} style="position:absolute; left:32px; top:0"/>
+                    <Card faceDown width={60} style="position:absolute; left:42px; top:2px"/>
+                    <Card faceDown width={60} style="position:absolute; left:40px; top:0"/>
+                    <!-- ⭐ Счёт лежит ПОВЕРХ колоды: подпись под ней занимала строку,
+                         которой на телефоне нет. -->
+                    <span class="deck-count mono">{game.deckLeft}</span>
                 </div>
-                <div class="mono">Колода {game.deckLeft}</div>
             {:else if lastIsHiddenTrump}
                 <!--
                   ⭐ Осталась одна карта — это потайной козырь (§1.9). Кто её возьмёт, тому
@@ -408,7 +410,7 @@
                             {#if slot.defend}
                                 <span class="defence">
                                     <span use:flyFrom={{key: slot.defend}}>
-                                        <Card code={slot.defend} width={62}/>
+                                        <Card code={slot.defend} width={52}/>
                                     </span>
                                 </span>
                             {/if}
@@ -444,9 +446,11 @@
             {#if me?.hung.length}
                 <div class="hung-row">
                     {#each me.hung as code, index (code)}
+                        <!-- ⚠️ z-index явный: что навесили позже, лежит СВЕРХУ, как в стопке. -->
                         <Card {code} width={index === me.hung.length - 1 ? 50 : 40}
                               dimmed={index !== me.hung.length - 1}
-                              style={index < me.hung.length - 1 ? 'margin-right:-22px' : ''}/>
+                              style={'position:relative; z-index:' + (index + 1)
+                                  + (index < me.hung.length - 1 ? '; margin-right:-22px' : '')}/>
                     {/each}
                 </div>
             {:else}
@@ -650,8 +654,25 @@
 
     .deck-stack {
         position: relative;
-        width: 96px;
-        height: 86px;
+        width: 104px;
+        height: 92px;
+    }
+
+    /* Счёт колоды — поверх верхней рубашки, а не строкой под ней. */
+    .deck-count {
+        position: absolute;
+        left: 40px;
+        top: 0;
+        width: 60px;
+        height: 87px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 2;
+        font-size: 15px;
+        color: #f3ede2;
+        text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
+        pointer-events: none;
     }
 
     /**
@@ -662,8 +683,9 @@
      */
     .trump-under {
         position: absolute;
-        left: -12px;
-        top: 20px;
+        /* ⚠️ Не левее нуля: у левого края телефона номинал уезжал за экран. */
+        left: 0;
+        top: 22px;
         transform: rotate(-90deg);
         transform-origin: center center;
         z-index: 0;
@@ -676,8 +698,8 @@
     /* Козырь лежит под колодой боком — видно ровно тот край, что торчит слева. */
     .trump-card {
         position: absolute;
-        left: -18px;
-        top: 22px;
+        left: -2px;
+        top: 24px;
         width: 74px;
         height: 51px;
         border-radius: 5px;
@@ -849,16 +871,17 @@
     }
 
     /**
-     * Отбившая карта ложится поверх атакующей со сдвигом — видно обе.
+     * Отбившая карта ложится поверх атакующей со сдвигом к правому нижнему углу — видно обе.
      *
-     * ⭐ Ровно того же размера, что и нижняя, слегка повёрнутая и с тенью погуще. Карта
-     * поверх, нарисованная мельче нижней и без тени, читается не как «легла сверху»,
-     * а как ошибка вёрстки: настоящая карта, положенная на карту, не уменьшается.
+     * ⚠️ Защита МЕЛЬЧЕ атаки — решение владельца после живой партии, поверх прежнего
+     * правила «настоящая карта не уменьшается»: на телефоне до шести слотов, и
+     * полноразмерная защита закрывала номинал атаки. Читаемость боя важнее
+     * физического правдоподобия.
      */
     .defence {
         position: absolute;
-        left: 14px;
-        top: 16px;
+        left: 24px;
+        top: 30px;
         transform: rotate(3.5deg);
         transform-origin: 20% 20%;
     }

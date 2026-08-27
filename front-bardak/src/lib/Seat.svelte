@@ -113,9 +113,11 @@
         {#if seat.hung.length}
             <div class="hung">
                 {#each seat.hung as code, index (code)}
+                    <!-- ⚠️ z-index явный: что навесили позже, лежит СВЕРХУ, как в стопке. -->
                     <Card {code} width={index === seat.hung.length - 1 ? hungWidth + 6 : hungWidth}
                           dimmed={index !== seat.hung.length - 1}
-                          style={index < seat.hung.length - 1 ? 'margin-right:-17px' : ''}/>
+                          style={'position:relative; z-index:' + (index + 1)
+                              + (index < seat.hung.length - 1 ? '; margin-right:-17px' : '')}/>
                 {/each}
             </div>
         {:else}

@@ -18,10 +18,25 @@ import {play as playSound} from '../lib/sound.svelte.js';
 let noticeTimer = null;
 
 /** Уведомление живёт несколько секунд: это подсказка о случившемся, а не состояние стола. */
-function notify(text) {
+function notify(text, ttl = 6000) {
     table.notice = text;
     clearTimeout(noticeTimer);
-    noticeTimer = setTimeout(() => (table.notice = null), 6000);
+    noticeTimer = setTimeout(() => (table.notice = null), ttl);
+}
+
+/**
+ * Итог сыгранной раздачи — человеческим языком.
+ *
+ * ⭐ Раздача заканчивается, а матч нет (§0.6) — и без этой сводки следующая сдача
+ * начиналась МОЛЧА: игрок не понимал ни что раздача кончилась, ни кому что навесили.
+ * Данные берутся из нового снимка: уровни уже перенесены, «что летит» — и есть счёт.
+ */
+function dealSummary(game) {
+    const flights = (game.players ?? []).map((player) => {
+        const flies = player.nextIsJoker ? 'джокер' : (player.nextNavesRank ?? '6');
+        return `${player.displayName}: летит ${flies}`;
+    });
+    return `Раздача сыграна · ${flights.join(' · ')}`;
 }
 
 export const table = $state({
@@ -217,9 +232,14 @@ function onEnvelope(envelope) {
 
     switch (envelope.type) {
         case 'STATE_SYNC':
-            // ⭐ У новой раздачи нет своего события — она слышна по смене номера в снимке.
+            // ⭐ У новой раздачи нет своего события — она видна по смене номера в снимке.
             if (envelope.payload?.dealNo !== table.game?.dealNo) {
                 playSound('deal');
+                // Сводка — только на переходе МЕЖДУ раздачами: при входе в матч
+                // подводить итог нечему.
+                if (table.game && envelope.payload?.dealNo > table.game.dealNo) {
+                    notify(dealSummary(envelope.payload), 9000);
+                }
             }
             table.game = envelope.payload;
             break;
