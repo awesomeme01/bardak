@@ -10,7 +10,7 @@
 | Документ | О чём | Состояние |
 |---|---|---|
 | [parity-report.md](parity-report.md) | что именно проверено, чем, и где ещё расхождения | **пишется по ходу** |
-| [test-migration-matrix.md](test-migration-matrix.md) | каждый тест Java и его эквивалент в Go | 338 строк ещё `pending` |
+| [test-migration-matrix.md](test-migration-matrix.md) | каждый тест Java и его эквивалент в Go | закрыта агрегатом 27 августа |
 | [migration-decisions.md](migration-decisions.md) | MD-001…005: решения по миграции с причинами | закрыт, дополняется по мере надобности |
 
 ⭐ Читать первым — `parity-report.md`: он единственный отвечает на вопрос «что уже
