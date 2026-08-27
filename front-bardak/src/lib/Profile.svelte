@@ -9,7 +9,7 @@
     import {logout} from '../stores/auth.svelte.js';
     import {loadProfile, profile} from '../stores/profile.svelte.js';
     import {FACES, avatarOf} from './naming.js';
-    import {enablePush, pwa} from '../stores/pwa.svelte.js';
+    import {disablePush, enablePush, pwa} from '../stores/pwa.svelte.js';
 
     let {onBack} = $props();
 
@@ -106,7 +106,7 @@
         <div class="line mono">
             <span>Уведомления «твой ход»</span>
             {#if pwa.pushEnabled}
-                <span class="pill pill-ready">включены</span>
+                <button class="btn-small" type="button" onclick={disablePush}>Выключить</button>
             {:else}
                 <button class="btn-small" type="button" onclick={enablePush}>Включить</button>
             {/if}

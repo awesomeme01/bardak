@@ -43,8 +43,8 @@ export function apiPatch(path, body) {
     return request('PATCH', path, body);
 }
 
-export function apiDelete(path) {
-    return request('DELETE', path, null);
+export function apiDelete(path, body = null) {
+    return request('DELETE', path, body);
 }
 
 /** Запрос без токена и без авто-refresh — для самого входа и обновления пары. */

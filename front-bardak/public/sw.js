@@ -49,7 +49,10 @@ self.addEventListener('message', (event) => {
  * push, иначе он отзовёт подписку целиком. Поэтому даже на непонятную нагрузку показывается
  * что-то осмысленное, а не ничего.
  *
- * Тег один на все ходы: второе уведомление заменяет первое, а не копится столбиком.
+ * ⭐ Тег СВОЙ на каждый повод. Внутри одного повода второе уведомление заменяет первое
+ * (ходов за партию много, и столбик из них никому не нужен), но разные поводы друг друга
+ * не затирают: с общим тегом приглашение за стол молча стирало «матч на паузе» —
+ * то самое уведомление, у которого есть срок и цена.
  */
 self.addEventListener('push', (event) => {
     let payload = {};
@@ -58,17 +61,28 @@ self.addEventListener('push', (event) => {
     } catch {
         payload = {};
     }
+    const tags = {
+        YOUR_TURN: 'bardak-turn',
+        MATCH_PAUSED: 'bardak-paused',
+        TABLE_INVITE: 'bardak-invite',
+    };
     event.waitUntil(self.registration.showNotification(payload.title ?? 'Бардак', {
         body: payload.body ?? 'За столом ждут тебя',
         icon: '/icons/icon-192.png',
         badge: '/icons/icon-192.png',
-        tag: 'bardak-turn',
+        tag: tags[payload.type] ?? 'bardak-turn',
         renotify: true,
         data: {tableId: payload.tableId ?? null},
     }));
 });
 
-/** Клик по уведомлению открывает уже открытую вкладку, а не вторую копию игры. */
+/**
+ * Клик по уведомлению открывает уже открытую вкладку, а не вторую копию игры.
+ *
+ * ⚠️ Если открытой вкладки нет, стол передаётся АДРЕСОМ. Раньше здесь открывался просто
+ * `/`, и человек, пришедший по зову «твой ход», попадал в лобби и искал свой стол сам —
+ * то есть уведомление доводило до приложения, но не до партии.
+ */
 self.addEventListener('notificationclick', (event) => {
     event.notification.close();
     event.waitUntil((async () => {
@@ -80,7 +94,8 @@ self.addEventListener('notificationclick', (event) => {
                 return;
             }
         }
-        await self.clients.openWindow('/');
+        const tableId = event.notification.data?.tableId;
+        await self.clients.openWindow(tableId ? `/?table=${encodeURIComponent(tableId)}` : '/');
     })());
 });
 

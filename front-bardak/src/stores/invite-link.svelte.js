@@ -18,6 +18,9 @@ import {apiGet} from '../net/rest-client.js';
 
 const KEY = 'bardak.invite';
 const PARAM = 't';
+// ⭐ Стол из уведомления приходит идентификатором, а не кодом: push знает про матч,
+// а не про приглашение. Разные параметры именно поэтому.
+const TABLE_PARAM = 'table';
 
 export const inviteLink = $state({
     code: null,      // код стола, за который зовут
@@ -53,6 +56,26 @@ export function readInviteFromUrl() {
     }
     inviteLink.code = code ?? readStored();
     return inviteLink.code;
+}
+
+/**
+ * Прочитать стол из адреса, которым открыло уведомление, и убрать его оттуда.
+ *
+ * ⚠️ Возвращает идентификатор, а не код: `?table=` ставит service worker при клике по
+ * уведомлению, когда открытой вкладки не было. Без этого человек, пришедший по зову
+ * «твой ход», попадал в лобби и искал свой стол глазами.
+ */
+export function readTableFromUrl() {
+    let tableId = null;
+    try {
+        tableId = new URLSearchParams(location.search).get(TABLE_PARAM);
+    } catch {
+        // Адрес может быть каким угодно — это не повод падать.
+    }
+    if (tableId) {
+        history.replaceState(null, '', location.pathname);
+    }
+    return tableId;
 }
 
 function readStored() {

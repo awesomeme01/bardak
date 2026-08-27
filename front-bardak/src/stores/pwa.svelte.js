@@ -5,7 +5,7 @@
  * в стороне, а страница применяет его сама — когда за столом ничего не происходит.
  */
 
-import {apiGet, apiPost} from '../net/rest-client.js';
+import {apiDelete, apiGet, apiPost} from '../net/rest-client.js';
 
 export const pwa = $state({
     updateReady: false,   // новый воркер ждёт применения
@@ -19,7 +19,9 @@ let waitingWorker = null;
 
 export function initPwa() {
     pwa.online = navigator.onLine;
-    pwa.pushEnabled = 'Notification' in window && Notification.permission === 'granted';
+    // ⚠️ Разрешение и подписка — разные вещи. Разрешение остаётся выданным и после того,
+    // как игрок выключил уведомления, поэтому спрашиваем у браузера саму подписку.
+    refreshPushState();
     window.addEventListener('online', () => (pwa.online = true));
     window.addEventListener('offline', () => (pwa.online = false));
 
@@ -125,6 +127,54 @@ export async function enablePush() {
     pwa.pushEnabled = true;
     pwa.pushError = null;
     return true;
+}
+
+/**
+ * Выключить уведомления на ЭТОМ устройстве.
+ *
+ * ⭐ Две половины, и обе обязательны: браузер перестаёт принимать push, а сервер забывает
+ * подписку. Отписаться только в браузере — оставить серверу мёртвый адрес, в который он
+ * будет стучаться на каждом ходу; удалить только на сервере — оставить браузеру подписку,
+ * которую он считает живой, и «включить» второй раз уже ничего не изменит.
+ *
+ * ⚠️ Кнопка выключения нужна не для симметрии. Уведомления, которые нельзя выключить
+ * в самой игре, выключают в настройках браузера — вместе с возможностью включить их
+ * обратно, потому что второй раз разрешение уже не спросят.
+ */
+export async function disablePush() {
+    pwa.pushError = null;
+    if (!('serviceWorker' in navigator)) {
+        pwa.pushEnabled = false;
+        return true;
+    }
+
+    const registration = await navigator.serviceWorker.ready;
+    const subscription = await registration.pushManager.getSubscription();
+    if (subscription) {
+        // Сначала сервер: отписавшись в браузере, адрес узнать уже не у кого.
+        await apiDelete('/push/subscriptions', {endpoint: subscription.endpoint}).catch(() => null);
+        await subscription.unsubscribe().catch(() => false);
+    }
+    pwa.pushEnabled = false;
+    return true;
+}
+
+/**
+ * Узнать, включены ли уведомления на этом устройстве.
+ *
+ * ⚠️ Без этой проверки после перезагрузки страницы кнопка снова предлагала «включить»
+ * уже включённые уведомления: `pushEnabled` жил только в памяти вкладки.
+ */
+export async function refreshPushState() {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+        return;
+    }
+    try {
+        const registration = await navigator.serviceWorker.ready;
+        pwa.pushEnabled = Boolean(await registration.pushManager.getSubscription());
+    } catch {
+        // Нет воркера — нет и подписки; это не ошибка, о которой стоит говорить игроку.
+    }
 }
 
 /** Ключ приходит в base64url, а `subscribe` требует байты. */
