@@ -23,13 +23,24 @@ function check(label, actual, expected) {
 }
 
 async function call(path, {method = 'GET', body, token} = {}) {
-    const res = await fetch(BASE + '/api' + path, {
-        method,
-        headers: {'Content-Type': 'application/json', ...(token ? {Authorization: 'Bearer ' + token} : {})},
-        body: body === undefined ? undefined : JSON.stringify(body),
-    });
-    const text = await res.text();
-    return {status: res.status, body: text ? JSON.parse(text) : null};
+    // ⚠️ Двери (вход, регистрация, тикет) огорожены пределом частоты, и прогон ботов
+    // упирается в него сам: run.sh перед друзьями регистрирует четыре состава. 429 —
+    // не провал проверки, а просьба подождать; ждём и повторяем.
+    for (;;) {
+        const res = await fetch(BASE + '/api' + path, {
+            method,
+            headers: {'Content-Type': 'application/json', ...(token ? {Authorization: 'Bearer ' + token} : {})},
+            body: body === undefined ? undefined : JSON.stringify(body),
+        });
+        if (res.status === 429) {
+            const wait = Number(res.headers.get('Retry-After') ?? 5);
+            console.log(`   … предел частоты, жду ${wait}с (${path})`);
+            await sleep(wait * 1000);
+            continue;
+        }
+        const text = await res.text();
+        return {status: res.status, body: text ? JSON.parse(text) : null};
+    }
 }
 
 async function account(username) {

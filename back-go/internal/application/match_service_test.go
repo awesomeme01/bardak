@@ -43,6 +43,11 @@ func (f *fakeMatchLog) LatestSnapshot(_ context.Context, _ string) (int, string,
 	return f.seq, f.snapshot, nil
 }
 
+func (f *fakeMatchLog) SaveSnapshot(_ context.Context, _ string, seq int, state string) error {
+	f.seq, f.snapshot = seq, state
+	return nil
+}
+
 type fakeMatchPlayers struct {
 	seated map[string][]string
 }
@@ -202,6 +207,36 @@ func TestMatchComesBackFromSnapshotWhenMemoryIsEmpty(t *testing.T) {
 	}
 	if restored.Seats[0].UserID != "user-a" || restored.Seats[1].UserID != "user-b" {
 		t.Fatalf("порядок мест матча разъехался: %+v", restored.Seats)
+	}
+}
+
+// ⚠️ Рестарт сервера в окно «матч начат, ходов ноль» раньше оставлял матч
+// НЕВОССТАНОВИМЫМ: обычные снимки пишутся по ходам, а стартового не было. Restore
+// без снимка бессилен, и стол застревал IN_MATCH навсегда — даже MATCH_LEAVE отвечал
+// NO_MATCH. Поэтому снимок обязан появляться вместе с матчем, а не с первым ходом.
+func TestMatchStartedWithoutASingleMoveSurvivesRestart(t *testing.T) {
+	service, _, log, _ := matchServiceFixture(t)
+	session, err := service.Start(context.Background(), "table-1")
+	if err != nil {
+		t.Fatalf("матч не начался: %v", err)
+	}
+	if log.snapshot == "" {
+		t.Fatalf("стартовый снимок не записан")
+	}
+
+	saved := session.State()
+	service.Finish("table-1") // сервер «перезапустили» ДО первого хода
+
+	log.active = &repository.MatchRecord{ID: "match-1", TableID: "table-1",
+		Status: repository.MatchInProgress, PlayersCount: 2}
+	service.codec = stubStateCodec{state: saved}
+
+	restored, ok := service.Find(context.Background(), "table-1")
+	if !ok {
+		t.Fatalf("матч без единого хода не поднялся после рестарта")
+	}
+	if restored.LastSeq() != 0 {
+		t.Fatalf("стартовый снимок должен нести seq 0, поднято с %d", restored.LastSeq())
 	}
 }
 

@@ -7,7 +7,8 @@
  */
 
 import {apiGet} from '../net/rest-client.js';
-import {applyTableEvent} from './lobby.svelte.js';
+import {applyTableEvent, lobby} from './lobby.svelte.js';
+import {profile} from './profile.svelte.js';
 import {connection, isConnected, onMessage, onReconnect, send as wsSend}
     from './connection.svelte.js';
 import {TIMING, clearFlights, flyCard, rememberDraw, rememberOrigin, showSpotlight}
@@ -248,9 +249,18 @@ function onEnvelope(envelope) {
             break;
         case 'ERROR':
             // «Матч не идёт» — обычный ответ при входе в комнату ожидания, а не ошибка.
-            if (envelope.payload?.code !== 'NO_MATCH') {
-                notify(envelope.payload?.message ?? 'Ход отклонён');
+            if (envelope.payload?.code === 'NO_MATCH') {
+                break;
             }
+            // ⚠️ «Стол не открыт» на СВОЙ стол — это возврат в идущий матч (после
+            // перезагрузки страницы TABLE_JOIN уходит всегда): через мгновение придёт
+            // снимок и откроется игра, а плашка об ошибке только пугала бы. Чужому
+            // за закрытым столом сообщение остаётся.
+            if (envelope.payload?.code === 'TABLE_NOT_OPEN'
+                && lobby.current?.seats?.some((seat) => seat.userId === profile.user?.id)) {
+                break;
+            }
+            notify(envelope.payload?.message ?? 'Ход отклонён');
             break;
         default:
             // ⭐ Игровые события приходят перед снимком именно затем, чтобы их успели

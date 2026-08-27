@@ -24,6 +24,7 @@ type MatchLogStore interface {
 		rulesSnapshot string) (repository.MatchRecord, error)
 	ActiveMatchFor(ctx context.Context, tableID string) (repository.MatchRecord, error)
 	LatestSnapshot(ctx context.Context, matchID string) (int, string, error)
+	SaveSnapshot(ctx context.Context, matchID string, seq int, state string) error
 }
 
 // MatchPlayerStore — места матча в базе.
@@ -162,6 +163,15 @@ func (s *MatchService) Start(ctx context.Context, tableID string) (*MatchSession
 	// причём молча: расклад будет выглядеть совершенно правдоподобно.
 	if err := s.players.Seat(ctx, record.ID, userIDs); err != nil {
 		return nil, err
+	}
+	// ⭐ Стартовый снимок — сразу, а не после первого хода. Обычные снимки пишутся
+	// по ходам, и рестарт сервера в окно «матч начат, ходов ноль» оставлял матч
+	// НЕВОССТАНОВИМЫМ: restore без снимка бессилен, STATE_REQUEST отвечает NO_MATCH,
+	// а стол застревает IN_MATCH навсегда — его не вернуть в лобби даже MATCH_LEAVE.
+	if encoded, err := s.codec.EncodeState(state); err != nil {
+		return nil, fmt.Errorf("стартовый снимок не собрался: %w", err)
+	} else if err := s.log.SaveSnapshot(ctx, record.ID, 0, encoded); err != nil {
+		return nil, fmt.Errorf("стартовый снимок не записан: %w", err)
 	}
 	if err := s.lobby.StartMatch(ctx, tableID); err != nil {
 		return nil, err

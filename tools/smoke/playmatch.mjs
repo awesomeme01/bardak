@@ -31,16 +31,27 @@ const seen = {};
 const rejections = {};
 
 async function api(path, {method = 'GET', body, token} = {}) {
-    const res = await fetch(BASE + '/api' + path, {
-        method,
-        headers: {'Content-Type': 'application/json', ...(token ? {Authorization: 'Bearer ' + token} : {})},
-        body: body === undefined ? undefined : JSON.stringify(body),
-    });
-    const text = await res.text();
-    if (!res.ok) {
-        throw new Error(`${method} ${path} -> ${res.status} ${text}`);
+    // ⚠️ Двери (вход, регистрация, тикет) огорожены пределом частоты, и прогон ботов
+    // упирается в него сам: четыре состава подряд — это до 28 гостевых запросов.
+    // 429 — не провал, а просьба подождать; ждём и повторяем.
+    for (;;) {
+        const res = await fetch(BASE + '/api' + path, {
+            method,
+            headers: {'Content-Type': 'application/json', ...(token ? {Authorization: 'Bearer ' + token} : {})},
+            body: body === undefined ? undefined : JSON.stringify(body),
+        });
+        if (res.status === 429) {
+            const wait = Number(res.headers.get('Retry-After') ?? 5);
+            console.log(`   … предел частоты, жду ${wait}с (${path})`);
+            await sleep(wait * 1000);
+            continue;
+        }
+        const text = await res.text();
+        if (!res.ok) {
+            throw new Error(`${method} ${path} -> ${res.status} ${text}`);
+        }
+        return text ? JSON.parse(text) : null;
     }
-    return text ? JSON.parse(text) : null;
 }
 
 /** Аккаунт бота: заводим, а если уже есть от прошлого прогона — просто входим. */
