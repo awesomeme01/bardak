@@ -196,7 +196,7 @@ func (r GameRouter) execute(ctx context.Context, envelope Envelope, tableID stri
 
 	case "STATE_REQUEST":
 		r.Registry.Subscribe(runtime, client)
-		r.sendStateTo(session, client)
+		r.sendStateTo(session, client, envelope.ID)
 		r.resumeIfSeated(runtime, session, client)
 		return
 	}
@@ -204,7 +204,7 @@ func (r GameRouter) execute(ctx context.Context, envelope Envelope, tableID stri
 	// ⭐ Клиент переотправляет команду после разрыва: он не знает, дошла ли она.
 	// Повтор не применяем, но состояние отдаём — иначе он останется в неведении.
 	if envelope.ID != nil && session.AlreadyApplied(*envelope.ID) {
-		r.sendStateTo(session, client)
+		r.sendStateTo(session, client, envelope.ID)
 		return
 	}
 
@@ -320,14 +320,19 @@ func (r GameRouter) broadcast(runtime *TableRuntime, session *application.MatchS
 	Broadcast(runtime, session, firstSeq, events, r.turnSecondsLeft(session.TableID))
 }
 
-func (r GameRouter) sendStateTo(session *application.MatchSession, client Client) {
+func (r GameRouter) sendStateTo(session *application.MatchSession, client Client,
+	commandID *string) {
 	seatNo, seated := session.SeatOf(client.UserID)
-	seat := application.SeatOwner{SeatNo: seatNo, UserID: client.UserID}
 	if !seated {
-		// ⚠️ Наблюдатель смотрит глазами первого места, как в Java: своей проекции
-		// у него нет, а отдать состояние «как есть» значило бы показать все руки.
-		seat = application.SeatOwner{SeatNo: 0, UserID: client.UserID}
+		// ⚠️ У не-игрока СВОЕЙ проекции нет, а чужая — это чужая рука. Раньше здесь
+		// наблюдателю отдавался снимок глазами первого места — то есть любой вошедший
+		// мог прислать STATE_REQUEST на чужой стол и читать руку. Java отвечает отказом
+		// (viewFor бросает), и текст повторён дословно — differential сверяет кадр.
+		client.Send(ErrorEvent(commandID, &session.TableID, "BAD_COMMAND",
+			"Игрок не за этим столом: "+client.UserID))
+		return
 	}
+	seat := application.SeatOwner{SeatNo: seatNo, UserID: client.UserID}
 	SendStateTo(session, seat, r.turnSecondsLeft(session.TableID), client.Send)
 }
 
@@ -352,7 +357,7 @@ func (r GameRouter) resync(ctx context.Context, session *application.MatchSessio
 				json.RawMessage(event.Payload)))
 		}
 	}
-	r.sendStateTo(session, client)
+	r.sendStateTo(session, client, envelope.ID)
 }
 
 // resumeIfSeated — игрок вернулся: продолжаем с остатка, а не с полного хода.
@@ -649,6 +654,16 @@ func lastSeqOf(raw json.RawMessage) int {
 	return payload.LastSeq
 }
 
+// asNumber — числовое значение из базы как JSON-число БЕЗ перекодирования: numeric(…,2)
+// приходит строкой «1012.50», и float64 съел бы хвостовые нули, а Java (BigDecimal)
+// отдаёт их как есть — differential сверяет сырой кадр.
+func asNumber(value string) json.Number {
+	if value == "" {
+		return json.Number("0")
+	}
+	return json.Number(value)
+}
+
 // matchOverPayload — экран итога матча.
 func matchOverPayload(session *application.MatchSession, state game.MatchState,
 	changes []application.RatingChange) map[string]any {
@@ -662,9 +677,9 @@ func matchOverPayload(session *application.MatchSession, state game.MatchState,
 			"place":        change.Place,
 			"navesLevel":   change.NavesLevel,
 			"lossDegree":   change.LossDegree,
-			"ratingBefore": change.Before,
-			"ratingAfter":  change.After,
-			"ratingDelta":  change.Delta,
+			"ratingBefore": asNumber(change.Before),
+			"ratingAfter":  asNumber(change.After),
+			"ratingDelta":  asNumber(change.Delta),
 		})
 	}
 

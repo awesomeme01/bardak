@@ -541,7 +541,9 @@ func TestMatchOverPayloadCarriesPlacesAndRatings(t *testing.T) {
 	if players[0]["displayName"] != "Аида" {
 		t.Fatalf("имя игрока в итоге: %v", players[0]["displayName"])
 	}
-	if players[1]["lossDegree"] == nil || players[1]["ratingDelta"] != "-10.00" {
+	// ⭐ Рейтинг — JSON-ЧИСЛО с точностью базы («-10.00», как BigDecimal у Java),
+	// а не строка: фронт складывает дельты, а differential сверяет сырой кадр.
+	if players[1]["lossDegree"] == nil || players[1]["ratingDelta"] != json.Number("-10.00") {
 		t.Fatalf("приговор проигравшего собран неверно: %v", players[1])
 	}
 	if players[0]["lossDegree"] != (*string)(nil) {

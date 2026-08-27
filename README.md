@@ -58,6 +58,7 @@ tools/smoke/run.sh                    # боты играют составы 2�
 tools/smoke/loadtest.mjs ramp         # сколько столов держит один узел (M9)
 node tests/contract/compare.mjs       # differential по REST: Java против Go
 node tests/contract/matchdiff.mjs    # differential сыгранного матча, в обе стороны
+node tests/contract/socketdiff.mjs   # differential по сокету: кадры и схемы всех сообщений
 ```
 
 ⭐ Тесты Go поднимают **настоящий Postgres** через Testcontainers, а сквозной прогон

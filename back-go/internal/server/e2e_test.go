@@ -9,7 +9,6 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -522,9 +521,10 @@ func TestMatchIsPlayedToTheEndAndCounted(t *testing.T) {
 	for _, raw := range players {
 		player := raw.(map[string]any)
 		places[player["place"].(float64)] = true
-		delta, err := strconv.ParseFloat(player["ratingDelta"].(string), 64)
-		if err != nil {
-			t.Fatalf("дельта рейтинга не число: %v", player["ratingDelta"])
+		// ⭐ Дельта — JSON-ЧИСЛО, как BigDecimal у Java, а не строка.
+		delta, ok := player["ratingDelta"].(float64)
+		if !ok {
+			t.Fatalf("дельта рейтинга не число: %v (%T)", player["ratingDelta"], player["ratingDelta"])
 		}
 		deltas += delta
 	}

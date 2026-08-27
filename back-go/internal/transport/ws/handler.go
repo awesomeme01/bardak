@@ -148,9 +148,11 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		defer detach()
 	}
 
+	// Payload — как у Java: {sessionId, protocolVersion}. Фронт его не читает,
+	// но differential по сокету сверяет каждый кадр, и «почти такой же» не проходит.
 	send(Event("CONNECTED", nil, nil, map[string]any{
-		"userId":  userID,
-		"session": sessionID,
+		"sessionId":       sessionID,
+		"protocolVersion": ProtocolVersion,
 	}))
 
 	// ⭐ Heartbeat своей goroutine: без него мёртвое соединение висит до таймаута
@@ -198,13 +200,15 @@ func (h Handler) readLoop(ctx, tableCtx context.Context, conn *websocket.Conn, c
 			send(ErrorEvent(nil, nil, "BAD_ENVELOPE", "Сообщение не разобрано как конверт протокола"))
 			continue
 		}
+		// ⚠️ Транспортные ошибки уходят БЕЗ tableId, даже если команда его несла:
+		// так делает Java, и differential по сокету сверяет это дословно.
 		if envelope.V != ProtocolVersion {
-			send(ErrorEvent(envelope.ID, envelope.TableID, "PROTOCOL_VERSION_UNSUPPORTED",
+			send(ErrorEvent(envelope.ID, nil, "PROTOCOL_VERSION_UNSUPPORTED",
 				"Поддерживается версия протокола 1"))
 			continue
 		}
 		if strings.TrimSpace(envelope.Type) == "" {
-			send(ErrorEvent(envelope.ID, envelope.TableID, "TYPE_REQUIRED", "Не указан тип сообщения"))
+			send(ErrorEvent(envelope.ID, nil, "TYPE_REQUIRED", "Не указан тип сообщения"))
 			continue
 		}
 
@@ -220,8 +224,14 @@ func (h Handler) readLoop(ctx, tableCtx context.Context, conn *websocket.Conn, c
 			}
 			// ⚠️ Идентификатор стола разбирается ЗДЕСЬ и мягко: опечатка в нём не должна
 			// рвать соединение. В Java голый UUID.fromString рвал сокет с SERVER_ERROR,
-			// и клиент получал обрыв вместо ошибки.
-			if envelope.TableID == nil || !isUUID(*envelope.TableID) {
+			// и клиент получал обрыв вместо ошибки. Тексты — дословно как у Java:
+			// «нет стола» и «стол не разобран» — разные ответы.
+			if envelope.TableID == nil {
+				send(ErrorEvent(envelope.ID, nil, "TABLE_ID_INVALID", "Не указан стол"))
+				routed = true
+				break
+			}
+			if !isUUID(*envelope.TableID) {
 				send(ErrorEvent(envelope.ID, nil, "TABLE_ID_INVALID",
 					"Идентификатор стола не разобран"))
 				routed = true
@@ -233,8 +243,14 @@ func (h Handler) readLoop(ctx, tableCtx context.Context, conn *websocket.Conn, c
 			break
 		}
 		if !routed {
-			send(ErrorEvent(envelope.ID, envelope.TableID, "UNKNOWN_COMMAND",
-				"Неизвестная команда"))
+			// Эхо, а не ошибка — наследие M1 в эталоне, но контракт есть контракт:
+			// клиент с опечаткой в типе получает своё сообщение назад, не отказ.
+			// ⚠️ Отсутствовавший payload возвращается ЯВНЫМ null — как ObjectNode.set
+			// у Jackson, а не выпадает по omitempty.
+			send(Event("ECHO", envelope.ID, envelope.TableID, map[string]any{
+				"echoOf":  envelope.Type,
+				"payload": envelope.Payload,
+			}))
 		}
 	}
 }
