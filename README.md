@@ -56,7 +56,8 @@ cd back-go && go test ./...           # домен, репозитории, со
 cd front-bardak && npm run check      # svelte-check: имена и типы в разметке
 tools/smoke/run.sh                    # боты играют составы 2–5 против живого сервера
 tools/smoke/loadtest.mjs ramp         # сколько столов держит один узел (M9)
-node tests/contract/compare.mjs       # differential: Java на :8088 против Go на :8099
+node tests/contract/compare.mjs       # differential по REST: Java против Go
+node tests/contract/matchdiff.mjs    # differential сыгранного матча, в обе стороны
 ```
 
 ⭐ Тесты Go поднимают **настоящий Postgres** через Testcontainers, а сквозной прогон
