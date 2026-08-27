@@ -22,6 +22,7 @@
     import {play, table} from '../stores/table.svelte.js';
     import {connection} from '../stores/connection.svelte.js';
     import {TIMING, anchorPoint, flyFrom} from './motion.svelte.js';
+    import {sound, toggleSound} from './sound.svelte.js';
     import {isRedSuit, suitGlyph} from './naming.js';
 
     let {onLeave = null, onMenu = null} = $props();
@@ -297,6 +298,11 @@
                 <span class="suit" class:red={isRedSuit(game.protectedSuit)}>{suitGlyph(game.protectedSuit)}</span>
             </span>
         {/if}
+
+        <button class="leave-btn" type="button" onclick={toggleSound}
+                title={sound.enabled ? 'Выключить звук' : 'Включить звук'}>
+            {sound.enabled ? '🔊' : '🔇'}
+        </button>
 
         {#if onMenu}
             <button class="leave-btn" type="button" onclick={onMenu}

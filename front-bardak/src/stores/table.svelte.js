@@ -13,6 +13,7 @@ import {connection, isConnected, onMessage, onReconnect, send as wsSend}
     from './connection.svelte.js';
 import {TIMING, clearFlights, flyCard, rememberDraw, rememberOrigin, showSpotlight}
     from '../lib/motion.svelte.js';
+import {play as playSound} from '../lib/sound.svelte.js';
 
 let noticeTimer = null;
 
@@ -216,6 +217,10 @@ function onEnvelope(envelope) {
 
     switch (envelope.type) {
         case 'STATE_SYNC':
+            // ⭐ У новой раздачи нет своего события — она слышна по смене номера в снимке.
+            if (envelope.payload?.dealNo !== table.game?.dealNo) {
+                playSound('deal');
+            }
             table.game = envelope.payload;
             break;
         case 'PLAYER_JOINED':
@@ -235,6 +240,7 @@ function onEnvelope(envelope) {
             // ⭐ Итог приходит один раз и остаётся на экране: снимок состояния сюда
             // не годится — после матча стол уже пуст, а посмотреть, кто чем кончил, надо.
             table.result = envelope.payload;
+            playSound('match-over');
             break;
         case 'MATCH_ABORTED':
             table.notice = 'Матч отменён: игрок не вернулся';
@@ -288,21 +294,26 @@ function animateGameEvent(envelope) {
         case 'CARD_ATTACKED':
             rememberOrigin(cardCode, handOf(seatNo), -4);
             decided(seatNo, table.game.table.length ? 'подкинул' : 'атакует', 'attack');
+            playSound('card-play');
             break;
         case 'CARD_DEFENDED':
             rememberOrigin(cardCode, handOf(seatNo), 5);
             decided(seatNo, 'отбил', 'defend');
+            playSound('card-defend');
             break;
         case 'ATTACK_TRANSFERRED':
             rememberOrigin(cardCode, handOf(seatNo), -8);
             decided(seatNo, 'перевёл', 'attack');
+            playSound('card-transfer');
             break;
         case 'CARD_HUNG':
             // Навес садится именно в слот жертвы: по нему потом читают, кто близок к джокеру.
             rememberOrigin(cardCode, handOf(seatNo), 12);
             decided(seatNo, 'навесил', 'hang');
+            playSound('card-hang');
             break;
         case 'CARDS_DRAWN':
+            playSound('card-draw');
             if (seatNo === table.game.mySeat) {
                 // Свои карты приедут в руку сами; какие именно — станет известно из снимка.
                 rememberDraw(count ?? 0, 'deck');
@@ -322,12 +333,14 @@ function animateGameEvent(envelope) {
                 from, to: 'discard', code, delay: index * 40, spin: index % 2 ? 14 : -11,
             }));
             decided(seatNo, 'бито', 'beaten');
+            playSound('round-beaten');
             break;
         case 'CARDS_TAKEN':
             leavingCards().forEach(({code, from}, index) => flyCard({
                 from, to: handOf(seatNo), code, delay: index * 50, spin: 6,
             }));
             decided(seatNo, 'забрал', 'take');
+            playSound('cards-taken');
             break;
         case 'TAKE_ANNOUNCED':
             decided(seatNo, 'беру', 'take');
@@ -338,6 +351,7 @@ function animateGameEvent(envelope) {
         case 'HIDDEN_TRUMP_REVEALED':
             // Козырь меняется всему столу — карту показывают крупно, а не строкой в логе.
             showSpotlight(cardCode);
+            playSound('trump-reveal');
             break;
         case 'TRUMP_CHOSEN':
         case 'TRUMP_CHANGED':

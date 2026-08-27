@@ -2,6 +2,7 @@ package http
 
 import (
 	"log/slog"
+	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -9,6 +10,13 @@ import (
 
 	"github.com/go-chi/chi/v5"
 )
+
+// ⚠️ Системная таблица MIME отдаёт .m4a как audio/mp4a-latm — Chrome и Safari такое
+// проигрывают, а Firefox вправе отказаться, и звук стола там молча исчез бы.
+// audio/mp4 — тип, который понимают все.
+func init() {
+	_ = mime.AddExtensionType(".m4a", "audio/mp4")
+}
 
 // StaticHandlers — собранный фронт и ассеты наборов карт.
 //
