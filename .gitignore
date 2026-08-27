@@ -49,3 +49,6 @@ uploads/
 
 # --- Go ---
 back-go/bin/
+
+# --- Прод-секреты ---
+deploy/.env

@@ -1,0 +1,29 @@
+# Caddy держит HTTPS и проксирует всё в приложение.
+#
+# ⭐ Сертификат выпускается и продлевается сам — ради этого Caddy здесь и стоит.
+# HTTPS не украшение: без него не работают ни push-уведомления, ни установка PWA
+# на телефон, то есть половина игры.
+
+{$BARDAK_DOMAIN} {
+	encode zstd gzip
+
+	# ⭐ WebSocket проходит через reverse_proxy без единой настройки: Caddy сам
+	# пропускает Upgrade. Отдельный блок для /ws заводить не нужно.
+	reverse_proxy app:8088 {
+		# ⚠️ Реальный адрес игрока нужен пределу частоты: без него весь прод
+		# считался бы одним клиентом, и предел выключился бы там, где он и нужен.
+		header_up X-Forwarded-For {remote_host}
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}
