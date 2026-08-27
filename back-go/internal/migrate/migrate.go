@@ -35,6 +35,15 @@ var files embed.FS
 // и накатили одно и то же дважды.
 const lockID int64 = 8088_2026
 
+// flywayEra — сколько миграций успела накатить Java до передачи схемы Go (MD-006).
+//
+// ⚠️ Java заморожена, и это число больше не растёт. Усыновляется ровно такой префикс:
+// база Flyway признаётся своей по первым flywayEra файлам, а всё, что Go добавил после,
+// накатывается обычным порядком поверх. Не будь этой константы, ПЕРВОЕ ЖЕ дополнение
+// схемы в Go ломало бы усыновление: число файлов перестало бы совпадать с числом строк
+// Flyway, и живая база Java отвергалась бы как чужая.
+const flywayEra = 11
+
 // Migration — один файл схемы.
 type Migration struct {
 	Version int
@@ -72,16 +81,19 @@ func Apply(ctx context.Context, pool *pgxpool.Pool, log *slog.Logger) (int, erro
 		return 0, err
 	}
 
-	// ⭐ База, которую накатил Flyway, НЕ накатывается заново: файлы объявляются
+	// ⭐ База, которую накатил Flyway, НЕ накатывается заново: её файлы объявляются
 	// применёнными без выполнения. Иначе первый же запуск Go на живой базе попытался бы
 	// создать таблицы, которые там уже есть, и упал бы — ровно в момент переключения.
+	// Всё, что добавлено ПОСЛЕ эры Flyway, накатывается следом обычным порядком.
 	if len(applied) == 0 {
 		adopted, err := adoptFlywayIfPresent(ctx, conn, migrations, log)
 		if err != nil {
 			return 0, err
 		}
 		if adopted {
-			return len(migrations), nil
+			if applied, err = appliedVersions(ctx, conn); err != nil {
+				return 0, err
+			}
 		}
 	}
 
@@ -129,17 +141,20 @@ func adoptFlywayIfPresent(ctx context.Context, conn *pgxpool.Conn, migrations []
 		return false, nil
 	}
 
-	// ⚠️ Число файлов у нас и число успешных строк у Flyway обязаны совпасть. Не совпали —
-	// значит схема в базе не та, из которой копировались файлы, и молча «усыновлять» её
-	// нельзя: разойдётся не таблица версий, а сами таблицы.
-	if flywayRows != len(migrations) {
+	// ⚠️ Число успешных строк Flyway обязано совпасть с эрой Java. Не совпало — значит
+	// схема в базе не та, из которой копировались файлы, и молча «усыновлять» её нельзя:
+	// разойдётся не таблица версий, а сами таблицы.
+	if flywayRows != flywayEra {
 		return false, fmt.Errorf(
-			"в базе %d миграций Flyway, а файлов схемы %d: усыновлять такую базу вслепую нельзя",
-			flywayRows, len(migrations))
+			"в базе %d миграций Flyway, а эра Java кончилась на %d: усыновлять такую базу вслепую нельзя",
+			flywayRows, flywayEra)
 	}
 
 	return true, pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error {
 		for _, migration := range migrations {
+			if migration.Version > flywayEra {
+				continue
+			}
 			if _, err := tx.Exec(ctx,
 				`insert into schema_migrations (version, name) values ($1, $2)
 				 on conflict (version) do nothing`, migration.Version, migration.Name); err != nil {
@@ -147,7 +162,7 @@ func adoptFlywayIfPresent(ctx context.Context, conn *pgxpool.Conn, migrations []
 			}
 		}
 		if log != nil {
-			log.Info("схема Flyway принята как своя, миграции не выполнялись", "count", len(migrations))
+			log.Info("схема Flyway принята как своя, миграции не выполнялись", "count", flywayEra)
 		}
 		return nil
 	})

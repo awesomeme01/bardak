@@ -77,8 +77,12 @@ func TestCleanDatabaseGetsTheWholeSchema(t *testing.T) {
 		t.Fatalf("миграции не накатились: %v", err)
 	}
 
-	if applied != 11 {
-		t.Fatalf("накатано %d миграций, ждали 11", applied)
+	all, err := migrate.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if applied != len(all) {
+		t.Fatalf("накатано %d миграций, ждали %d", applied, len(all))
 	}
 	// 18 таблиц схемы плюс своя таблица версий.
 	if got := tableCount(t, pool); got != 19 {
@@ -99,15 +103,21 @@ func TestSecondRunChangesNothing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("повторный прогон упал: %v", err)
 	}
-	if applied != 11 || tableCount(t, pool) != before {
+	all, err := migrate.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if applied != len(all) || tableCount(t, pool) != before {
 		t.Fatalf("повторный прогон изменил схему: миграций %d, таблиц было %d, стало %d",
 			applied, before, tableCount(t, pool))
 	}
 }
 
 // ⭐ Главный тест этого файла: база, накатанная Flyway, принимается как своя, и НИ ОДИН
-// файл при этом не выполняется. Выполнись хоть один — старт упал бы на «таблица уже есть»
-// ровно в момент переключения, на живых людях.
+// её файл при этом не выполняется заново. Выполнись хоть один — старт упал бы на «таблица
+// уже есть» ровно в момент переключения, на живых людях. Всё, что Go добавил ПОСЛЕ эры
+// Flyway, при этом накатывается следом обычным порядком — иначе первое же дополнение
+// схемы в Go делало бы живую базу Java неусыновимой.
 func TestFlywayDatabaseIsAdoptedWithoutRunningAnything(t *testing.T) {
 	pool := testDB(t, "bardak_migrate_adopt")
 	ctx := context.Background()
@@ -119,19 +129,24 @@ func TestFlywayDatabaseIsAdoptedWithoutRunningAnything(t *testing.T) {
 		t.Fatalf("живая база не принята: %v", err)
 	}
 
-	if applied != 11 {
-		t.Fatalf("принято %d миграций, ждали 11", applied)
+	all, err := migrate.Load()
+	if err != nil {
+		t.Fatal(err)
 	}
-	// Таблицы те же плюс schema_migrations: ни одна миграция не выполнялась заново.
+	if applied != len(all) {
+		t.Fatalf("принято %d миграций, ждали %d", applied, len(all))
+	}
+	// Таблицы те же плюс schema_migrations: файлы эры Flyway не выполнялись заново.
+	// (Дополнения после эры таблиц не создают — они наполняют каталоги.)
 	if got := tableCount(t, pool); got != before+1 {
-		t.Fatalf("таблиц было %d, стало %d: значит что-то выполнилось", before, got)
+		t.Fatalf("таблиц было %d, стало %d: значит что-то выполнилось заново", before, got)
 	}
 	var versions int
 	if err := pool.QueryRow(ctx, `select count(*) from schema_migrations`).Scan(&versions); err != nil {
 		t.Fatal(err)
 	}
-	if versions != 11 {
-		t.Fatalf("в таблице версий %d строк, ждали 11", versions)
+	if versions != len(all) {
+		t.Fatalf("в таблице версий %d строк, ждали %d", versions, len(all))
 	}
 }
 
@@ -152,8 +167,12 @@ func TestUnfamiliarFlywayDatabaseIsRefused(t *testing.T) {
 	}
 }
 
-// applyFlywayLike накатывает схему так, как это сделала бы Java: те же файлы плюс
-// её служебная таблица.
+// flywayEra — сколько миграций успела накатить Java (см. одноимённую константу пакета):
+// её база выглядит именно так, и после заморозки Java это число не меняется.
+const flywayEra = 11
+
+// applyFlywayLike накатывает схему так, как это сделала бы Java: ПЕРВЫЕ flywayEra файлов
+// плюс её служебная таблица. Всё, что Go добавил после, Java-базе неизвестно.
 func applyFlywayLike(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
 	ctx := context.Background()
@@ -168,6 +187,9 @@ func applyFlywayLike(t *testing.T, pool *pgxpool.Pool) {
 		t.Fatal(err)
 	}
 	for _, migration := range migrations {
+		if migration.Version > flywayEra {
+			continue
+		}
 		if _, err := pool.Exec(ctx, migration.SQL); err != nil {
 			t.Fatalf("миграция %d: %v", migration.Version, err)
 		}
@@ -192,9 +214,10 @@ func itoa(value int) string {
 	return digits
 }
 
-// ⚠️ Пока Java жива, файлы схемы обязаны совпадать с её миграциями ПОБАЙТНО. Копия,
+// ⚠️ Пока Java жива, файлы ЕЁ ЭРЫ обязаны совпадать с её миграциями ПОБАЙТНО. Копия,
 // разъехавшаяся с оригиналом, — это два разных представления об одной базе, и заметно
-// это станет по отсутствующей колонке в бою, а не здесь.
+// это станет по отсутствующей колонке в бою, а не здесь. Всё, что Go добавил после
+// эры Flyway, оригинала не имеет — и иметь не должно.
 func TestSchemaFilesMatchTheJavaOriginals(t *testing.T) {
 	javaDir := filepath.Join("..", "..", "..", "back-bardak", "src", "main", "resources", "db", "migration")
 	if _, err := os.Stat(javaDir); err != nil {
@@ -206,6 +229,9 @@ func TestSchemaFilesMatchTheJavaOriginals(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, migration := range migrations {
+		if migration.Version > flywayEra {
+			continue
+		}
 		original := filepath.Join(javaDir, "V"+itoa(migration.Version)+"__"+migration.Name+".sql")
 		expected, err := os.ReadFile(original)
 		if err != nil {

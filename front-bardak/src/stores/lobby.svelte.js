@@ -10,6 +10,7 @@ import {apiGet, apiPost} from '../net/rest-client.js';
 export const lobby = $state({
     tables: [],
     themes: [],      // каталог тем стола; пусто, пока не спросили
+    cardSets: [],    // каталог наборов карт; пусто, пока не спросили
     current: null,   // {id, code, name, maxPlayers, seats: [...]}
     inMatch: false,  // за текущим столом идёт матч
     error: null,
@@ -19,8 +20,8 @@ export async function loadTables() {
     lobby.tables = await apiGet('/tables');
 }
 
-export async function createTable(name, maxPlayers, isPrivate, themeId = null) {
-    const table = await apiPost('/tables', {name, maxPlayers, isPrivate, themeId});
+export async function createTable(name, maxPlayers, isPrivate, themeId = null, cardSetId = null) {
+    const table = await apiPost('/tables', {name, maxPlayers, isPrivate, themeId, cardSetId});
     lobby.current = table;
     return table;
 }
@@ -35,6 +36,14 @@ export async function createTable(name, maxPlayers, isPrivate, themeId = null) {
 export async function loadThemes() {
     lobby.themes = await apiGet('/table-themes').catch(() => []);
     return lobby.themes;
+}
+
+/**
+ * Каталог наборов карт. Как и темы: один набор — не выбор, форма его не показывает.
+ */
+export async function loadCardSets() {
+    lobby.cardSets = await apiGet('/card-sets').catch(() => []);
+    return lobby.cardSets;
 }
 
 /**

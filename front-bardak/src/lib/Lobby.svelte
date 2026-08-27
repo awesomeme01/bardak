@@ -1,6 +1,7 @@
 <script>
     import {onMount} from 'svelte';
-    import {createTable, lobby, loadTables, openByCode, openTable} from '../stores/lobby.svelte.js';
+    import {createTable, loadCardSets, lobby, loadTables, openByCode, openTable}
+        from '../stores/lobby.svelte.js';
     import {friends, inviteFriend, loadFriends} from '../stores/friends.svelte.js';
     import CodeBoxes from './CodeBoxes.svelte';
     import Avatar from './Avatar.svelte';
@@ -14,6 +15,7 @@
     let isPrivate = $state(false);
     let code = $state('');
     let themeId = $state(null);
+    let cardSetId = $state(null);
 
     /**
      * ⚠️ Выбор показываем, только если тем правда несколько. Список из одного пункта —
@@ -21,6 +23,9 @@
      * этой строке в форме делать нечего.
      */
     const themes = $derived(lobby.themes.length > 1 ? lobby.themes : []);
+
+    /** Наборы карт — то же правило: один набор не выбор. */
+    const cardSets = $derived(lobby.cardSets.length > 1 ? lobby.cardSets : []);
 
     /**
      * ⭐ Кого позвать сразу при создании. Звать друзей после того, как стол готов, —
@@ -31,8 +36,9 @@
 
     onMount(() => {
         refresh();
-        // Список нужен только ради выбора при создании — молча, без своей полосы ошибки.
+        // Списки нужны только ради выбора при создании — молча, без своей полосы ошибки.
         loadFriends().catch(() => null);
+        loadCardSets().catch(() => null);
     });
 
     function toggleInvite(userId) {
@@ -88,7 +94,7 @@
     const create = (event) => {
         event.preventDefault();
         run(async () => {
-            const table = await createTable(name, maxPlayers, isPrivate, themeId);
+            const table = await createTable(name, maxPlayers, isPrivate, themeId, cardSetId);
             const called = [...toInvite];
             toInvite = new Set();
             for (const userId of called) {
@@ -167,6 +173,23 @@
                 <input type="checkbox" bind:checked={isPrivate}>
                 <span>Приватный — только по коду</span>
             </label>
+
+            {#if cardSets.length}
+                <div class="themes">
+                    <span class="label">Карты</span>
+                    <div class="theme-picks">
+                        {#each cardSets as set (set.id)}
+                            <button type="button" class="theme" class:chosen={cardSetId === set.id
+                                        || (cardSetId === null && set.isDefault)}
+                                    title={set.description ?? set.name}
+                                    onclick={() => (cardSetId = set.id)}>
+                                <img class="card-preview" src={set.previewUrl} alt="">
+                                <span class="theme-name">{set.name}</span>
+                            </button>
+                        {/each}
+                    </div>
+                </div>
+            {/if}
 
             {#if themes.length}
                 <div class="themes">
@@ -251,6 +274,13 @@
         gap: 14px;
         padding: 16px 20px 0;
         overflow-y: auto;
+    }
+
+    .card-preview {
+        width: 22px;
+        aspect-ratio: 1 / 1.452;
+        border-radius: 3px;
+        object-fit: cover;
     }
 
     .themes {
