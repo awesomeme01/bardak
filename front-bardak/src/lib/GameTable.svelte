@@ -123,6 +123,17 @@
         return !usable && targets.length === 0;
     });
 
+    /**
+     * ⭐ Кнопка ЗОВЁТ нажать (пульсирует), когда игра ждёт только её: противник всё
+     * отбил — раунд закрывает пас нападающего, и без него стол стоит. «Беру» из зова
+     * исключено намеренно: оно красное и нежелательное, подталкивать к нему нельзя.
+     */
+    const passUrges = $derived(Boolean(actions.pass) && unbeaten.length === 0 && !hangingNow);
+
+    /** Вскрытие обязательно, когда других ходов нет (MUST_REVEAL_FACE_DOWN). */
+    const revealUrges = $derived(Boolean(actions.reveal) && !actions.attacks.length
+        && !actions.defends.length && !actions.transfers.length && !actions.hangs.length);
+
     const prompt = $derived.by(() => {
         if (actions.trumps.length) {
             return 'Назови козырь';
@@ -504,7 +515,7 @@
     <div class="actions">
         {#if actions.trumps.length}
             {#each actions.trumps as action (action.payload.suit)}
-                <button class="btn trump" type="button" onclick={() => run(action)}>
+                <button class="btn trump cta" type="button" onclick={() => run(action)}>
                     <span class="suit" class:red={isRedSuit(action.payload.suit)}>
                         {suitGlyph(action.payload.suit)}
                     </span>
@@ -518,7 +529,8 @@
                         title={takeMatters ? 'Забрать стол' : 'Всё отбито — забирать нечего'}>Беру</button>
             {/if}
             {#if primary}
-                <button class="btn wide" class:btn-blue={primary.tone === 'blue'} type="button"
+                <button class="btn wide" class:btn-blue={primary.tone === 'blue'}
+                        class:cta={primary.action === actions.reveal && revealUrges} type="button"
                         onclick={() => run(primary.action)}>{primary.label}</button>
             {:else if selectedIsDead}
                 <div class="waiting mono">{short(selected)} сейчас не сыграть</div>
@@ -526,10 +538,13 @@
                 <div class="waiting mono">Ход соперника</div>
             {/if}
             {#if actions.pass}
-                <button class="btn-ghost narrow" type="button" onclick={() => run(actions.pass)}>Пас</button>
+                <button class="btn-ghost narrow" class:cta={passUrges} type="button"
+                        onclick={() => run(actions.pass)}>Пас</button>
             {/if}
             {#if actions.hangSkip}
-                <button class="btn-ghost narrow" type="button" onclick={() => run(actions.hangSkip)}>Мимо</button>
+                <!-- Окно навеса ждёт только этого игрока: либо вешает, либо «мимо». -->
+                <button class="btn-ghost narrow cta" type="button"
+                        onclick={() => run(actions.hangSkip)}>Мимо</button>
             {/if}
         {/if}
     </div>
@@ -890,6 +905,33 @@
         box-shadow: -3px 10px 20px rgba(0, 0, 0, 0.6);
     }
 
+    /**
+     * Зов к действию: игра ждёт ровно этой кнопки. Пульс мягкий — подсказка,
+     * а не тревога; «Беру» этого класса не получает никогда.
+     */
+    @keyframes cta-pulse {
+        0%, 100% {
+            box-shadow: 0 0 0 0 rgba(233, 196, 106, 0);
+            border-color: rgba(233, 196, 106, 0.35);
+        }
+        50% {
+            box-shadow: 0 0 0 7px rgba(233, 196, 106, 0.22);
+            border-color: rgba(233, 196, 106, 0.9);
+        }
+    }
+
+    .cta {
+        animation: cta-pulse 1.5s ease-in-out infinite;
+        border: 1px solid rgba(233, 196, 106, 0.35);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .cta {
+            animation: none;
+            border-color: rgba(233, 196, 106, 0.9);
+        }
+    }
+
     .actions {
         width: 100%;
         padding: 12px 14px calc(20px + env(safe-area-inset-bottom));
@@ -974,7 +1016,34 @@
             width: 96px !important;
         }
 
-        .actions {
+        /**
+     * Зов к действию: игра ждёт ровно этой кнопки. Пульс мягкий — подсказка,
+     * а не тревога; «Беру» этого класса не получает никогда.
+     */
+    @keyframes cta-pulse {
+        0%, 100% {
+            box-shadow: 0 0 0 0 rgba(233, 196, 106, 0);
+            border-color: rgba(233, 196, 106, 0.35);
+        }
+        50% {
+            box-shadow: 0 0 0 7px rgba(233, 196, 106, 0.22);
+            border-color: rgba(233, 196, 106, 0.9);
+        }
+    }
+
+    .cta {
+        animation: cta-pulse 1.5s ease-in-out infinite;
+        border: 1px solid rgba(233, 196, 106, 0.35);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .cta {
+            animation: none;
+            border-color: rgba(233, 196, 106, 0.9);
+        }
+    }
+
+    .actions {
             max-width: 720px;
             margin: 0 auto;
             background: none;
