@@ -30,6 +30,14 @@ if (!Number.isInteger(players) || players < 2 || players > 5) {
 const seen = {};
 const rejections = {};
 
+/** Шкала навесов как порядок: «что летит» сравнимо между раздачами. */
+const SCALE = ['6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A', 'JOKER'];
+const flightOf = (p) => (p.nextIsJoker ? 'JOKER' : (p.nextNavesRank ?? '6'));
+const stepOf = (flight) => SCALE.indexOf(flight);
+
+/** Переходы между раздачами глазами бота 0: [{deal, before, after}]. */
+const transitions = [];
+
 async function api(path, {method = 'GET', body, token} = {}) {
     // ⚠️ Двери (вход, регистрация, тикет) огорожены пределом частоты, и прогон ботов
     // упирается в него сам: четыре состава подряд — это до 28 гостевых запросов.
@@ -87,9 +95,19 @@ class Bot {
 
     #onMessage(envelope) {
         if (envelope.type === 'STATE_SYNC') {
+            // ⭐ Смена раздачи видна только по снимку: фиксируем перенос уровней.
+            if (this.watchDeals && this.game && envelope.payload.dealNo > this.game.dealNo) {
+                transitions.push({
+                    deal: `${this.game.dealNo} -> ${envelope.payload.dealNo}`,
+                    before: (this.game.players ?? []).map(flightOf),
+                    after: (envelope.payload.players ?? []).map(flightOf),
+                });
+            }
+            this.game = envelope.payload;
             this.actions = envelope.payload.availableActions ?? [];
             this.phase = envelope.payload.phase;
         } else if (envelope.type === 'MATCH_OVER') {
+            this.result = envelope.payload;
             this.over = true;
         } else if (envelope.type === 'ERROR') {
             const code = envelope.payload?.code;
@@ -134,6 +152,7 @@ const table = await api('/tables', {method: 'POST', token: accounts[0].accessTok
     body: {name: `дым ${players}`, maxPlayers: players, rulesConfig: {}, isPrivate: false}});
 
 const bots = accounts.map((who) => new Bot(who, table.id));
+bots[0].watchDeals = true;
 for (const bot of bots) {
     await bot.connect();
     bot.send('TABLE_JOIN');
@@ -147,7 +166,7 @@ let idle = 0;
 let moves = 0;
 for (let tick = 0; tick < 8000; tick++) {
     if (bots.some((bot) => bot.over)) {
-        report(true, moves);
+        await report(true, moves);
     }
     const moved = bots.map((bot) => bot.step()).some(Boolean);
     if (moved) {
@@ -166,7 +185,7 @@ for (let tick = 0; tick < 8000; tick++) {
 console.log(`❌ ${players}: матч не закончился, сделано ${moves} ходов`);
 process.exit(1);
 
-function report(ok, madeMoves) {
+async function report(ok, madeMoves) {
     const kinds = Object.entries(seen).sort((a, b) => b[1] - a[1]).slice(0, 8)
         .map(([type, count]) => `${type}:${count}`).join(' ');
     console.log(`✅ ${players} игрока(ов): матч завершён, ходов ${madeMoves}`);
@@ -178,5 +197,81 @@ function report(ok, madeMoves) {
         console.log(`   отказы: ${Object.entries(rejections)
             .map(([code, count]) => `${code}:${count}`).join(' ')}`);
     }
-    process.exit(ok ? 0 : 1);
+    let failed = !ok;
+    failed = !(await checkDealFlow()) || failed;
+    failed = !(await checkRating()) || failed;
+    process.exit(failed ? 1 : 0);
+}
+
+/**
+ * ⭐ Переходы между раздачами. Живая партия нашла пересдачу, стиравшую навесы
+ * посреди матча, — теперь каждый дым проверяет перенос уровней явно:
+ * никто не прыгает вверх больше чем на ступень (§0.1: +1 проигравшему раздачу),
+ * и уровни не обнуляются всем столом разом (симптом той самой пересдачи).
+ */
+async function checkDealFlow() {
+    const result = bots.find((bot) => bot.result)?.result;
+    const expected = (result?.dealsPlayed ?? 1) - 1;
+    console.log(`   раздач ${result?.dealsPlayed}, переходов увидено ${transitions.length}`);
+    let ok = true;
+    if (transitions.length !== expected) {
+        console.log(`   ❌ переходов ${transitions.length}, ждали ${expected}`);
+        ok = false;
+    }
+    for (const t of transitions) {
+        console.log(`   раздача ${t.deal}: [${t.before.join(' ')}] -> [${t.after.join(' ')}]`);
+        const someoneWasUp = t.before.some((f) => f !== '6');
+        const allReset = t.after.every((f) => f === '6');
+        if (someoneWasUp && allReset) {
+            console.log('   ❌ уровни обнулились всем столом: раздача пересдана вместо сыгранной');
+            ok = false;
+        }
+        for (let seat = 0; seat < t.before.length; seat++) {
+            if (stepOf(t.after[seat]) - stepOf(t.before[seat]) > 1) {
+                console.log(`   ❌ место ${seat}: скачок ${t.before[seat]} -> ${t.after[seat]} — больше ступени за раздачу`);
+                ok = false;
+            }
+        }
+    }
+    return ok;
+}
+
+/**
+ * ⭐ Рейтинг после матча: Elo — игра с нулевой суммой, MATCH_OVER обязан сходиться
+ * с /rating/me каждого игрока, а матч — быть виден в истории завершённым.
+ */
+async function checkRating() {
+    const result = bots.find((bot) => bot.result)?.result;
+    if (!result?.players?.length) {
+        console.log('   ❌ в MATCH_OVER нет игроков');
+        return false;
+    }
+    let ok = true;
+    const sum = result.players.reduce((total, p) => total + Number(p.ratingDelta), 0);
+    if (Math.abs(sum) > 0.011) {
+        console.log(`   ❌ сумма дельт рейтинга ${sum.toFixed(2)} — рейтинг создался из воздуха`);
+        ok = false;
+    }
+    if (!result.players.some((p) => p.lossDegree)) {
+        console.log('   ❌ у матча нет проигравшего со степенью');
+        ok = false;
+    }
+    for (let index = 0; index < bots.length; index++) {
+        const me = await api('/rating/me', {token: accounts[index].accessToken});
+        const mine = result.players.find((p) => p.userId === me.userId)
+            ?? result.players.find((p) => p.displayName === accounts[index].displayName);
+        if (!mine || Number(me.rating) !== Number(mine.ratingAfter)) {
+            console.log(`   ❌ рейтинг бота ${index}: /rating/me=${me.rating}, MATCH_OVER=${mine?.ratingAfter}`);
+            ok = false;
+        }
+    }
+    const matches = await api('/matches', {token: accounts[0].accessToken});
+    const finished = matches.find((m) => m.status === 'FINISHED'
+        && m.dealsPlayed === result.dealsPlayed);
+    if (!finished) {
+        console.log('   ❌ сыгранный матч не найден в истории завершённым');
+        ok = false;
+    }
+    console.log(`   рейтинг: сумма дельт ${sum.toFixed(2)}, REST сходится, матч в истории — ${ok ? '✅' : 'см. выше'}`);
+    return ok;
 }
