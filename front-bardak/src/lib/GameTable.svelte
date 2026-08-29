@@ -113,6 +113,26 @@
      */
     const takeMatters = $derived(unbeaten.length > 0);
 
+    /**
+     * ⚠️ «Беру» при полностью отбитом столе — почти всегда мисклик, и цена ему —
+     * унести в руку свои же отбитые карты. Живая партия: игрок отбил всё, включая
+     * джокера, нажал «Беру» — и докинутого в добор короля крыть было уже нельзя.
+     * Поэтому пустое взятие спрашивает второй раз; настоящее — уходит с первого.
+     */
+    let takeAsked = $state(false);
+    $effect(() => {
+        void game;          // любой новый снимок сбрасывает вопрос
+        takeAsked = false;
+    });
+
+    function tapTake() {
+        if (!takeMatters && !takeAsked) {
+            takeAsked = true;
+            return;
+        }
+        run(actions.take);
+    }
+
     /** Карта выбрана, а сделать ею нечего — это надо сказать словами, а не молчать. */
     const selectedIsDead = $derived.by(() => {
         if (!selected || actions.trumps.length) {
@@ -227,8 +247,18 @@
      * возможностью ими пойти. Нахлёст считается так, чтобы рука всегда помещалась целиком.
      */
     let handWidth = $state(0);
+    let viewport = $state(typeof window !== 'undefined' ? window.innerWidth : 440);
 
-    const cardWidth = $derived(handWidth >= 900 ? 96 : 70);
+    /**
+     * ⭐ Общий масштаб стола. Размеры ниже подобраны под ширину ~440px; на узких
+     * телефонах всё, что прибито в пикселях, наезжало друг на друга — рука, слоты
+     * и колода спорили за одну и ту же ширину. Вместо перевёрстки каждый размер
+     * умножается на масштаб: стол сжимается ЦЕЛИКОМ и пропорционально.
+     */
+    const scale = $derived(Math.min(1, viewport / 440));
+    const px = (size) => Math.round(size * scale);
+
+    const cardWidth = $derived(px(handWidth >= 900 ? 96 : 70));
 
     const overlap = $derived.by(() => {
         const count = game?.myHand.length ?? 0;
@@ -282,7 +312,9 @@
     }
 </script>
 
-<div class="table-screen">
+<svelte:window bind:innerWidth={viewport}/>
+
+<div class="table-screen" style="--s:{scale}">
     <!--
       ⚠️ Состояние связи видно прямо за столом. Без него мёртвый сокет ничем себя не
       выдавал: экран прежний, карты на местах, а ходы уходят в никуда.
@@ -360,15 +392,15 @@
                     -->
                     {#if game.trumpCard}
                         <span class="trump-under">
-                            <Card code={game.trumpCard} width={54}/>
+                            <Card code={game.trumpCard} width={px(54)}/>
                         </span>
                     {:else if game.trumpSuit}
                         <span class="trump-card" class:red={isRedSuit(game.trumpSuit)}>
                             {suitGlyph(game.trumpSuit)}
                         </span>
                     {/if}
-                    <Card faceDown width={60} style="position:absolute; left:42px; top:2px"/>
-                    <Card faceDown width={60} style="position:absolute; left:40px; top:0"/>
+                    <Card faceDown width={px(60)} style="position:absolute; left:{px(46)}px; top:2px"/>
+                    <Card faceDown width={px(60)} style="position:absolute; left:{px(44)}px; top:0"/>
                     <!-- ⭐ Счёт лежит ПОВЕРХ колоды: подпись под ней занимала строку,
                          которой на телефоне нет. -->
                     <span class="deck-count mono">{game.deckLeft}</span>
@@ -415,13 +447,13 @@
                         <div class="slot" animate:flip={{duration: TIMING.move}}
                              use:anchorPoint={`slot-${slot.attack}`}>
                             <span use:flyFrom={{key: slot.attack}}>
-                                <Card code={slot.attack} width={62} selected={canBeat}
+                                <Card code={slot.attack} width={px(62)} selected={canBeat}
                                       onclick={canBeat ? () => tapTarget(slot.attack) : null}/>
                             </span>
                             {#if slot.defend}
                                 <span class="defence">
                                     <span use:flyFrom={{key: slot.defend}}>
-                                        <Card code={slot.defend} width={52}/>
+                                        <Card code={slot.defend} width={px(52)}/>
                                     </span>
                                 </span>
                             {/if}
@@ -458,7 +490,7 @@
                 <div class="hung-row">
                     {#each me.hung as code, index (code)}
                         <!-- ⚠️ z-index явный: что навесили позже, лежит СВЕРХУ, как в стопке. -->
-                        <Card {code} width={index === me.hung.length - 1 ? 50 : 40}
+                        <Card {code} width={px(index === me.hung.length - 1 ? 50 : 40)}
                               dimmed={index !== me.hung.length - 1}
                               style={'position:relative; z-index:' + (index + 1)
                                   + (index < me.hung.length - 1 ? '; margin-right:-22px' : '')}/>
@@ -484,7 +516,7 @@
 
         {#if game.iHaveHiddenCard}
             <!-- Свою скрытую карту не видит даже владелец (§1.8) — только рубашку. -->
-            <span class="my-hidden"><Card faceDown width={38}/></span>
+            <span class="my-hidden"><Card faceDown width={px(38)}/></span>
         {/if}
     </div>
 
@@ -502,7 +534,7 @@
             <span class="hand-card" animate:flip={{duration: TIMING.move}}>
                 <span class="fan" style="transform: rotate({offset * tilt}deg) translateY({Math.abs(offset) * 4}px)">
                     <span use:flyFrom={{key: code, pool: 'hand', delay: index * 40}}>
-                        <Card {code} width={70} selected={selected === code}
+                        <Card {code} width={cardWidth} selected={selected === code}
                               playable={hangingNow && hangable.has(code)}
                               onclick={() => tapCard(code)}
                               style={selected === code ? 'transform: translateY(-18px)' : ''}/>
@@ -525,8 +557,10 @@
             {#if actions.take}
                 <!-- Красным «Беру» зовёт только тогда, когда на столе есть что забирать. -->
                 <button class="narrow" class:btn={takeMatters} class:btn-red={takeMatters}
-                        class:btn-ghost={!takeMatters} type="button" onclick={() => run(actions.take)}
-                        title={takeMatters ? 'Забрать стол' : 'Всё отбито — забирать нечего'}>Беру</button>
+                        class:btn-ghost={!takeMatters} type="button" onclick={tapTake}
+                        title={takeMatters ? 'Забрать стол' : 'Всё отбито — забирать нечего'}>
+                    {takeAsked ? 'Точно беру?' : 'Беру'}
+                </button>
             {/if}
             {#if primary}
                 <button class="btn wide" class:btn-blue={primary.tone === 'blue'}
@@ -669,17 +703,17 @@
 
     .deck-stack {
         position: relative;
-        width: 104px;
-        height: 92px;
+        width: calc(108px * var(--s, 1));
+        height: calc(92px * var(--s, 1));
     }
 
     /* Счёт колоды — поверх верхней рубашки, а не строкой под ней. */
     .deck-count {
         position: absolute;
-        left: 40px;
+        left: calc(44px * var(--s, 1));
         top: 0;
-        width: 60px;
-        height: 87px;
+        width: calc(60px * var(--s, 1));
+        height: calc(87px * var(--s, 1));
         display: flex;
         align-items: center;
         justify-content: center;
@@ -698,9 +732,12 @@
      */
     .trump-under {
         position: absolute;
-        /* ⚠️ Не левее нуля: у левого края телефона номинал уезжал за экран. */
-        left: 0;
-        top: 22px;
+        /* ⚠️ Геометрия, а не подбор: карта 54 повёрнута на 90° вокруг центра, её
+           размах = высота ≈ 78. left 12 кладёт размах ровно в 0..78 — ничего не
+           уезжает за экран, а колода (с 44) оставляет открытыми 44px левого края,
+           где после поворота и лежит угол с номиналом. */
+        left: calc(12px * var(--s, 1));
+        top: calc(24px * var(--s, 1));
         transform: rotate(-90deg);
         transform-origin: center center;
         z-index: 0;
@@ -808,8 +845,8 @@
 
     .slot {
         position: relative;
-        width: 78px;
-        height: 106px;
+        width: calc(78px * var(--s, 1));
+        height: calc(106px * var(--s, 1));
     }
 
     .prompt {
@@ -895,8 +932,8 @@
      */
     .defence {
         position: absolute;
-        left: 24px;
-        top: 30px;
+        left: calc(24px * var(--s, 1));
+        top: calc(30px * var(--s, 1));
         transform: rotate(3.5deg);
         transform-origin: 20% 20%;
     }
