@@ -208,10 +208,19 @@
     }
     const me = $derived((game?.players ?? []).find((seat) => seat.seatNo === game.mySeat));
 
-    /** Размер аватара по числу соперников — по макетам составов 2→5. */
-    const SEAT_SIZE = {1: 62, 2: 56, 3: 50, 4: 46};
-
-    const seatSize = $derived(SEAT_SIZE[opponents.length] ?? 50);
+    /**
+     * ⭐ Размеры стола зависят от СОСТАВА, а не от того, сколько влезло. В макете два
+     * полюса — вдвоём крупно, впятером компактно, — и между ними разложены тройка
+     * с четвёркой. Это не «подгон под экран»: чем меньше людей, тем больше места
+     * каждому, и карты можно рисовать крупнее.
+     */
+    const SIZES = {
+        1: {avatar: 82, stake: 60, hand: 78, pile: 76},
+        2: {avatar: 72, stake: 58, hand: 76, pile: 74},
+        3: {avatar: 66, stake: 56, hand: 72, pile: 72},
+        4: {avatar: 60, stake: 54, hand: 70, pile: 72},
+    };
+    const sizes = $derived(SIZES[opponents.length] ?? SIZES[4]);
 
     /** В колоде осталась одна карта — та самая, что сменит козырь всему столу (§1.9). */
     const lastIsHiddenTrump = $derived(game?.deckLeft === 1);
@@ -247,18 +256,55 @@
      * возможностью ими пойти. Нахлёст считается так, чтобы рука всегда помещалась целиком.
      */
     let handWidth = $state(0);
-    let viewport = $state(typeof window !== 'undefined' ? window.innerWidth : 440);
+    let viewport = $state(typeof window !== 'undefined' ? window.innerWidth : 390);
 
     /**
-     * ⭐ Общий масштаб стола. Размеры ниже подобраны под ширину ~440px; на узких
-     * телефонах всё, что прибито в пикселях, наезжало друг на друга — рука, слоты
-     * и колода спорили за одну и ту же ширину. Вместо перевёрстки каждый размер
-     * умножается на масштаб: стол сжимается ЦЕЛИКОМ и пропорционально.
+     * ⭐ Сетка нарисована под 390px. На экранах уже — сжимаем ЦЕЛИКОМ и пропорционально,
+     * а не переверстываем: полосы обязаны остаться на своих местах при любой ширине.
+     * Шире 390 не растягиваем — карты размером с ладонь игру не улучшают.
      */
-    const scale = $derived(Math.min(1, viewport / 440));
-    const px = (size) => Math.round(size * scale);
+    const fit = $derived(Math.min(1, viewport / 390));
+    const px = (size) => Math.round(size * fit);
 
-    const cardWidth = $derived(px(handWidth >= 900 ? 96 : 70));
+    const avatarSize = $derived(px(sizes.avatar));
+    const pileWidth = $derived(px(sizes.pile));
+    const cardWidth = $derived(px(sizes.hand));
+
+    /**
+     * Карта на столе и слот под пару «атака + защита».
+     *
+     * ⚠️ Слот шире карты ровно на сдвиг защиты — иначе отбившая карта вылезает за
+     * границу колонки и наезжает на соседний слот. Размеры выведены из макета
+     * (карта 54 → слот 74, сдвиг 20/9), а не подобраны на глаз.
+     */
+    const stakeCard = $derived(px(sizes.stake));
+    const stakeShiftX = $derived(Math.round(stakeCard * 0.37));
+    const stakeShiftY = $derived(Math.round(stakeCard * 0.165));
+    const slotWidth = $derived(stakeCard + stakeShiftX);
+    const slotHeight = $derived(Math.round(stakeCard * 1.452) + stakeShiftY);
+
+    /** Карта колоды и сброса: они мельче ставки, это фон, а не предмет разговора. */
+    const pileCard = $derived(Math.round(stakeCard * 0.86));
+
+    /**
+     * ⭐ Кто на часах, когда ход не мой. Раньше это писалось НА СТОЛЕ поверх карт;
+     * теперь — одной строкой в нижней панели, на месте кнопок, которых всё равно нет.
+     */
+    const onTheClock = $derived.by(() => {
+        if (!game || myTurn) {
+            return null;
+        }
+        const defending = game.phase === 'DEFEND' || game.phase === 'TAKING';
+        const seatNo = defending ? game.defenderSeat : game.canAttackSeat;
+        const seat = (game.players ?? []).find((player) => player.seatNo === seatNo);
+        if (!seat || seatNo === game.mySeat) {
+            return null;
+        }
+        return {name: seat.displayName, role: defending ? 'отбивается' : 'ходит', defending};
+    });
+
+    /** Наклон карты в веере: чем больше рука, тем мельче шаг. */
+    const tiltStep = $derived(Math.min(5, 60 / Math.max(1, game?.myHand.length ?? 1)));
 
     const overlap = $derived.by(() => {
         const count = game?.myHand.length ?? 0;
@@ -267,8 +313,16 @@
         if (count < 2 || handWidth === 0) {
             return cosy;
         }
+        /**
+         * ⚠️ Поворот РАСШИРЯЕТ габарит, и расчёт обязан это учитывать. Крайняя карта
+         * веера из восьми повёрнута на 17°, и её угол вылезает за край экрана —
+         * веер помещался «по расчёту» и не помещался на экране. Считаем разлёт
+         * от поворота и вычитаем его из доступной ширины.
+         */
+        const maxTilt = tiltStep * (count - 1) / 2;
+        const bleed = Math.ceil(Math.sin(maxTilt * Math.PI / 180) * cardWidth * 1.452);
         // 16 — горизонтальные отступы самой руки, они в ширину веера не входят.
-        const fits = (handWidth - 16 - cardWidth) / (count - 1);
+        const fits = (handWidth - 16 - 2 * bleed - cardWidth) / (count - 1);
         // ⚠️ Берём БОЛЬШИЙ из двух: уютный нахлёст — это минимум, а не потолок. Ограничив
         // его сверху, я оставил восемнадцать карт шире экрана — ровно ту поломку, из-за
         // которой до крайней карты было не дотянуться.
@@ -309,12 +363,17 @@
     function run(action) {
         play(action);
         selected = null;
-    }
-</script>
+    }</script>
 
 <svelte:window bind:innerWidth={viewport}/>
 
-<div class="table-screen" style="--s:{scale}">
+<!--
+  ⭐ Экран — шесть полос с ЖЁСТКИМИ границами (макет «сетка стола v3»). Полосы подсказки,
+  навеса, руки и кнопок не двигаются никогда, при любом составе: их высоты заданы, а всё
+  лишнее забирает себе стол. Раньше каждая зона росла как хотела — при пятерых рейка
+  соперников съедала пол-экрана, стол упирался в руку, а подписи ложились на карты.
+-->
+<div class="table-screen">
     <!--
       ⚠️ Состояние связи видно прямо за столом. Без него мёртвый сокет ничем себя не
       выдавал: экран прежний, карты на местах, а ходы уходят в никуда.
@@ -327,51 +386,50 @@
         </div>
     {/if}
 
-    <div class="deal-line mono">
-        <span>Раздача {game.dealNo}</span>
-        <span class="sep">·</span>
-        <span>козырь
-            <span class="suit" class:red={isRedSuit(game.trumpSuit)}>
-                {game.trumpSuit ? suitGlyph(game.trumpSuit) : '?'}
-            </span>
-        </span>
-        {#if game.protectedSuit}
+    <!-- ═══ A · HUD: одна строка, и она обязана оставаться одной ═══ -->
+    <div class="hud">
+        <div class="hud-info mono">
+            <span>Р.{game.dealNo}</span>
             <span class="sep">·</span>
-            <span>защищена
-                <span class="suit" class:red={isRedSuit(game.protectedSuit)}>{suitGlyph(game.protectedSuit)}</span>
-            </span>
-        {/if}
+            <span>козырь <span class="suit" class:red={isRedSuit(game.trumpSuit)}>
+                {game.trumpSuit ? suitGlyph(game.trumpSuit) : '?'}</span></span>
+            {#if game.protectedSuit}
+                <span class="sep">·</span>
+                <span>защита <span class="suit" class:red={isRedSuit(game.protectedSuit)}>
+                    {suitGlyph(game.protectedSuit)}</span></span>
+            {/if}
+        </div>
 
-        <button class="leave-btn" type="button" onclick={toggleSound}
-                title={sound.enabled ? 'Выключить звук' : 'Включить звук'}>
-            {sound.enabled ? '🔊' : '🔇'}
-        </button>
-
-        {#if onMenu}
-            <button class="leave-btn" type="button" onclick={onMenu}
-                    title="В главное меню — место за столом останется за тобой">меню</button>
-        {/if}
-
-        {#if onLeave}
-            <span class="leave">
+        <div class="hud-buttons">
+            <button class="icon" type="button" onclick={toggleSound}
+                    title={sound.enabled ? 'Выключить звук' : 'Включить звук'}>
+                {sound.enabled ? '🔊' : '🔇'}
+            </button>
+            {#if onMenu}
+                <button class="icon" type="button" onclick={onMenu}
+                        title="В главное меню — место за столом останется за тобой">☰</button>
+            {/if}
+            {#if onLeave}
                 {#if leaveAsked}
-                    <button class="leave-btn danger" type="button" onclick={onLeave}>
-                        отменить матч
-                    </button>
-                    <button class="leave-btn" type="button" onclick={() => (leaveAsked = false)}>
-                        играем
-                    </button>
+                    <button class="icon danger text" type="button" onclick={onLeave}>отменить</button>
+                    <button class="icon text" type="button" onclick={() => (leaveAsked = false)}>играем</button>
                 {:else}
-                    <button class="leave-btn" type="button" onclick={() => (leaveAsked = true)}
-                            title="Выйти из-за стола — партия отменится у всех">выйти</button>
+                    <button class="icon danger" type="button" onclick={() => (leaveAsked = true)}
+                            title="Выйти из-за стола — партия отменится у всех">✕</button>
                 {/if}
-            </span>
-        {/if}
+            {/if}
+        </div>
     </div>
 
-    <div class="opponents" class:tiers={opponents.length > 3} data-count={opponents.length}>
+    <!--
+      ═══ B · рейка соперников: ВСЕГДА один ряд ═══
+      ⭐ Четверо помещаются в строку только потому, что место соперника ужато до аватара
+      с бейджами. Второй ряд здесь появиться не может по построению — иначе стол поехал бы
+      вниз на разную величину в зависимости от состава.
+    -->
+    <div class="rail">
         {#each opponents as seat (seat.seatNo)}
-            <Seat {seat} size={seatSize}
+            <Seat {seat} size={avatarSize}
                   active={seat.seatNo === game.canAttackSeat}
                   defending={seat.seatNo === game.defenderSeat}
                   decision={table.decisions[seat.seatNo] ?? null}
@@ -380,147 +438,149 @@
         {/each}
     </div>
 
-    <div class="middle">
-        <div class="deck" use:anchorPoint={'deck'}>
+    <!--
+      ═══ C · стол: три жёсткие колонки ═══
+      ⚠️ Колода и сброс — колонки фиксированной ширины со своими подписями ПОД стопкой.
+      Пока подписи стояли сбоку, «Бито» уезжало под карты, а «Колода 0» сталкивалась
+      с «Мой навес». Ставка забирает остаток и никогда не доходит до соседей.
+    -->
+    <div class="board" use:anchorPoint={'board'}>
+        <div class="pile" style="width:{pileWidth}px" use:anchorPoint={'deck'}>
             {#if game.deckLeft > 0}
-                <div class="deck-stack">
+                <div class="stack" style="height:{Math.round(pileCard * 1.452)}px">
                     <!--
-                      ⭐ Козырная карта лежит под колодой лицом вверх и берётся последней (§1.9).
-                      Её показывают целиком, а не мастью: за столом козырь знают в лицо — «семёрка
-                      червей», а не «черви». Самая нижняя карта — потайной козырь — по-прежнему
-                      тайна для всех, её тут нет.
+                      ⭐ Козырная карта лежит поперёк под колодой лицом вверх и берётся
+                      последней (§1.9). Положение считается геометрией, а не подбором:
+                      повёрнутая карта занимает по горизонтали свою ВЫСОТУ, поэтому
+                      сдвиг = (высота − ширина) / 2 — тогда её край ровно на границе
+                      колонки, а из-под рубашек торчит угол с номиналом.
                     -->
                     {#if game.trumpCard}
-                        <span class="trump-under">
-                            <Card code={game.trumpCard} width={px(54)}/>
-                        </span>
-                    {:else if game.trumpSuit}
-                        <span class="trump-card" class:red={isRedSuit(game.trumpSuit)}>
-                            {suitGlyph(game.trumpSuit)}
+                        <span class="trump-under"
+                              style="left:{Math.round((pileCard * 1.452 - pileCard) / 2)}px">
+                            <Card code={game.trumpCard} width={pileCard}/>
                         </span>
                     {/if}
-                    <Card faceDown width={px(60)} style="position:absolute; left:{px(46)}px; top:2px"/>
-                    <Card faceDown width={px(60)} style="position:absolute; left:{px(44)}px; top:0"/>
-                    <!-- ⭐ Счёт лежит ПОВЕРХ колоды: подпись под ней занимала строку,
-                         которой на телефоне нет. -->
-                    <span class="deck-count mono">{game.deckLeft}</span>
+                    <Card faceDown width={pileCard} style="position:absolute; right:3px; top:3px"/>
+                    <Card faceDown width={pileCard}
+                          style={'position:absolute; right:0; top:0'
+                              + (lastIsHiddenTrump ? '; outline:1px dashed var(--gold); outline-offset:2px' : '')}/>
                 </div>
-            {:else if lastIsHiddenTrump}
-                <!--
-                  ⭐ Осталась одна карта — это потайной козырь (§1.9). Кто её возьмёт, тому
-                  она уйдёт в руку, а козырь сменится её мастью со следующего раунда. Момент
-                  редкий и переворачивающий раздачу, поэтому он объявлен, а не показан цифрой.
-                -->
-                <div class="trump-change">
-                    <div class="tc-head mono">
-                        Козырь
-                        <span class="suit" class:red={isRedSuit(game.trumpSuit)}>
-                            {game.trumpSuit ? suitGlyph(game.trumpSuit) : '?'}
-                        </span>
-                        <span class="tc-arrow">→ сменится</span>
-                    </div>
-                    <div class="tc-body">
-                        <span class="tc-card"><Card faceDown width={52}/></span>
-                        <span class="mono tc-note">потайной козырь · последний</span>
-                    </div>
+                <!-- ⭐ Последняя карта — потайной козырь: он сменит масть всему столу (§1.9). -->
+                <div class="pile-label mono" class:gold={lastIsHiddenTrump}>
+                    {lastIsHiddenTrump ? 'потайной' : `Колода ${game.deckLeft}`}
                 </div>
             {:else}
-                <div class="card-slot" style="width:52px"><span class="mono">пусто</span></div>
-                <div class="mono">Колода 0</div>
+                <div class="stack" style="height:{Math.round(pileCard * 1.452)}px">
+                    <div class="empty-pile mono" style="width:{pileCard}px">пусто</div>
+                </div>
+                <div class="pile-label mono">Колода 0</div>
             {/if}
         </div>
 
-        <div class="board" use:anchorPoint={'board'}>
+        <div class="stake" style="--slot-w:{slotWidth}px; --slot-h:{slotHeight}px">
             {#if game.table.length === 0}
-                <div class="card-slot gold" style="width:70px">
-                    <span class="mono">брось</span><span class="mono">карту</span>
+                <div class="empty-stake mono" style="width:{stakeCard}px; height:{Math.round(stakeCard * 1.452)}px">
+                    <span>брось</span><span>карту</span>
                 </div>
             {:else}
-                <div class="slots">
-                    {#each game.table as slot (slot.attack)}
-                        {@const canBeat = targets.some((a) => a.payload.targetCardCode === slot.attack)}
-                        <!--
-                          ⭐ Слот разъезжается плавно (animate:flip), а карта въезжает в него
-                          из руки (use:flyFrom). Порядок важен: слот уже встал на новое место,
-                          и карта летит именно туда, куда ляжет, а не в середину стола.
-                        -->
-                        <div class="slot" animate:flip={{duration: TIMING.move}}
-                             use:anchorPoint={`slot-${slot.attack}`}>
-                            <span use:flyFrom={{key: slot.attack}}>
-                                <Card code={slot.attack} width={px(62)} selected={canBeat}
-                                      onclick={canBeat ? () => tapTarget(slot.attack) : null}/>
-                            </span>
-                            {#if slot.defend}
-                                <span class="defence">
-                                    <span use:flyFrom={{key: slot.defend}}>
-                                        <Card code={slot.defend} width={px(52)}/>
-                                    </span>
+                {#each game.table as slot (slot.attack)}
+                    {@const canBeat = targets.some((a) => a.payload.targetCardCode === slot.attack)}
+                    <!--
+                      ⭐ Слот разъезжается плавно (animate:flip), а карта въезжает в него
+                      из руки (use:flyFrom). Порядок важен: слот уже встал на новое место,
+                      и карта летит именно туда, куда ляжет, а не в середину стола.
+                    -->
+                    <div class="slot" animate:flip={{duration: TIMING.move}}
+                         use:anchorPoint={`slot-${slot.attack}`}>
+                        <span use:flyFrom={{key: slot.attack}}>
+                            <Card code={slot.attack} width={stakeCard} selected={canBeat}
+                                  onclick={canBeat ? () => tapTarget(slot.attack) : null}/>
+                        </span>
+                        {#if slot.defend}
+                            <!--
+                              Отбившая карта ложится поверх атакующей со сдвигом вправо-вниз:
+                              видно обе, и видно, что чем побито.
+                            -->
+                            <span class="defence" style="left:{stakeShiftX}px; top:{stakeShiftY}px">
+                                <span use:flyFrom={{key: slot.defend}}>
+                                    <Card code={slot.defend} width={stakeCard}/>
                                 </span>
-                            {/if}
-                        </div>
-                    {/each}
-                </div>
-            {/if}
-
-            {#if prompt}
-                <div class="prompt">
-                    <span class="gold">{prompt}</span>
-                    <TurnClock seconds={game.turnSecondsLeft} active={myTurn}/>
-                </div>
+                            </span>
+                        {/if}
+                    </div>
+                {/each}
             {/if}
         </div>
 
-        <div class="discard" use:anchorPoint={'discard'}>
-            {#if game.discardCount > 0}
-                <div class="pile">
-                    <Card faceDown width={36} style="position:absolute; left:2px; top:4px; transform:rotate(-16deg); filter:brightness(.7)"/>
-                    <Card faceDown width={36} style="position:absolute; left:10px; top:1px; transform:rotate(7deg); filter:brightness(.85)"/>
-                    <Card faceDown width={36} style="position:absolute; left:6px; top:0; transform:rotate(-3deg)"/>
-                </div>
-            {:else}
-                <div class="card-slot" style="width:40px"></div>
-            {/if}
-            <div class="mono">Бито {game.discardCount}</div>
+        <div class="pile" style="width:{pileWidth}px" use:anchorPoint={'discard'}>
+            <div class="stack" style="height:{Math.round(pileCard * 1.452)}px">
+                {#if game.discardCount > 0}
+                    <Card faceDown width={Math.round(pileCard * 0.86)}
+                          style="position:absolute; left:2px; top:6px; transform:rotate(-14deg); filter:brightness(.7)"/>
+                    <Card faceDown width={Math.round(pileCard * 0.86)}
+                          style="position:absolute; left:11px; top:3px; transform:rotate(7deg); filter:brightness(.85)"/>
+                    <Card faceDown width={Math.round(pileCard * 0.86)}
+                          style="position:absolute; left:7px; top:0; transform:rotate(-3deg)"/>
+                {/if}
+            </div>
+            <div class="pile-label mono">Бито {game.discardCount}</div>
         </div>
     </div>
 
+    <!--
+      ═══ D · подсказка хода ═══
+      ⭐ У подсказки своя полоса, и текст физически не может лечь на карты. Раньше она
+      висела в зоне стола и при шести картах наезжала на них.
+    -->
+    <div class="hint mono" class:urgent={Boolean(prompt)}>{prompt ?? ''}</div>
+
+    <!-- ═══ E · мой навес и потайная карта ═══ -->
     <div class="mine">
         <div class="my-hung" use:anchorPoint={`hung-${game.mySeat}`}>
-            {#if me?.hung.length}
-                <div class="hung-row">
+            <div class="hung-stack">
+                {#if me?.hung.length}
                     {#each me.hung as code, index (code)}
                         <!-- ⚠️ z-index явный: что навесили позже, лежит СВЕРХУ, как в стопке. -->
-                        <Card {code} width={px(index === me.hung.length - 1 ? 50 : 40)}
+                        <Card {code}
+                              width={index === me.hung.length - 1
+                                  ? Math.round(stakeCard * 0.78) : Math.round(stakeCard * 0.6)}
                               dimmed={index !== me.hung.length - 1}
                               style={'position:relative; z-index:' + (index + 1)
-                                  + (index < me.hung.length - 1 ? '; margin-right:-22px' : '')}/>
+                                  + (index < me.hung.length - 1
+                                      ? `; margin-right:-${Math.round(stakeCard * 0.39)}px` : '')}/>
                     {/each}
-                </div>
-            {:else}
-                <div class="card-slot" style="width:38px">
-                    <span class="mono">{me?.nextIsJoker ? '🃏' : me?.nextNavesRank ?? '6'}</span>
-                    <span class="flies mono">летит</span>
-                </div>
-            {/if}
+                {:else}
+                    <div class="flying-slot mono" class:gold={me?.nextIsJoker}
+                         style="width:{Math.round(stakeCard * 0.7)}px; height:{Math.round(stakeCard * 1.02)}px">
+                        {me?.nextIsJoker ? '🃏' : me?.nextNavesRank ?? '6'}
+                    </div>
+                {/if}
+            </div>
             <!--
               ⭐ Считается не сколько навесили, а сколько осталось до джокера: шкала и есть
               счёт в игре (ADR-017), и «навесили 2» ничего не говорит о том, близко ли конец.
             -->
-            <div class="mono hung-label">
-                Мой навес<br>
-                <span class="gold">
-                    {me?.stepsToJoker ? `до джокера ${me.stepsToJoker}` : 'джокер висит'}
-                </span>
+            <div class="hung-text mono">
+                Мой навес {me?.hung.length ?? 0}<br>
+                <span class="gold">{me?.stepsToJoker ? `до джокера ${me.stepsToJoker}` : 'джокер висит'}</span>
             </div>
         </div>
 
-        {#if game.iHaveHiddenCard}
-            <!-- Свою скрытую карту не видит даже владелец (§1.8) — только рубашку. -->
-            <span class="my-hidden"><Card faceDown width={px(38)}/></span>
-        {/if}
+        <div class="my-hidden">
+            {#if game.iHaveHiddenCard}
+                <!-- Свою скрытую карту не видит даже владелец (§1.8) — только рубашку. -->
+                <Card faceDown width={Math.round(stakeCard * 0.7)}/>
+            {:else}
+                <div class="flying-slot mono"
+                     style="width:{Math.round(stakeCard * 0.7)}px; height:{Math.round(stakeCard * 1.02)}px">взял</div>
+            {/if}
+            <div class="hidden-label mono">потайная</div>
+        </div>
     </div>
 
     <!--
+      ═══ F · моя рука ═══
       ⭐ Веер живёт на внутреннем узле, а перестановка — на внешнем. Так `animate:flip`
       двигает карту по горизонтали, а поворот доезжает своим переходом: при добавлении
       карты соседние расходятся, а не перескакивают в новый угол.
@@ -529,10 +589,9 @@
          bind:clientWidth={handWidth}>
         {#each game.myHand as code, index (code)}
             {@const middle = (game.myHand.length - 1) / 2}
-            {@const tilt = Math.min(5, 60 / Math.max(1, game.myHand.length))}
             {@const offset = index - middle}
             <span class="hand-card" animate:flip={{duration: TIMING.move}}>
-                <span class="fan" style="transform: rotate({offset * tilt}deg) translateY({Math.abs(offset) * 4}px)">
+                <span class="fan" style="transform: rotate({offset * tiltStep}deg) translateY({Math.abs(offset) * 4}px)">
                     <span use:flyFrom={{key: code, pool: 'hand', delay: index * 40}}>
                         <Card {code} width={cardWidth} selected={selected === code}
                               playable={hangingNow && hangable.has(code)}
@@ -544,6 +603,11 @@
         {/each}
     </div>
 
+    <!--
+      ═══ G · кнопки ═══
+      ⭐ Когда ход не мой, здесь стоит ОДНА строка: кто на часах и сколько ему осталось.
+      Прежде это писалось поверх стола — единственное место, где текста быть не должно.
+    -->
     <div class="actions">
         {#if actions.trumps.length}
             {#each actions.trumps as action (action.payload.suit)}
@@ -568,6 +632,12 @@
                         onclick={() => run(primary.action)}>{primary.label}</button>
             {:else if selectedIsDead}
                 <div class="waiting mono">{short(selected)} сейчас не сыграть</div>
+            {:else if onTheClock}
+                <div class="waiting mono">
+                    <span class="dot" class:defend={onTheClock.defending}></span>
+                    <span>{onTheClock.name} {onTheClock.role}</span>
+                    <TurnClock seconds={game.turnSecondsLeft} active={false}/>
+                </div>
             {:else if !myTurn}
                 <div class="waiting mono">Ход соперника</div>
             {/if}
@@ -587,50 +657,65 @@
 <CardFlights/>
 
 <style>
-    /* Стол занимает ровно доступную высоту и не прокручивается: всё видно сразу. */
+    /**
+     * ⭐ Шесть полос с фиксированными высотами. Гибкая ровно одна — стол: он забирает
+     * остаток экрана и на нём же экономит. Подсказка, навес, рука и кнопки прибиты
+     * снизу и не сдвигаются НИКОГДА, при любом составе и на любом телефоне.
+     *
+     * ⚠️ Прокрутки здесь нет и быть не должно: всё, что нужно для хода, видно сразу.
+     * Любая новая строка обязана вписаться в свою полосу, а не растянуть её.
+     */
     .table-screen {
         flex: 1 1 auto;
         display: flex;
         flex-direction: column;
-        align-items: center;
-        gap: 10px;
-        padding: 10px 0 0;
+        align-items: stretch;
         min-height: 0;
         overflow: hidden;
     }
 
-    .deal-line {
+    .link-state {
+        flex: none;
+        text-align: center;
+        padding: 5px 12px;
+        font-size: 11px;
+        color: var(--gold);
+        background: rgba(240, 205, 138, 0.1);
+    }
+
+    .link-state.lost {
+        color: var(--red);
+        background: rgba(232, 132, 140, 0.12);
+    }
+
+    /* ═══ A · HUD ═══ */
+    .hud {
+        flex: none;
         display: flex;
         align-items: center;
+        justify-content: space-between;
         gap: 8px;
+        padding: calc(6px + env(safe-area-inset-top)) 12px 6px;
+    }
+
+    /**
+     * ⚠️ Строка не переносится и обрезается многоточием. «Раздача 16 · козырь · защита»
+     * в две строки толкала вниз весь стол — поэтому и «Р.16», а не «Раздача 16».
+     */
+    .hud-info {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        font-size: 11px;
         color: var(--text-55);
     }
 
     .sep {
-        opacity: 0.4;
-    }
-
-    /* Выход живёт в строке раздачи, а не среди игровых кнопок: он не ход. */
-    .leave {
-        display: inline-flex;
-        gap: 6px;
-        margin-left: 10px;
-    }
-
-    .leave-btn {
-        padding: 3px 9px;
-        border-radius: 8px;
-        border: 1px solid var(--line-strong);
-        background: rgba(255, 255, 255, 0.05);
-        font: 500 10px var(--mono);
-        letter-spacing: 0.06em;
-        color: var(--text-55);
-    }
-
-    .leave-btn.danger {
-        border-color: rgba(232, 98, 108, 0.55);
-        background: rgba(232, 98, 108, 0.16);
-        color: var(--seat-attack);
+        opacity: 0.35;
     }
 
     .suit {
@@ -642,249 +727,229 @@
         color: #ff8d95;
     }
 
-    .opponents {
+    .hud-buttons {
+        flex: none;
         display: flex;
-        justify-content: space-around;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .icon {
+        width: 30px;
+        height: 30px;
+        border-radius: 9px;
+        border: 1px solid var(--line-strong);
+        background: transparent;
+        color: var(--text-55);
+        font-size: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        padding: 0;
+    }
+
+    /* Подтверждение выхода — единственный случай, когда кнопке нужны слова. */
+    .icon.text {
+        width: auto;
+        padding: 0 10px;
+        font-family: var(--mono);
+        font-size: 11px;
+    }
+
+    .icon.danger {
+        border-color: rgba(232, 98, 108, 0.35);
+        color: var(--red);
+    }
+
+    /* ═══ B · рейка соперников ═══ */
+    .rail {
+        flex: none;
+        display: flex;
         align-items: flex-start;
+        justify-content: space-around;
         gap: 4px;
-        width: 100%;
-        padding: 0 12px;
+        padding: 8px 12px 0;
+        min-height: 92px;
     }
 
-    /* Ширина места по составу: чем больше соседей, тем теснее каждому (макет составов 2→5). */
-    .opponents[data-count='2'] :global(.seat) {
-        width: 150px;
-    }
-
-    .opponents[data-count='3'] :global(.seat) {
-        width: 112px;
+    /* ═══ C · стол ═══ */
+    .board {
+        flex: 1 1 auto;
+        min-height: 0;
+        display: flex;
+        /* ⭐ По центру, а не по верху: зона стола шире содержимого на разных экранах,
+           и прижатые к верху карты оставляли дыру между столом и подсказкой. */
+        align-items: center;
+        justify-content: space-between;
+        gap: 9px;
+        padding: 10px 14px 0;
     }
 
     /**
-     * ⚠️ Пятеро за столом: соперники в две ступени <b>по двое</b>.
-     *
-     * Одного `flex-wrap` мало — при четырёх местах по 96px трое влезали в первый ряд,
-     * и стол получался «3 + 1». Ровно половина ширины на место делает ступени честными.
+     * Колода и сброс — колонки постоянной ширины со своими подписями ПОД стопкой.
+     * ⚠️ Пока подпись стояла сбоку, она уезжала под карты соседней зоны: «Бито» читалось
+     * как «Би…», а «Колода 0» сталкивалась с «Мой навес».
      */
-    .tiers {
-        flex-wrap: wrap;
-        row-gap: 10px;
-    }
-
-    .tiers :global(.seat) {
-        flex: 0 0 calc(50% - 4px);
-        width: auto;
-    }
-
-    /* Верхняя пара стоит теснее нижней — стол читается как чаша, а не как таблица. */
-    .tiers :global(.seat:nth-child(-n+2)) {
-        padding: 0 26px;
-    }
-
-    /* ⚠️ `min-height` — пол, а не рост: середина обязана уметь сжиматься, иначе на
-       невысоком окне стол выпирает за экран и уводит кнопки хода под нижний край. */
-    .middle {
-        flex: 1 1 auto;
-        min-height: 0;
-        width: 100%;
-        display: grid;
-        grid-template-columns: 84px 1fr 64px;
-        align-items: center;
-        gap: 4px;
-        padding: 0 14px;
-    }
-
-    .deck, .discard {
+    .pile {
+        flex: none;
         display: flex;
         flex-direction: column;
         align-items: center;
         gap: 8px;
     }
 
-    .deck-stack {
+    .stack {
         position: relative;
-        width: calc(108px * var(--s, 1));
-        height: calc(92px * var(--s, 1));
-    }
-
-    /* Счёт колоды — поверх верхней рубашки, а не строкой под ней. */
-    .deck-count {
-        position: absolute;
-        left: calc(44px * var(--s, 1));
-        top: 0;
-        width: calc(60px * var(--s, 1));
-        height: calc(87px * var(--s, 1));
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 2;
-        font-size: 15px;
-        color: #f3ede2;
-        text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
-        pointer-events: none;
+        width: 100%;
     }
 
     /**
-     * Козырная карта лежит поперёк под колодой — как за настоящим столом.
-     *
-     * ⭐ Повёрнута так, чтобы наружу торчал именно угол с номиналом и мастью: козырь
-     * должен читаться с одного взгляда, иначе показывать карту вместо масти незачем.
+     * ⭐ Козырь под колодой повёрнут вокруг центра: по горизонтали он занимает свою
+     * ВЫСОТУ, поэтому сдвиг считается формулой, а не подбирается. Из-под рубашек торчит
+     * ровно угол с номиналом — иначе показывать карту вместо масти незачем.
      */
     .trump-under {
         position: absolute;
-        /* ⚠️ Геометрия, а не подбор: карта 54 повёрнута на 90° вокруг центра, её
-           размах = высота ≈ 78. left 12 кладёт размах ровно в 0..78 — ничего не
-           уезжает за экран, а колода (с 44) оставляет открытыми 44px левого края,
-           где после поворота и лежит угол с номиналом. */
-        left: calc(12px * var(--s, 1));
-        top: calc(24px * var(--s, 1));
+        top: 0;
         transform: rotate(-90deg);
         transform-origin: center center;
         z-index: 0;
     }
 
-    .trump-under :global(.playing-card) {
-        box-shadow: 0 6px 14px rgba(0, 0, 0, 0.5);
-    }
-
-    /* Козырь лежит под колодой боком — видно ровно тот край, что торчит слева. */
-    .trump-card {
-        position: absolute;
-        left: -2px;
-        top: 24px;
-        width: 74px;
-        height: 51px;
-        border-radius: 5px;
-        background: #f4f1ea;
-        color: #191410;
-        display: flex;
-        align-items: center;
-        justify-content: flex-start;
-        padding-left: 7px;
-        font-size: 24px;
-        line-height: 1;
-        box-shadow: 0 8px 18px rgba(0, 0, 0, 0.55);
-    }
-
-    .trump-card.red {
-        color: #c02b36;
-    }
-
-    .pile {
-        position: relative;
-        width: 54px;
-        height: 56px;
-    }
-
-    /* Панель смены козыря: золотая рамка, потому что это событие раздачи, а не её фон. */
-    .trump-change {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-    }
-
-    .tc-head {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        padding: 6px 11px;
-        border: 1px solid var(--gold-soft);
-        border-bottom: 0;
-        border-radius: 11px 11px 0 0;
-        background: linear-gradient(160deg, rgba(240, 205, 138, 0.22), rgba(201, 154, 78, 0.12));
+    .pile-label {
         font-size: 10px;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-        color: var(--gold);
+        color: var(--text-45);
         white-space: nowrap;
     }
 
-    .tc-arrow {
-        color: var(--text-55);
-        text-transform: none;
-        letter-spacing: 0;
-    }
-
-    .tc-body {
+    .empty-pile {
+        aspect-ratio: 1 / 1.452;
+        border-radius: 5px;
+        border: 1px dashed var(--line-strong);
         display: flex;
-        flex-direction: column;
         align-items: center;
-        gap: 6px;
-        padding: 10px 14px;
-        border: 1px solid var(--gold-soft);
-        border-radius: 0 0 13px 13px;
-        background: rgba(6, 9, 8, 0.5);
-    }
-
-    .tc-card :global(.playing-card) {
-        outline: 1px dashed var(--gold-soft);
-        outline-offset: 2px;
-    }
-
-    .tc-note {
-        font-size: 8px;
-        letter-spacing: 0.06em;
-        text-transform: uppercase;
-        color: var(--text-45);
-        text-align: center;
-    }
-
-    .board {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 12px;
-    }
-
-    .slots {
-        display: flex;
-        gap: 10px;
-        flex-wrap: wrap;
         justify-content: center;
+        font-size: 9px;
+        color: var(--text-30);
+        margin: 0 auto;
+    }
+
+    /**
+     * ⭐ Ставка: карты фиксированного размера, до трёх рядов по две пары. Отбиваемых
+     * больше шести не бывает по правилам (§1.5) — значит и переполниться зона не может,
+     * и масштаб карт менять не приходится.
+     */
+    .stake {
+        flex: 1 1 auto;
+        min-width: 0;
+        align-self: stretch;
+        display: flex;
+        flex-wrap: wrap;
+        align-content: center;
+        justify-content: center;
+        gap: 6px 14px;
     }
 
     .slot {
         position: relative;
-        width: calc(78px * var(--s, 1));
-        height: calc(106px * var(--s, 1));
+        flex: none;
+        width: var(--slot-w);
+        height: var(--slot-h);
     }
 
-    .prompt {
+    .defence {
+        position: absolute;
+    }
+
+    .defence :global(.playing-card) {
+        box-shadow: -3px 10px 20px rgba(0, 0, 0, 0.55);
+    }
+
+    .empty-stake {
+        border-radius: 8px;
+        border: 1px dashed var(--gold-soft);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        font-size: 10px;
+        color: var(--gold-soft);
+    }
+
+    /* ═══ D · подсказка хода ═══ */
+    .hint {
+        flex: none;
+        height: 32px;
         display: flex;
         align-items: center;
-        gap: 8px;
-        font: 500 11px var(--mono);
+        justify-content: center;
+        font-size: 11px;
         letter-spacing: 0.08em;
         text-transform: uppercase;
+        color: var(--text-45);
         white-space: nowrap;
+        overflow: hidden;
     }
 
+    .hint.urgent {
+        color: var(--gold);
+    }
+
+    /* ═══ E · мой навес и потайная ═══ */
     .mine {
-        width: 100%;
+        flex: none;
+        height: 72px;
         display: flex;
-        align-items: flex-end;
+        align-items: center;
         justify-content: space-between;
-        padding: 0 20px;
+        gap: 12px;
+        padding: 0 16px;
     }
 
     .my-hung {
         display: flex;
-        align-items: flex-end;
-        gap: 11px;
+        align-items: center;
+        gap: 10px;
+        min-width: 0;
     }
 
-    .hung-row {
+    .hung-stack {
         display: flex;
         align-items: flex-end;
+        flex: none;
     }
 
-    .hung-label {
-        line-height: 1.6;
-        padding-bottom: 2px;
+    .flying-slot {
+        border-radius: 4px;
+        border: 1px dashed var(--line-strong);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 10px;
+        color: var(--text-45);
     }
 
-    .flies {
-        font-size: 7px;
+    .flying-slot.gold {
+        border-color: var(--gold-soft);
+        color: var(--gold);
+    }
+
+    .hung-text {
+        font-size: 10px;
+        line-height: 1.65;
+        color: var(--text-45);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .my-hidden {
+        flex: none;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 4px;
     }
 
     .my-hidden :global(.playing-card) {
@@ -892,16 +957,21 @@
         outline-offset: 2px;
     }
 
-    /* ⚠️ Ширина во всю строку обязательна: по ней считается нахлёст, а без неё контейнер
-       сжимается по содержимому и «доступная ширина» всегда равна ширине веера. */
+    .hidden-label {
+        font-size: 9px;
+        color: var(--text-45);
+    }
+
+    /* ═══ F · моя рука ═══ */
     .hand {
+        flex: none;
+        height: 152px;
         display: flex;
         align-items: flex-end;
         justify-content: center;
         width: 100%;
         box-sizing: border-box;
         padding: 0 8px 6px;
-        flex: none;
     }
 
     .hand-card {
@@ -911,74 +981,24 @@
         display: block;
     }
 
-    /* Нахлёст считает скрипт по числу карт — так рука влезает в экран любой длины. */
     .hand-card + .hand-card {
         margin-left: calc(-1 * var(--overlap, 26px));
     }
 
-    /* Наклон карты в веере: он меняется при добавлении соседей, поэтому доезжает плавно. */
     .fan {
         display: block;
         transition: transform 0.34s cubic-bezier(0.22, 0.61, 0.25, 1);
     }
 
-    /**
-     * Отбившая карта ложится поверх атакующей со сдвигом к правому нижнему углу — видно обе.
-     *
-     * ⚠️ Защита МЕЛЬЧЕ атаки — решение владельца после живой партии, поверх прежнего
-     * правила «настоящая карта не уменьшается»: на телефоне до шести слотов, и
-     * полноразмерная защита закрывала номинал атаки. Читаемость боя важнее
-     * физического правдоподобия.
-     */
-    .defence {
-        position: absolute;
-        left: calc(24px * var(--s, 1));
-        top: calc(30px * var(--s, 1));
-        transform: rotate(3.5deg);
-        transform-origin: 20% 20%;
-    }
-
-    .defence :global(.playing-card) {
-        box-shadow: -3px 10px 20px rgba(0, 0, 0, 0.6);
-    }
-
-    /**
-     * Зов к действию: игра ждёт ровно этой кнопки. Пульс мягкий — подсказка,
-     * а не тревога; «Беру» этого класса не получает никогда.
-     */
-    @keyframes cta-pulse {
-        0%, 100% {
-            box-shadow: 0 0 0 0 rgba(233, 196, 106, 0);
-            border-color: rgba(233, 196, 106, 0.35);
-        }
-        50% {
-            box-shadow: 0 0 0 7px rgba(233, 196, 106, 0.22);
-            border-color: rgba(233, 196, 106, 0.9);
-        }
-    }
-
-    .cta {
-        animation: cta-pulse 1.5s ease-in-out infinite;
-        border: 1px solid rgba(233, 196, 106, 0.35);
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-        .cta {
-            animation: none;
-            border-color: rgba(233, 196, 106, 0.9);
-        }
-    }
-
+    /* ═══ G · кнопки ═══ */
     .actions {
+        flex: none;
         width: 100%;
+        box-sizing: border-box;
         padding: 12px 14px calc(20px + env(safe-area-inset-bottom));
         display: flex;
         gap: 9px;
         background: linear-gradient(to top, rgba(6, 9, 8, 0.94) 55%, rgba(6, 9, 8, 0));
-    }
-
-    .wide {
-        flex: 2;
     }
 
     .narrow {
@@ -987,73 +1007,46 @@
         font-size: 15px;
     }
 
-    .trump {
-        flex: 1;
-        font-size: 22px;
+    .wide {
+        flex: 2;
     }
 
+    .trump {
+        flex: 1;
+        height: 58px;
+    }
+
+    /**
+     * Кто на часах — здесь, а не на столе. Точка красная у отбивающегося, золотая
+     * у ходящего: цвет роли, как и на аватарах.
+     */
     .waiting {
         flex: 2;
         height: 58px;
         display: flex;
         align-items: center;
         justify-content: center;
-        color: var(--text-45);
+        gap: 9px;
+        border-radius: var(--r-btn);
+        border: 1px dashed var(--line-strong);
+        font-size: 13px;
+        letter-spacing: 0.06em;
+        color: var(--text-55);
+    }
+
+    .dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--gold);
+        flex: none;
+    }
+
+    .dot.defend {
+        background: var(--red);
     }
 
     /**
-     * ⭐ Десктоп: соперники садятся дугой, как за настоящим столом, — крайние ниже средних.
-     * Это не украшение: при пятерых ряд из одинаковых мест читается как список, а дуга —
-     * как стол, за которым сидят напротив.
-     */
-    @media (min-width: 900px) {
-        .table-screen {
-            gap: 16px;
-            padding-top: 18px;
-        }
-
-        .opponents {
-            padding: 0 60px;
-            justify-content: space-between;
-            align-items: flex-start;
-        }
-
-        .opponents :global(.seat:first-child),
-        .opponents :global(.seat:last-child) {
-            transform: translateY(46px);
-        }
-
-        /* Двое за столом — соперник один и сидит строго напротив, без дуги. */
-        .opponents:has(:global(.seat:only-child)) :global(.seat) {
-            transform: none;
-        }
-
-        /**
-         * ⭐ На широком экране ступеней нет: четверо садятся одной дугой. Две ступени —
-         * вынужденная мера телефона, где четыре места просто не помещаются по ширине,
-         * и переносить её на десктоп значит объяснять экраном то, чего он не требует.
-         */
-        .tiers {
-            flex-wrap: nowrap;
-            row-gap: 0;
-        }
-
-        .tiers :global(.seat) {
-            flex: 0 0 auto;
-            width: 104px;
-            padding: 0;
-        }
-
-        .middle {
-            grid-template-columns: 160px 1fr 140px;
-            padding: 0 60px;
-        }
-
-        .hand :global(.card-button) {
-            width: 96px !important;
-        }
-
-        /**
      * Зов к действию: игра ждёт ровно этой кнопки. Пульс мягкий — подсказка,
      * а не тревога; «Беру» этого класса не получает никогда.
      */
@@ -1077,17 +1070,6 @@
         .cta {
             animation: none;
             border-color: rgba(233, 196, 106, 0.9);
-        }
-    }
-
-    .actions {
-            max-width: 720px;
-            margin: 0 auto;
-            background: none;
-        }
-
-        .mine {
-            padding: 0 60px;
         }
     }
 </style>

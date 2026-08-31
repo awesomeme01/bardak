@@ -1079,3 +1079,66 @@ func online(t *testing.T, asking *client, friendID string) bool {
 	t.Fatalf("%s не видит друга %s в своём списке", asking.name, friendID)
 	return false
 }
+
+// Вход не должен спотыкаться о пробел в логине.
+//
+// ⚠️ Живая жалоба: «пароль запомнил правильно, а не пускает». Телефонная клавиатура
+// и автозаполнение дописывают хвостовой пробел, и «shabdan » с верным паролем получал
+// то же «неверный логин или пароль», что и злоумышленник. Регистр к тому моменту уже
+// прощался (миграция 0010), а пробел — нет, и увидеть его глазами невозможно.
+//
+// ⭐ Пароль при этом обрезать нельзя: пробел в нём — законный символ.
+func TestLoginForgivesSpacesAroundTheUsernameButNotInThePassword(t *testing.T) {
+	pool := testsupport.Postgres(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cfg := config.Config{
+		JWTSecret:       []byte("тестовый-секрет-достаточной-длины-32+"),
+		InviteCodes:     []string{"bardak-2026"},
+		TurnTimeout:     30 * time.Second,
+		DisconnectGrace: 2 * time.Second,
+		ShutdownTimeout: time.Second,
+	}
+	handler, shutdown := server.Build(ctx, cfg, pool, observability.NewLogger())
+	defer shutdown()
+
+	httpServer := httptest.NewServer(handler)
+	defer httpServer.Close()
+
+	player := newClient(t, httpServer.URL, "пробельный")
+	const password = "пароль-достаточной-длины"
+
+	login := func(username, pass string) int {
+		t.Helper()
+		raw, err := json.Marshal(map[string]any{"username": username, "password": pass})
+		if err != nil {
+			t.Fatal(err)
+		}
+		response, err := http.Post(httpServer.URL+"/api/auth/login",
+			"application/json", bytes.NewReader(raw))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer response.Body.Close()
+		return response.StatusCode
+	}
+
+	for _, probe := range []struct {
+		name     string
+		username string
+		password string
+		want     int
+	}{
+		{"как регистрировали", player.username, password, http.StatusOK},
+		{"пробел в конце логина", player.username + " ", password, http.StatusOK},
+		{"пробел в начале логина", " " + player.username, password, http.StatusOK},
+		{"логин заглавными", strings.ToUpper(player.username), password, http.StatusOK},
+		{"пробел в конце пароля", player.username, password + " ", http.StatusUnauthorized},
+		{"неверный пароль", player.username, "совсем-другой-пароль", http.StatusUnauthorized},
+	} {
+		if got := login(probe.username, probe.password); got != probe.want {
+			t.Errorf("%s: вход ответил %d, ждали %d", probe.name, got, probe.want)
+		}
+	}
+}

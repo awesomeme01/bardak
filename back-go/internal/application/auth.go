@@ -81,6 +81,11 @@ func (s AuthService) Register(ctx context.Context, request RegisterRequest) (Tok
 		return TokenPair{}, ErrInvalidInvite
 	}
 
+	// ⚠️ Логин обрезается по краям и здесь, и при входе — иначе «shabdan » и «shabdan»
+	// это два разных человека, а увидеть разницу глазами невозможно.
+	request.Username = strings.TrimSpace(request.Username)
+	request.DisplayName = strings.TrimSpace(request.DisplayName)
+
 	taken, err := s.users.ExistsByUsernameIgnoreCase(ctx, request.Username)
 	if err != nil {
 		return TokenPair{}, err
@@ -117,9 +122,15 @@ func (s AuthService) Register(ctx context.Context, request RegisterRequest) (Tok
 //
 // ⚠️ Логин ищется БЕЗ учёта регистра, а ответ на «нет такого игрока» и «неверный пароль»
 // один и тот же: иначе по разнице ответов перебирают существующие логины.
+//
+// ⚠️ Обрамляющие пробелы в ЛОГИНЕ обрезаются: телефонная клавиатура и автозаполнение
+// дописывают хвостовой пробел сплошь и рядом, а выглядит это как «пароль верный,
+// но не пускает» — ровно та же болезнь, что была с заглавной первой буквой.
+// ⭐ Пароль при этом НЕ трогается никогда: пробел в нём — законный символ, и обрезав
+// его, мы молча пустили бы не того или не пустили того.
 func (s AuthService) Login(ctx context.Context, username, password string,
 	userAgent *string) (TokenPair, error) {
-	user, err := s.users.FindByUsernameIgnoreCase(ctx, username)
+	user, err := s.users.FindByUsernameIgnoreCase(ctx, strings.TrimSpace(username))
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			return TokenPair{}, ErrInvalidCredentials
