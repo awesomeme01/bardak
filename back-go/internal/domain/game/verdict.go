@@ -28,7 +28,10 @@ const (
 	TrumpNotInDispute        RejectionReason = "TRUMP_NOT_IN_DISPUTE"
 	TrumpNotChosenYet        RejectionReason = "TRUMP_NOT_CHOSEN_YET"
 	NothingToTake            RejectionReason = "NOTHING_TO_TAKE"
-	MustRevealFaceDown       RejectionReason = "MUST_REVEAL_FACE_DOWN"
+	// NothingToPass — пас при пустом столе. ⚠️ Кода нет в эталонной Java: там пас
+	// при пустом столе принимался и просто закрывал раунд, ничем не сыграв.
+	NothingToPass      RejectionReason = "NOTHING_TO_PASS"
+	MustRevealFaceDown RejectionReason = "MUST_REVEAL_FACE_DOWN"
 )
 
 // MoveVerdict — приговор по ходу: разрешён либо отклонён с причиной.

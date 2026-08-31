@@ -12,6 +12,7 @@
      */
     import Avatar from './Avatar.svelte';
     import Card from './Card.svelte';
+    import CardChip from './CardChip.svelte';
     import {anchorPoint} from './motion.svelte.js';
 
     /**
@@ -74,7 +75,19 @@
         return null;
     });
 
-    /** Что летит соседу следующим: шкала навесов и есть счёт в игре (ADR-017). */
+    /**
+     * ⭐ Значок навеса показывает РАЗНОЕ в зависимости от того, есть ли что показывать:
+     *
+     *   навесили — настоящая карта (последняя, она же старшая ступень);
+     *   не навесили — плейсхолдер с тем, что ПОЛЕТИТ следующим.
+     *
+     * ⚠️ Раньше значок всегда показывал «что летит», и это врало в самый важный момент:
+     * игроку навесили джокера, а на аватаре стояла «6» — следующая ступень от нуля.
+     * Висящее и летящее — разные вещи, и путать их нельзя: первое уже случилось.
+     */
+    const hungCard = $derived(seat.hung.length ? seat.hung[seat.hung.length - 1] : null);
+
+    /** Что полетит следующим — только когда слот пуст. */
     const flying = $derived(seat.nextIsJoker ? '🃏' : seat.nextNavesRank ?? '6');
 </script>
 
@@ -83,20 +96,34 @@
         <span class="anchor" use:anchorPoint={`seat-${seat.seatNo}`}></span>
         <Avatar userId={seat.userId} {size} {tone} pulse={active && !seat.passed}/>
 
-        <!-- Счёт карт: бейдж на аватаре, а не строка под ним. -->
-        <span class="count mono" style="height:{badgeHeight}px">
+        <!--
+          Счёт карт: бейдж на аватаре, а не строка под ним.
+          ⭐ «+1» означает потайную карту (§1.8): её содержимое не знает никто, но сам
+          факт — знание тактическое. По нему считают, сколько соперник МОГ БЫ отбить,
+          и решают, стоит ли вынуждать её вскрыть.
+        -->
+        <span class="count mono" style="height:{badgeHeight}px"
+              title={seat.hasHiddenCard ? `${seat.cardsCount} карт и потайная` : `${seat.cardsCount} карт`}>
             <Card faceDown width={backWidth}/>
-            {seat.cardsCount}
+            {seat.cardsCount}{#if seat.hasHiddenCard}<span class="hidden-plus">+1</span>{/if}
         </span>
 
         <!--
-          ⭐ Навесы соседа сведены к ОДНОМУ бейджу: «что летит следующим». Стопка карт
-          показывала, сколько навесили, а в игре считают, сколько осталось до джокера
-          (ADR-017) — и это ровно один символ вместо ряда картинок.
+          Слот навеса соседа: что на нём лежит сейчас, а не что прилетит потом.
+          Стопку целиком показывать негде, поэтому видна верхняя карта и счёт остальных —
+          в игре считают ступень, а не количество (ADR-017).
         -->
-        <span class="naves mono" class:hung={seat.hung.length > 0} class:gold={seat.nextIsJoker}
-              style="width:{navesWidth}px; height:{navesHeight}px"
-              use:anchorPoint={`hung-${seat.seatNo}`}>{flying}</span>
+        <span class="naves" use:anchorPoint={`hung-${seat.seatNo}`}>
+            {#if hungCard}
+                <CardChip code={hungCard} width={navesWidth + 6}/>
+                {#if seat.hung.length > 1}
+                    <span class="more mono">{seat.hung.length}</span>
+                {/if}
+            {:else}
+                <span class="flying mono" class:joker={seat.nextIsJoker}
+                      style="width:{navesWidth}px; height:{navesHeight}px">{flying}</span>
+            {/if}
+        </span>
 
         <!--
           ⭐ Кнопка навеса висит ПОВЕРХ имени, а не отдельной строкой: окно навеса
@@ -167,30 +194,50 @@
         border-radius: 1px;
     }
 
+    .hidden-plus {
+        margin-left: 2px;
+        color: var(--gold);
+    }
+
     .naves {
         position: absolute;
         left: -7px;
         bottom: -3px;
-        border-radius: 3px;
-        border: 1px dashed rgba(240, 205, 138, 0.5);
-        background: rgba(8, 12, 10, 0.75);
         display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 9px;
-        color: var(--gold);
+        align-items: flex-end;
         line-height: 1;
     }
 
-    /* Сплошная рамка — уже навешено; пунктир — ещё летит. */
-    .naves.hung {
-        border-style: solid;
-        border-color: rgba(240, 205, 138, 0.75);
+    /* ⚠️ Пунктир — «пока пусто, полетит вот это»; настоящая карта рамки не требует. */
+    .flying {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 3px;
+        border: 1px dashed rgba(127, 216, 166, 0.55);
+        background: rgba(8, 12, 10, 0.75);
+        font-size: 9px;
+        color: var(--green);
     }
 
-    .naves.gold {
+    /* Летит джокер — это последняя ступень, и предупреждать надо заметнее. */
+    .flying.joker {
         border-color: var(--gold);
+        color: var(--gold);
         box-shadow: 0 0 0 2px rgba(240, 205, 138, 0.18);
+    }
+
+    /* Сколько всего навешено: цифра нужна, только когда карт больше одной. */
+    .more {
+        margin-left: -4px;
+        align-self: flex-start;
+        padding: 0 3px;
+        border-radius: 6px;
+        background: rgba(8, 12, 10, 0.92);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        font-size: 8px;
+        font-weight: 700;
+        color: var(--text);
     }
 
     .hang-cta {

@@ -318,3 +318,36 @@ func hasEvent(events []DealEvent, match func(DealEvent) bool) bool {
 	}
 	return false
 }
+
+// Пас при пустом столе — не ход, а отказ начать раунд.
+//
+// ⚠️ Живая партия: у атакующего пустой стол, подсказка «твоя атака», и рядом кнопка
+// «Пас». Нажатие закрывало раунд, не сыграв ни одной карты, — предложение, которое
+// ничего не значит и только путает. Пас означает «больше не подкидываю», а подкидывать
+// в этот момент ещё нечего.
+//
+// ⭐ С пустой рукой пас, наоборот, единственный выход: вышедший из раздачи закрывает
+// им раунд, и без этого раздача не заканчивалась бы вовсе.
+func TestPassIsRefusedOnAnEmptyTableWhileThereIsSomethingToPlay(t *testing.T) {
+	engine := NewDealEngineFor(DefaultRulesConfig())
+
+	withCards := aDeal().withPlayers(2).withPhase(PhaseAttack).
+		withHand(0, NewPip(Ace, Clubs)).withHand(1, NewPip(King, Hearts)).
+		withAttackRight(0).withDefender(1).build()
+
+	if result := engine.Apply(withCards.Clone(), PassCommand{Seat: 0}); result.Applied {
+		t.Error("пас при пустом столе принят, хотя игроку есть чем атаковать")
+	} else if result.Reason != NothingToPass {
+		t.Errorf("причина отказа %s, ждали NOTHING_TO_PASS", result.Reason)
+	}
+
+	// Стол не пуст — пас законен: это и есть «больше не подкидываю».
+	withAttack := aDeal().withPlayers(2).withPhase(PhaseAttack).
+		withHand(0, NewPip(Ace, Clubs)).withHand(1, NewPip(King, Hearts)).
+		withAttack(NewPip(Six, Spades)).
+		withAttackRight(0).withDefender(1).build()
+
+	if result := engine.Apply(withAttack.Clone(), PassCommand{Seat: 0}); !result.Applied {
+		t.Errorf("пас при непустом столе отклонён: %s", result.Reason)
+	}
+}

@@ -320,6 +320,20 @@ func (e DealEngine) applyPass(state DealState, cmd PassCommand) MoveResult {
 	if len(state.Table) == 0 && state.MustPlayerAt(cmd.Seat).CanPlayFaceDown(state.IsDeckEmpty()) {
 		return RejectedResult(MustRevealFaceDown)
 	}
+	// ⚠️ Пас при ПУСТОМ столе, когда ходить ЕСТЬ ЧЕМ, — это не ход, а отказ начать
+	// раунд. Пас означает «больше не подкидываю», а подкидывать ещё нечего: начавший
+	// раунд обязан атаковать, и при пустом столе ранг ничем не ограничен — подойдёт
+	// любая карта из руки.
+	//
+	// Живая партия показала кнопку «Пас» ровно в момент собственной атаки: предложение,
+	// которое ничего не значит, но которое игрок нажимает — и раунд закрывается впустую.
+	//
+	// ⭐ С пустой рукой пас, наоборот, ЕДИНСТВЕННЫЙ выход: вышедший из раздачи закрывает
+	// им раунд, и без этого раздача не заканчивалась бы вовсе. Тесты матча поймали
+	// ровно этот случай, когда запрет был написан шире.
+	if len(state.Table) == 0 && len(state.MustPlayerAt(cmd.Seat).Hand) > 0 {
+		return RejectedResult(NothingToPass)
+	}
 
 	afterPass := state.WithPassed(cmd.Seat)
 	events := []DealEvent{NewPassed(cmd.Seat)}
