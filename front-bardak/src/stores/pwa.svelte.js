@@ -10,6 +10,16 @@ import {apiDelete, apiGet, apiPost} from '../net/rest-client.js';
 export const pwa = $state({
     updateReady: false,   // новый воркер ждёт применения
     installPrompt: null,  // событие браузера «можно поставить на домашний экран»
+    /**
+     * ⚠️ На iOS ставить приложение можно ТОЛЬКО руками: события
+     * `beforeinstallprompt` в Safari не существует, и кнопки установки не будет
+     * никогда — это решение Apple, а не наш недосмотр. Единственное, что мы можем, —
+     * сказать, куда нажимать.
+     *
+     * ⭐ И только в самом Safari: из встроенных браузеров (Instagram, Telegram)
+     * пункта «На экран «Домой»» нет вовсе, сколько бы манифестов мы ни отдали.
+     */
+    iosHint: false,
     online: true,
     pushEnabled: false,
     pushError: null,
@@ -27,6 +37,17 @@ export function initPwa() {
 
     // Браузер сам решает, когда предложить установку; событие надо перехватить,
     // иначе оно пропадёт, и кнопку показать будет уже не по чему.
+    // Уже стоит на домашнем экране — подсказывать нечего.
+    // ⚠️ `navigator.standalone` — нестандартное свойство iOS Safari, и типов у него нет.
+    // Именно оно отвечает «приложение уже на домашнем экране» там, где display-mode
+    // старым Safari не поддерживается.
+    const iosStandalone = /** @type {{standalone?: boolean}} */ (window.navigator).standalone;
+    const standalone = window.matchMedia('(display-mode: standalone)').matches
+        || iosStandalone === true;
+    const ios = /iphone|ipad|ipod/i.test(window.navigator.userAgent)
+        || (window.navigator.platform === 'MacIntel' && window.navigator.maxTouchPoints > 1);
+    pwa.iosHint = ios && !standalone;
+
     window.addEventListener('beforeinstallprompt', (event) => {
         event.preventDefault();
         pwa.installPrompt = event;

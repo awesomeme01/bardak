@@ -50,10 +50,20 @@
 
 <!-- ⭐ Установка и уведомления не должны занимать место в игре: это тонкая строка,
      а не панель поверх стола. -->
-{#if (pwa.installPrompt || canSubscribe) && !inMatch}
+{#if (pwa.installPrompt || pwa.iosHint || canSubscribe) && !inMatch}
     <div class="offers">
         {#if pwa.installPrompt}
             <button class="offer" type="button" onclick={installApp}>Поставить на телефон</button>
+        {:else if pwa.iosHint}
+            <!--
+              ⚠️ На iOS кнопки установки не существует: события `beforeinstallprompt`
+              в Safari нет, и приглашение показать нечем. Остаётся сказать словами,
+              куда нажимать — и что делать это надо именно в Safari: из встроенных
+              браузеров (Instagram, Telegram) пункта «На экран «Домой»» нет вовсе.
+            -->
+            <span class="offer hint mono">
+                Поставить на телефон: в Safari «Поделиться» → «На экран «Домой»»
+            </span>
         {/if}
         {#if canSubscribe}
             <!-- Разрешение спрашивается только по нажатию: см. stores/pwa.svelte.js. -->
@@ -85,6 +95,11 @@
         justify-content: center;
         gap: 14px;
         padding: 6px 20px 10px;
+    }
+
+    .hint {
+        cursor: default;
+        opacity: 0.75;
     }
 
     .offer {

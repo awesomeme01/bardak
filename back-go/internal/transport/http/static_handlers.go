@@ -16,6 +16,10 @@ import (
 // audio/mp4 — тип, который понимают все.
 func init() {
 	_ = mime.AddExtensionType(".m4a", "audio/mp4")
+	// ⚠️ Без этого манифест уезжает как text/plain: своей записи для .webmanifest
+	// в системной таблице нет. Браузеры обычно прощают, но «обычно» — плохая опора
+	// для установки на домашний экран.
+	_ = mime.AddExtensionType(".webmanifest", "application/manifest+json")
 }
 
 // StaticHandlers — собранный фронт и ассеты наборов карт.
