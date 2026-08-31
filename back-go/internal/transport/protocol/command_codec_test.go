@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"encoding/json"
+	"reflect"
 	"testing"
 
 	"github.com/awesomeme01/bardak/back-go/internal/domain/game"
@@ -123,7 +124,10 @@ func TestActionsRoundTripBackToCommands(t *testing.T) {
 			t.Errorf("%T: действие %q не разбирается обратно: %v", original, action.Type, err)
 			continue
 		}
-		if back != original {
+		// ⚠️ Сравниваем глубоко, а не через ==: у навеса появился список
+		// дополнительных карт (§2.3), и структура команды перестала быть сравнимой.
+		// Прежнее `!=` роняло тест паникой «comparing uncomparable type».
+		if !reflect.DeepEqual(back, original) {
 			t.Errorf("%T разошлось после кругового прогона: %#v", original, back)
 		}
 	}

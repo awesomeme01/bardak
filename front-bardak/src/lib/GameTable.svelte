@@ -58,6 +58,55 @@
      */
     const hangable = $derived(new Set(actions.hangs.map((action) => action.payload.cardCode)));
 
+    /**
+     * Действует ли правило отстающего (§2.3): у жертвы САМЫЙ НИЗКИЙ уровень среди тех,
+     * кто ещё в раздаче, и он такой один. Тогда навесить может любой, а копии одного
+     * ранга можно отдать пачкой — уровень всё равно поднимется на одну ступень.
+     *
+     * ⭐ Считается на клиенте, а не приходит с сервера: всё нужное уже есть в снимке
+     * (уровни и «кто в раздаче»), и заводить ради этого поле в протоколе значило бы
+     * держать один и тот же факт в двух местах. Сервер всё равно проверит сам.
+     */
+    const laggardRule = $derived.by(() => {
+        if (!hangingNow) {
+            return false;
+        }
+        const active = (game?.players ?? []).filter((player) => player.inDeal);
+        const stepOf = (player) => (player.nextIsJoker
+            ? RANK_ORDER.length
+            : RANK_ORDER.indexOf(player.nextNavesRank ?? '6'));
+        let lowest = Infinity;
+        let onLowest = 0;
+        let lowestSeat = null;
+        for (const player of active) {
+            const step = stepOf(player);
+            if (step < lowest) {
+                lowest = step;
+                onLowest = 1;
+                lowestSeat = player.seatNo;
+            } else if (step === lowest) {
+                onLowest++;
+            }
+        }
+        return onLowest === 1 && lowestSeat === game.hangingVictimSeat;
+    });
+
+    /**
+     * Отмеченные для навеса карты.
+     *
+     * ⚠️ Кнопка навеса раньше отправляла карту сразу, и при правиле отстающего это
+     * означало «нажал — улетела одна», без возможности отдать больше или выбрать какие.
+     * Теперь карты набираются нажатиями, а кнопка отправляет набор.
+     */
+    let hangPicks = $state(new Set());
+
+    // Окно закрылось — набор ни к чему не относится.
+    $effect(() => {
+        if (!hangingNow && hangPicks.size) {
+            hangPicks = new Set();
+        }
+    });
+
     /** Идёт окно навеса — своё или чужое. */
     const hangingNow = $derived(game?.hangingVictimSeat !== null && game?.hangingVictimSeat !== undefined);
 
@@ -230,7 +279,11 @@
         if (game.hangingVictimSeat !== seat.seatNo || !actions.hangs.length) {
             return null;
         }
-        return `Навесить ${seat.nextIsJoker ? '🃏' : seat.nextNavesRank ?? ''}`.trim();
+        const rank = seat.nextIsJoker ? '🃏' : seat.nextNavesRank ?? '';
+        if (laggardRule && hangPicks.size > 1) {
+            return `Навесить ${rank} · ${hangPicks.size}`.trim();
+        }
+        return `Навесить ${rank}`.trim();
     }
 
     /**
@@ -242,6 +295,15 @@
      * и нажатие выглядело так, будто кнопка не работает.
      */
     function takeHangCard() {
+        const picked = [...hangPicks];
+        if (picked.length) {
+            // ⭐ Первая карта — обычное поле команды, остальные копии едут рядом:
+            // так навес одной картой и навес пачкой остаются одной командой.
+            const [first, ...rest] = picked;
+            hangPicks = new Set();
+            play({type: 'HANG_CARD', payload: {cardCode: first, moreCards: rest}});
+            return;
+        }
         const hang = actions.hangs[0];
         if (hang) {
             run(hang);
@@ -380,6 +442,14 @@
      * Теперь карта поднимается всегда, а кнопка внизу объясняет, что с ней будет.
      */
     function tapCard(code) {
+        // ⭐ При правиле отстающего карты НАБИРАЮТСЯ: нажатие добавляет или убирает
+        // карту из набора, а отправляет его кнопка у жертвы.
+        if (laggardRule && hangable.has(code)) {
+            const next = new Set(hangPicks);
+            next.has(code) ? next.delete(code) : next.add(code);
+            hangPicks = next;
+            return;
+        }
         selected = selected === code ? null : code;
     }
 
@@ -624,7 +694,8 @@
             <span class="hand-card" animate:flip={{duration: TIMING.move}}>
                 <span class="fan" style="transform: rotate({offset * tiltStep}deg) translateY({Math.abs(offset) * 4}px)">
                     <span use:flyFrom={{key: code, pool: 'hand', delay: index * 40}}>
-                        <Card {code} width={cardWidth} selected={selected === code}
+                        <Card {code} width={cardWidth}
+                              selected={selected === code || hangPicks.has(code)}
                               playable={hangingNow && hangable.has(code)}
                               onclick={() => tapCard(code)}
                               style={selected === code ? 'transform: translateY(-18px)' : ''}/>

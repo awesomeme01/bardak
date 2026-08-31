@@ -446,10 +446,25 @@ func (e DealEngine) applyHangCard(state DealState, cmd HangCardCommand) MoveResu
 	if state.Phase != PhaseHanging || window == nil || !window.IsSeatOnCurrentStep(cmd.Seat) {
 		return RejectedResult(NotInHangingWindow)
 	}
-	if verdict := e.hanging.CanHang(state, cmd.Seat, window.VictimSeat, cmd.Card); !verdict.IsAllowed() {
-		return RejectedResult(verdict.Reason())
+	// ⭐ Несколько карт разом — только когда право у всех (уникальный отстающий, §2.3).
+	// В обычном навесе спор решается костью, и «кто больше выложил» роли не играет.
+	cards := append([]Card{cmd.Card}, cmd.Also...)
+	if len(cards) > 1 && !window.EveryClaimantHangs {
+		return RejectedResult(ExtraHangsNotAllowed)
 	}
-	claimed := window.WithClaim(HangClaim{SeatNo: cmd.Seat, Card: cmd.Card})
+	seen := make(map[Card]bool, len(cards))
+	for _, card := range cards {
+		// ⚠️ Одну и ту же карту дважды не отдать: рука не резиновая, а проверка
+		// «есть в руке» по отдельности этого не ловит.
+		if seen[card] {
+			return RejectedResult(CardNotInHand)
+		}
+		seen[card] = true
+		if verdict := e.hanging.CanHang(state, cmd.Seat, window.VictimSeat, card); !verdict.IsAllowed() {
+			return RejectedResult(verdict.Reason())
+		}
+	}
+	claimed := window.WithClaims(cmd.Seat, cards)
 	next := state.Clone()
 	next.HangingWindow = &claimed
 	advanced, events := e.advanceWindow(next, []DealEvent{})

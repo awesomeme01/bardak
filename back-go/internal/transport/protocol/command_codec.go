@@ -14,7 +14,9 @@ import (
 type commandPayload struct {
 	CardCode       string `json:"cardCode"`
 	TargetCardCode string `json:"targetCardCode"`
-	Suit           string `json:"suit"`
+	// MoreCards — дополнительные копии того же ранга при навесе отстающему (§2.3).
+	MoreCards []string `json:"moreCards"`
+	Suit      string   `json:"suit"`
 }
 
 // ToCommand переводит сообщение протокола в команду движка.
@@ -66,7 +68,17 @@ func ToCommand(commandType string, seatNo int, raw json.RawMessage) (game.DealCo
 		if err != nil {
 			return nil, err
 		}
-		return game.HangCardCommand{Seat: seatNo, Card: card}, nil
+		// ⚠️ Именно nil, а не пустой слайс: «дополнительных карт нет» и «их ноль штук» —
+		// одно и то же, а круговой прогон команды эти два состояния различает.
+		var also []game.Card
+		for _, code := range payload.MoreCards {
+			extra, err := DecodeCard(code)
+			if err != nil {
+				return nil, err
+			}
+			also = append(also, extra)
+		}
+		return game.HangCardCommand{Seat: seatNo, Card: card, Also: also}, nil
 
 	case "HANG_SKIP":
 		return game.HangSkipCommand{Seat: seatNo}, nil

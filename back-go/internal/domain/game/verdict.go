@@ -30,8 +30,11 @@ const (
 	NothingToTake            RejectionReason = "NOTHING_TO_TAKE"
 	// NothingToPass — пас при пустом столе. ⚠️ Кода нет в эталонной Java: там пас
 	// при пустом столе принимался и просто закрывал раунд, ничем не сыграв.
-	NothingToPass      RejectionReason = "NOTHING_TO_PASS"
-	MustRevealFaceDown RejectionReason = "MUST_REVEAL_FACE_DOWN"
+	NothingToPass RejectionReason = "NOTHING_TO_PASS"
+	// ExtraHangsNotAllowed — несколько карт разом можно отдать только когда право
+	// у всех (уникальный отстающий, §2.3). Обычный навес — это одна карта.
+	ExtraHangsNotAllowed RejectionReason = "EXTRA_HANGS_NOT_ALLOWED"
+	MustRevealFaceDown   RejectionReason = "MUST_REVEAL_FACE_DOWN"
 )
 
 // MoveVerdict — приговор по ходу: разрешён либо отклонён с причиной.

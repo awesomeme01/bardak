@@ -69,9 +69,21 @@ func (w HangingWindow) HasNextStep() bool { return w.StepIndex+1 < len(w.Steps) 
 
 // WithClaim — заявка принята; заявившийся считается решившим.
 func (w HangingWindow) WithClaim(claim HangClaim) HangingWindow {
+	return w.WithClaims(claim.SeatNo, []Card{claim.Card})
+}
+
+// WithClaims — несколько карт одним действием от ОДНОГО места.
+//
+// ⚠️ «Решившим» место становится ровно один раз, сколько бы карт ни отдало: иначе
+// ступень окна считалась бы исчерпанной раньше времени, и соседи не успели бы заявиться.
+func (w HangingWindow) WithClaims(seatNo int, cards []Card) HangingWindow {
 	next := w
-	next.Claims = append(append([]HangClaim(nil), w.Claims...), claim)
-	next.Decided = append(append([]int(nil), w.Decided...), claim.SeatNo)
+	claims := append([]HangClaim(nil), w.Claims...)
+	for _, card := range cards {
+		claims = append(claims, HangClaim{SeatNo: seatNo, Card: card})
+	}
+	next.Claims = claims
+	next.Decided = append(append([]int(nil), w.Decided...), seatNo)
 	return next
 }
 
