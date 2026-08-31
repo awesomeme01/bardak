@@ -2,7 +2,11 @@
 <html lang="ru">
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <!-- ⚠️ user-scalable=no iOS Safari во вкладке ИГНОРИРУЕТ (с iOS 10, ради доступности),
+         зато слушается в режиме домашнего экрана и в Android. Поэтому запрет зума
+         собран из трёх слоёв: этого, touch-action в стилях и gesture-событий в main.js. -->
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
     <title>Бардак</title>
     <meta name="description" content="Игра в бардак с навесами">
     <!-- Цвет строки состояния: тот же тёмный, что и фон комнаты, — иначе шапка телефона

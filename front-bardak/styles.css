@@ -68,6 +68,14 @@ body {
     color: var(--text);
     font: 500 15px/1.5 var(--body);
     -webkit-font-smoothing: antialiased;
+    /*
+     * ⭐ Двойной тап больше не увеличивает страницу: в игре по картам стучат часто
+     * и быстро, и второе нажатие подряд означает второй ход, а не «приблизь».
+     *
+     * ⚠️ Именно manipulation, а не none: прокрутку списков (история, лобби, друзья)
+     * убивать нельзя, а none убивает и её.
+     */
+    touch-action: manipulation;
     /* Вырез и домашняя полоса телефона: игра идёт во весь экран. */
     padding: env(safe-area-inset-top) env(safe-area-inset-right)
              env(safe-area-inset-bottom) env(safe-area-inset-left);
