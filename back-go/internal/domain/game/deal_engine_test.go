@@ -158,16 +158,27 @@ func TestTakeKeepsRoundAliveForFollowUps(t *testing.T) {
 	}
 }
 
-// ⭐ После «беру» рука взявшего больше не ограничивает подкид: он всё равно заберёт всё.
-func TestTakersHandSizeIsIgnoredForFollowUps(t *testing.T) {
+// ⭐ Рука защищающегося ограничивает подкид И ПОСЛЕ «беру» (§1.4.2, решение владельца
+// 2026-08-31). Раньше было наоборот — «он всё равно заберёт всё», — и живая партия
+// показала, во что это превращается: у игрока одна карта, а ему кладут четыре.
+func TestTakersHandSizeStillCapsFollowUps(t *testing.T) {
 	extra := NewPip(Seven, Clubs)
-	state := aDeal().withPlayers(3).
+	oneCard := aDeal().withPlayers(3).
 		withHand(0, extra).
-		withHand(1, NewPip(Ace, Hearts)). // одна карта
+		withHand(1, NewPip(Ace, Hearts)). // одна карта — одну и отобьёт
 		withAttack(NewPip(Seven, Diamonds)).
 		withPhase(PhaseTaking).withAttackRight(0).build()
 
-	mustApply(t, state, AttackCommand{Seat: 0, Card: extra})
+	mustReject(t, oneCard, AttackCommand{Seat: 0, Card: extra}, DefenderHasTooFewCards)
+
+	// Две карты в руке — второй подкид проходит: запас есть.
+	twoCards := aDeal().withPlayers(3).
+		withHand(0, extra).
+		withHand(1, NewPip(Ace, Hearts), NewPip(King, Spades)).
+		withAttack(NewPip(Seven, Diamonds)).
+		withPhase(PhaseTaking).withAttackRight(0).build()
+
+	mustApply(t, twoCards, AttackCommand{Seat: 0, Card: extra})
 }
 
 // ...но потолок раунда остаётся.

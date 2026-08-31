@@ -30,9 +30,16 @@ func (r MoveRules) CanAttack(state DealState, seatNo int, card Card) MoveVerdict
 	if len(state.Table) > 0 && !state.HasRankOnTable(card) {
 		return Rejected(RankNotOnTable)
 	}
-	if state.Phase == PhaseTaking {
-		return Allowed()
-	}
+	// ⭐ Больше, чем защищающийся способен отбить, подкинуть нельзя — И ПОСЛЕ «БЕРУ» ТОЖЕ
+	// (решение владельца 2026-08-31, §1.4.2).
+	//
+	// ⚠️ Раньше здесь стоял ранний выход по фазе TAKING: объявивший «беру» переставал
+	// быть защитой, и потолком оставался только лимит раунда. Живая партия показала,
+	// во что это превращается: у игрока одна карта, а ему кладут четыре. Запас считается
+	// по руке всегда — «сколько он мог бы отбить», а не «сколько влезет в раунд».
+	//
+	// ⭐ Потайная карта в счёт входит (§1.8): именно из-за этого работает тактика
+	// «вынудить открыть потайную».
 	if state.UnbeatenCount()+1 > state.Defender().DefendableCards(state.IsDeckEmpty()) {
 		return Rejected(DefenderHasTooFewCards)
 	}

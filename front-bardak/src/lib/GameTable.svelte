@@ -303,6 +303,37 @@
         return {name: seat.displayName, role: defending ? 'отбивается' : 'ходит', defending};
     });
 
+    /**
+     * Рука разложена по мастям, внутри масти — по возрастанию номинала.
+     *
+     * ⭐ Масти чередуются по цвету (♦ ♠ ♥ ♣), а не идут подряд красные и подряд чёрные:
+     * в веере с нахлёстом видно только узкую полоску карты, и две соседние красные масти
+     * сливаются в одно пятно. Чередование делает границу между мастями видимой.
+     *
+     * ⚠️ Сортируется ТОЛЬКО показ. Порядок в состоянии — дело сервера, и переставлять
+     * его здесь нельзя: карта опознаётся по коду, а не по месту в списке.
+     */
+    const SUIT_ORDER = {diamonds: 0, spades: 1, hearts: 2, clubs: 3};
+    const RANK_ORDER = ['6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
+
+    function handOrder(code) {
+        // Джокеры не принадлежат масти и живут в конце руки — как и на шкале навесов.
+        if (code.startsWith('Joker')) {
+            return [9, 0];
+        }
+        const [rank, suit] = code.split('-');
+        return [SUIT_ORDER[suit] ?? 8, RANK_ORDER.indexOf(rank)];
+    }
+
+    const sortedHand = $derived.by(() => {
+        const hand = [...(game?.myHand ?? [])];
+        return hand.sort((left, right) => {
+            const [leftSuit, leftRank] = handOrder(left);
+            const [rightSuit, rightRank] = handOrder(right);
+            return leftSuit - rightSuit || leftRank - rightRank;
+        });
+    });
+
     /** Наклон карты в веере: чем больше рука, тем мельче шаг. */
     const tiltStep = $derived(Math.min(5, 60 / Math.max(1, game?.myHand.length ?? 1)));
 
@@ -587,8 +618,8 @@
     -->
     <div class="hand" style="--overlap:{overlap}px" use:anchorPoint={'hand'}
          bind:clientWidth={handWidth}>
-        {#each game.myHand as code, index (code)}
-            {@const middle = (game.myHand.length - 1) / 2}
+        {#each sortedHand as code, index (code)}
+            {@const middle = (sortedHand.length - 1) / 2}
             {@const offset = index - middle}
             <span class="hand-card" animate:flip={{duration: TIMING.move}}>
                 <span class="fan" style="transform: rotate({offset * tiltStep}deg) translateY({Math.abs(offset) * 4}px)">

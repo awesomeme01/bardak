@@ -1,6 +1,8 @@
 <script>
+    /** Реплей открывается сменой адреса: у него свой /history/<матч>. */
+    let {onReplay} = $props();
     import {onMount} from 'svelte';
-    import {history, loadHistory, loadReplay, openMatch} from '../stores/history.svelte.js';
+    import {history, loadHistory, openMatch} from '../stores/history.svelte.js';
     import RatingChart from './RatingChart.svelte';
     import {degreeName, deltaText, levelName, reasonName, suitName} from './naming.js';
 
@@ -111,7 +113,7 @@
 
                         <div class="row">
                             <button class="btn-small" type="button"
-                                    onclick={() => loadReplay(match.id)}>Смотреть реплей</button>
+                                    onclick={() => onReplay(match.id)}>Смотреть реплей</button>
                         </div>
 
                     </div>

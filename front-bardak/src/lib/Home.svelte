@@ -14,7 +14,7 @@
     import {table} from '../stores/table.svelte.js';
     import {openConnection} from '../stores/connection.svelte.js';
     import {dismissInvite, friends, invite} from '../stores/friends.svelte.js';
-    import {closeReplay, history} from '../stores/history.svelte.js';
+    import {closeReplay, history, loadReplay} from '../stores/history.svelte.js';
     import {openByCode} from '../stores/lobby.svelte.js';
     import {consumeInvite, forgetInvite, inviteLink, loadInviteTable}
         from '../stores/invite-link.svelte.js';
@@ -27,28 +27,40 @@
     import Profile from './Profile.svelte';
     import Stats from './Stats.svelte';
     import Leaders from './Leaders.svelte';
-
-    let screen = $state('lobby');   // lobby | table | history | friends | profile | stats | leaders
-
-    /**
-     * Чей профиль смотрим. ⭐ Экран статистики один на себя и на чужого — различие
-     * сводится к этому идентификатору, а не к отдельному экрану.
-     */
-    let viewing = $state(/** @type {{id: string, name: string, from: string} | null} */ (null));
+    import {go, replace, route, screenOf} from '../stores/route.svelte.js';
 
     /**
-     * ⚠️ Откуда пришли — часть состояния, а не догадка. Чужой профиль открывают и из
-     * таблицы лидеров, и из списка друзей; без этого «назад» из друзей уводило бы
-     * в таблицу, где игрок не был.
+     * ⭐ Экран берётся из АДРЕСА, а не из своей переменной. Отсюда всё остальное:
+     * «назад» в браузере работает сам собой, перезагрузка возвращает туда же, где был,
+     * а ссылкой на раздел можно поделиться.
      */
+    const view = $derived(screenOf(route.path));
+    const screen = $derived(view.screen === 'player' ? 'stats' : view.screen);
+
+    /** Чужой профиль: экран статистики тот же, отличается только идентификатором. */
+    const viewingId = $derived(view.screen === 'player' ? view.param : null);
+
+    /**
+     * Имя того, чей профиль открыли.
+     *
+     * ⚠️ Живёт отдельно от адреса и намеренно: по прямой ссылке имени взять неоткуда,
+     * и экран статистики обязан открываться без него. Клик из таблицы или из друзей
+     * имя знает — тогда шапка не мигает «загрузкой» на ровном месте.
+     */
+    let playerName = $state(null);
+
     function showPlayer(id, name) {
-        viewing = {id, name, from: screen};
-        screen = 'stats';
+        playerName = name;
+        go(`/player/${id}`);
     }
 
+    /**
+     * ⭐ «Назад» — это назад по истории браузера, а не «на экран, откуда пришли».
+     * Раньше приложение помнило источник перехода само; теперь помнить нечего —
+     * этим занимается браузер, и одинаково для своей кнопки и для системной.
+     */
     function closePlayer() {
-        screen = viewing?.from ?? 'lobby';
-        viewing = null;
+        window.history.back();
     }
 
     let error = $state(null);
@@ -69,12 +81,20 @@
             // Возвращаемся за стол сами: место осталось за игроком, даже если вкладку закрыли.
             await restoreTable();
             if (lobby.current) {
-                screen = 'table';
+                // ⚠️ Адрес главнее: перезагрузка на /history обязана оставить в истории,
+                // даже если человек сидит за столом. Сажаем сами только с корня —
+                // то есть когда раздел не выбран вовсе.
+                if (route.path === '/') {
+                    replace('/table');
+                }
                 // ⚠️ Уже сидим за столом — ссылка не утаскивает с текущей партии сама.
                 // Но и молчать нельзя: человек нажал ссылку и вправе знать, что она
                 // дошла. Показываем оклик и даём решить.
                 await offerInviteLink();
                 return;
+            }
+            if (!lobby.current && screenOf(route.path).screen === 'table') {
+                replace('/');
             }
             await followInviteLink();
         } catch (e) {
@@ -112,7 +132,7 @@
         try {
             const info = await openByCode(code);
             if (info) {
-                screen = 'table';
+                replace('/table');
             }
         } catch {
             error = 'Стол по ссылке не открылся — возможно, его уже закрыли';
@@ -132,7 +152,7 @@
         try {
             const info = await openByCode(code);
             if (info) {
-                screen = 'table';
+                replace('/table');
             }
         } catch {
             error = 'Стол по ссылке не открылся — возможно, его уже закрыли';
@@ -143,26 +163,45 @@
     const atTable = $derived(screen === 'table' && lobby.current !== null);
 
     function toLobby() {
-        screen = 'lobby';
+        go('/');
     }
 
     function toTable() {
-        screen = 'table';
+        go('/table');
     }
 
     function leftTable() {
         forgetTable();
-        screen = 'lobby';
+        go('/');
     }
+
+    /**
+     * Реплей — свой адрес `/history/<матч>`, а не состояние внутри истории.
+     *
+     * ⭐ Так «назад» из реплея возвращает к списку матчей, а не выбрасывает из игры,
+     * и ссылку на разбор партии можно кинуть тому, с кем играл.
+     */
+    let openedReplay = $state(null);
+    $effect(() => {
+        const wanted = view.screen === 'history' ? view.param : null;
+        if (wanted && openedReplay !== wanted) {
+            openedReplay = wanted;
+            loadReplay(wanted).catch((e) => (error = e.message));
+        }
+        if (!wanted && openedReplay) {
+            openedReplay = null;
+            closeReplay();
+        }
+    });
 </script>
 
 {#if !atTable}
     <AppHeader onRefresh={screen === 'lobby' ? () => lobbyScreen?.refresh() : null}
-               onHistory={() => (screen = screen === 'history' ? 'lobby' : 'history')}
-               onProfile={() => (screen = 'profile')}
-               onFriends={() => (screen = 'friends')}
-               onStats={() => { viewing = null; screen = 'stats'; }}
-               onLeaders={() => (screen = 'leaders')}/>
+               onHistory={() => go(screen === 'history' ? '/' : '/history')}
+               onProfile={() => go('/profile')}
+               onFriends={() => go('/friends')}
+               onStats={() => { playerName = null; go('/stats'); }}
+               onLeaders={() => go('/leaders')}/>
 {/if}
 
 {#if error}<p class="notice notice-fail top">{error}</p>{/if}
@@ -231,7 +270,7 @@
 {#if screen === 'profile'}
     <Profile onBack={toLobby}/>
 {:else if screen === 'stats'}
-    <Stats onBack={viewing ? closePlayer : toLobby} userId={viewing?.id ?? null} name={viewing?.name ?? null}/>
+    <Stats onBack={viewingId ? closePlayer : toLobby} userId={viewingId} name={playerName}/>
 {:else if screen === 'leaders'}
     <Leaders onBack={toLobby} onPlayer={showPlayer}/>
 {:else if screen === 'friends'}
@@ -242,13 +281,13 @@
       партию и одновременно листать список — разные занятия, и в одной колонке им тесно.
     -->
     {#if history.replay}
-        <Replay replay={history.replay} details={history.details} onClose={closeReplay}/>
+        <Replay replay={history.replay} details={history.details} onClose={() => go('/history')}/>
     {:else}
-        <History/>
+        <History onReplay={(matchId) => go(`/history/${matchId}`)}/>
     {/if}
 {:else if atTable}
     <TableRoom info={lobby.current} onExit={leftTable} onMenu={toLobby}
-               onHistory={() => (screen = 'history')}/>
+               onHistory={() => go('/history')}/>
 {:else}
     <Lobby bind:this={lobbyScreen} onEnter={toTable}/>
 {/if}

@@ -35,8 +35,17 @@ const SCALE = ['6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A', 'JOKER'];
 const flightOf = (p) => (p.nextIsJoker ? 'JOKER' : (p.nextNavesRank ?? '6'));
 const stepOf = (flight) => SCALE.indexOf(flight);
 
-/** Переходы между раздачами глазами бота 0: [{deal, before, after}]. */
+/** Переходы между раздачами глазами бота 0: [{deal, before, after, hung}]. */
 const transitions = [];
+
+/**
+ * Сколько карт навесили каждому месту в ТЕКУЩЕЙ раздаче.
+ *
+ * ⚠️ Без этого счёта инвариант «не больше ступени за раздачу» неверен и врёт: каждая
+ * навешенная карта двигает жертву на ступень (§0.1), поэтому две за раздачу — законный
+ * скачок через одну. Прогон на троих поймал ровно это, и виноват был сам инвариант.
+ */
+let hungThisDeal = {};
 
 async function api(path, {method = 'GET', body, token} = {}) {
     // ⚠️ Двери (вход, регистрация, тикет) огорожены пределом частоты, и прогон ботов
@@ -101,11 +110,19 @@ class Bot {
                     deal: `${this.game.dealNo} -> ${envelope.payload.dealNo}`,
                     before: (this.game.players ?? []).map(flightOf),
                     after: (envelope.payload.players ?? []).map(flightOf),
+                    hung: hungThisDeal,
                 });
+                hungThisDeal = {};
             }
             this.game = envelope.payload;
             this.actions = envelope.payload.availableActions ?? [];
             this.phase = envelope.payload.phase;
+        } else if (envelope.type === 'CARD_HUNG') {
+            if (this.watchDeals) {
+                const victim = envelope.payload?.victimSeat;
+                hungThisDeal[victim] = (hungThisDeal[victim] ?? 0) + 1;
+            }
+            seen[envelope.type] = (seen[envelope.type] ?? 0) + 1;
         } else if (envelope.type === 'MATCH_OVER') {
             this.result = envelope.payload;
             this.over = true;
@@ -227,8 +244,13 @@ async function checkDealFlow() {
             ok = false;
         }
         for (let seat = 0; seat < t.before.length; seat++) {
-            if (stepOf(t.after[seat]) - stepOf(t.before[seat]) > 1) {
-                console.log(`   ❌ место ${seat}: скачок ${t.before[seat]} -> ${t.after[seat]} — больше ступени за раздачу`);
+            // ⭐ Потолок скачка = навесы этому месту + 1 за проигранную раздачу (§0.1).
+            // Единица без учёта навесов — неверный инвариант, он и падал на живом матче.
+            const allowed = (t.hung[seat] ?? 0) + 1;
+            const jump = stepOf(t.after[seat]) - stepOf(t.before[seat]);
+            if (jump > allowed) {
+                console.log(`   ❌ место ${seat}: скачок ${t.before[seat]} -> ${t.after[seat]}`
+                    + ` (на ${jump}), а навесов было ${t.hung[seat] ?? 0} — потолок ${allowed}`);
                 ok = false;
             }
         }
