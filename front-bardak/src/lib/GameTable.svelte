@@ -22,7 +22,7 @@
     import {play, table} from '../stores/table.svelte.js';
     import {connection} from '../stores/connection.svelte.js';
     import {TIMING, anchorPoint, flyFrom} from './motion.svelte.js';
-    import {sound, toggleSound} from './sound.svelte.js';
+    import {play as playSound, sound, toggleSound} from './sound.svelte.js';
     import {draggable, dropTargets} from './drag.svelte.js';
     import {isRedSuit, suitGlyph} from './naming.js';
 
@@ -353,6 +353,62 @@
      * ⭐ Кто на часах, когда ход не мой. Раньше это писалось НА СТОЛЕ поверх карт;
      * теперь — одной строкой в нижней панели, на месте кнопок, которых всё равно нет.
      */
+    /**
+     * Чьи сейчас часы — включая мои. `onTheClock` для этого не годится: он молчит,
+     * когда ход мой, потому что описывает нижнюю панель ожидания.
+     */
+    const clockSeat = $derived.by(() => {
+        if (!game || game.turnSecondsLeft === null || game.turnSecondsLeft === undefined) {
+            return null;
+        }
+        const defending = game.phase === 'DEFEND' || game.phase === 'TAKING';
+        return defending ? game.defenderSeat : game.canAttackSeat;
+    });
+
+    /**
+     * ⭐ Сигнал «пора ходить» — через десять секунд ожидания, а не в последний момент:
+     * телефон мог лежать экраном вниз, и предупреждать за пару секунд до автовзятия
+     * бессмысленно — среагировать уже не успеешь.
+     *
+     * ⚠️ Вибрация есть не везде: iOS Safari `navigator.vibrate` не поддерживает вовсе.
+     * Поэтому звук — основной сигнал, а вибрация — приятное дополнение там, где она есть.
+     */
+    /**
+     * Мой остаток времени, тикающий локально.
+     *
+     * ⭐ Своего аватара на столе нет, и кольцо вешать не на что — поэтому счёт идёт
+     * в строке подсказки, а под конец она начинает мигать. Считаем от серверного
+     * значения: собственные «тридцать» разошлись бы с часами, по которым ходят за нас.
+     */
+    let myClock = $state(null);
+
+    $effect(() => {
+        const left = game?.turnSecondsLeft;
+        if (!myTurn || left === null || left === undefined) {
+            myClock = null;
+            return;
+        }
+        myClock = left;
+        const timer = setInterval(() => {
+            myClock = Math.max(0, (myClock ?? 0) - 1);
+        }, 1000);
+        return () => clearInterval(timer);
+    });
+
+    const SIGNAL_AT = 20;
+
+    $effect(() => {
+        const left = game?.turnSecondsLeft;
+        if (!myTurn || left === null || left === undefined) {
+            return;
+        }
+        const timer = setTimeout(() => {
+            playSound('turn-warning');
+            navigator.vibrate?.([120, 90, 120]);
+        }, Math.max(0, left - SIGNAL_AT) * 1000);
+        return () => clearTimeout(timer);
+    });
+
     /** Моя собственная реплика: у своего места аватара на столе нет. */
     const myShout = $derived(table.shout?.seatNo === game?.mySeat ? table.shout.text : null);
 
@@ -366,7 +422,8 @@
         if (!seat || seatNo === game.mySeat) {
             return null;
         }
-        return {name: seat.displayName, role: defending ? 'отбивается' : 'ходит', defending};
+        return {seatNo, name: seat.displayName, role: defending ? 'отбивается' : 'ходит',
+            defending};
     });
 
     /**
@@ -616,7 +673,8 @@
                   decision={table.decisions[seat.seatNo] ?? null}
                   taking={seat.seatNo === game.defenderSeat && game.phase === 'TAKING'}
                   hangCta={hangCtaFor(seat)} onHang={takeHangCard}
-                  shout={table.shout?.seatNo === seat.seatNo ? table.shout.text : null}/>
+                  shout={table.shout?.seatNo === seat.seatNo ? table.shout.text : null}
+                  turnSeconds={clockSeat === seat.seatNo ? game.turnSecondsLeft : null}/>
         {/each}
     </div>
 
@@ -731,8 +789,10 @@
     -->
     <!-- ⭐ Своё «Карте место!» показываем здесь: над собственной рукой облачку места нет,
          а увидеть, что твоё возражение услышано, надо не меньше, чем соседям. -->
-    <div class="hint mono" class:urgent={Boolean(prompt) || myShout}>
-        {myShout ?? prompt ?? ''}
+    <div class="hint mono" class:urgent={Boolean(prompt) || myShout}
+         class:warn={myClock !== null && myClock <= 20 && myClock > 5}
+         class:alarm={myClock !== null && myClock <= 5}>
+        {myShout ?? prompt ?? ''}{#if myClock !== null}<span class="left"> · {myClock} с</span>{/if}
     </div>
 
     <!-- ═══ E · мой навес и потайная карта ═══ -->
@@ -1104,6 +1164,30 @@
 
     .hint.urgent {
         color: var(--gold);
+    }
+
+    /* Время на исходе: сначала предупреждение, потом частое мигание. */
+    .hint.warn {
+        color: #f0a94e;
+    }
+
+    .hint.alarm {
+        color: var(--red);
+        animation: hint-alarm 0.45s ease-in-out infinite;
+    }
+
+    @keyframes hint-alarm {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.3; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .hint.alarm { animation: none; }
+    }
+
+    .left {
+        font-variant-numeric: tabular-nums;
+        opacity: 0.85;
     }
 
     /* ═══ E · мой навес и потайная ═══ */

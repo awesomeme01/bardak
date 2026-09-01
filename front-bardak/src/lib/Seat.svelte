@@ -13,6 +13,7 @@
     import Avatar from './Avatar.svelte';
     import Card from './Card.svelte';
     import CardChip from './CardChip.svelte';
+    import TurnRing from './TurnRing.svelte';
     import {anchorPoint} from './motion.svelte.js';
 
     /**
@@ -20,7 +21,8 @@
      * все мельчают, иначе четверо не встают в один ряд.
      */
     let {seat, size = 60, active = false, defending = false, decision = null,
-         taking = false, hangCta = null, onHang = null, shout = null} = $props();
+         taking = false, hangCta = null, onHang = null, shout = null,
+         turnSeconds = null} = $props();
 
     /** Бейджи считаются от аватара: пропорции макета сохраняются на всех составах. */
     const badgeHeight = $derived(Math.round(size * 0.32));
@@ -95,6 +97,9 @@
     <div class="head">
         <span class="anchor" use:anchorPoint={`seat-${seat.seatNo}`}></span>
         <Avatar userId={seat.userId} {size} {tone} pulse={active && !seat.passed}/>
+
+        <!-- Часы этого игрока: кольцо поверх аватара, высоту рейки оно не трогает. -->
+        <TurnRing seconds={turnSeconds} size={size + 8}/>
 
         <!--
           Счёт карт: бейдж на аватаре, а не строка под ним.
