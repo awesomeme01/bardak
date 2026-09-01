@@ -114,3 +114,27 @@ type ChooseTrumpCommand struct {
 
 func (c ChooseTrumpCommand) SeatNo() int  { return c.Seat }
 func (ChooseTrumpCommand) sealedCommand() {}
+
+// RecallCardCommand — забрать свою карту со стола обратно в руку.
+//
+// ⭐ Передумать можно, пока никто не возразил: положил семёрку, увидел, что зря, — забрал.
+// Возражение выражается фиксацией (PinCardCommand), и после неё карта остаётся на столе.
+type RecallCardCommand struct {
+	Seat int
+	Card Card
+}
+
+func (c RecallCardCommand) SeatNo() int  { return c.Seat }
+func (RecallCardCommand) sealedCommand() {}
+
+// PinCardCommand — «Карте место!»: зафиксировать чужую карту на столе.
+//
+// ⚠️ Необратимо до конца раунда: смысл в том, чтобы отобрать у соперника возможность
+// передумать, и «отменяемая фиксация» этого смысла не имеет.
+type PinCardCommand struct {
+	Seat int
+	Card Card
+}
+
+func (c PinCardCommand) SeatNo() int  { return c.Seat }
+func (PinCardCommand) sealedCommand() {}

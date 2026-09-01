@@ -72,12 +72,24 @@ func ParseDealPhase(name string) (DealPhase, error) {
 // что именно покрыто.
 type TableSlot struct {
 	Attack Card
+	// AttackBy — кто положил атакующую карту.
+	//
+	// ⭐ Подкидывают разные игроки, и без автора «забрать своё» не отличить от «забрать
+	// чужое». Раньше стол этого не помнил: до отзыва карты он был и не нужен.
+	AttackBy int
 	// Defence — чем отбита; nil, пока карта не бита.
 	Defence Card
+	// DefenceBy — кто отбил. Всегда защищающийся, но храним явно: роль за раунд
+	// меняется переводом, а карта на столе остаётся.
+	DefenceBy int
+	// AttackPinned, DefencePinned — «Карте место!»: карту зафиксировал кто-то другой,
+	// и владелец забрать её уже не может.
+	AttackPinned  bool
+	DefencePinned bool
 }
 
 // NewSlot кладёт карту атаки на стол.
-func NewSlot(attack Card) TableSlot { return TableSlot{Attack: attack} }
+func NewSlot(attack Card, by int) TableSlot { return TableSlot{Attack: attack, AttackBy: by} }
 
 // IsBeaten — покрыта ли атака.
 func (s TableSlot) IsBeaten() bool { return s.Defence != nil }
@@ -86,12 +98,15 @@ func (s TableSlot) IsBeaten() bool { return s.Defence != nil }
 //
 // ⚠️ Повторное покрытие — ошибка вызывающего, а не «последнее выигрывает»: молча
 // затереть карту защиты значит потерять ход из истории партии.
-func (s TableSlot) BeatenWith(card Card) (TableSlot, error) {
+func (s TableSlot) BeatenWith(card Card, by int) (TableSlot, error) {
 	if s.IsBeaten() {
 		return s, fmt.Errorf("карта %s уже бита картой %s", s.Attack.Code(), s.Defence.Code())
 	}
 	if card == nil {
 		return s, fmt.Errorf("карта защиты не указана")
 	}
-	return TableSlot{Attack: s.Attack, Defence: card}, nil
+	next := s
+	next.Defence = card
+	next.DefenceBy = by
+	return next, nil
 }

@@ -20,7 +20,7 @@
      * все мельчают, иначе четверо не встают в один ряд.
      */
     let {seat, size = 60, active = false, defending = false, decision = null,
-         taking = false, hangCta = null, onHang = null} = $props();
+         taking = false, hangCta = null, onHang = null, shout = null} = $props();
 
     /** Бейджи считаются от аватара: пропорции макета сохраняются на всех составах. */
     const badgeHeight = $derived(Math.round(size * 0.32));
@@ -132,6 +132,14 @@
         -->
         {#if hangCta}
             <button class="hang-cta mono" type="button" onclick={onHang}>{hangCta}</button>
+        {/if}
+
+        <!--
+          ⭐ Реплика висит НАД аватаром и никого не двигает: это облачко поверх, а не
+          строка в колонке. Строка сдвинула бы рейку, а вместе с ней и весь стол.
+        -->
+        {#if shout}
+            <span class="shout">{shout}</span>
         {/if}
     </div>
 
@@ -265,6 +273,33 @@
 
     @media (prefers-reduced-motion: reduce) {
         .hang-cta { animation: none; }
+    }
+
+    .shout {
+        position: absolute;
+        left: 50%;
+        bottom: calc(100% + 6px);
+        transform: translateX(-50%);
+        z-index: 8;
+        white-space: nowrap;
+        padding: 4px 9px;
+        border-radius: 11px;
+        background: var(--gold);
+        color: var(--gold-ink);
+        font-size: 11px;
+        font-weight: 800;
+        box-shadow: 0 6px 14px rgba(0, 0, 0, 0.45);
+    }
+
+    /* Хвостик облачка — чтобы читалось как реплика, а не как ярлык. */
+    .shout::after {
+        content: '';
+        position: absolute;
+        left: 50%;
+        top: 100%;
+        transform: translateX(-50%);
+        border: 5px solid transparent;
+        border-top-color: var(--gold);
     }
 
     .name {

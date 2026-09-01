@@ -102,7 +102,9 @@ func (f *dealFixture) withDeck(cards ...Card) *dealFixture {
 func (f *dealFixture) withAttack(cards ...Card) *dealFixture {
 	slots := make([]TableSlot, 0, len(cards))
 	for _, card := range cards {
-		slots = append(slots, NewSlot(card))
+		// ⚠️ Автор — место 0: старым тестам он безразличен, они проверяют правила хода,
+		// а не отзыв карты. Тесты отзыва задают стол явно, вместе с авторами.
+		slots = append(slots, NewSlot(card, 0))
 	}
 	f.state.Table = append(f.state.Table, slots...)
 	return f

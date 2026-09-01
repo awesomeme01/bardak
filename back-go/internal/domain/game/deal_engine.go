@@ -69,6 +69,10 @@ func (e DealEngine) Apply(state DealState, command DealCommand) MoveResult {
 		return e.applyHangCard(state, cmd)
 	case HangSkipCommand:
 		return e.applyHangSkip(state, cmd)
+	case RecallCardCommand:
+		return e.applyRecallCard(state, cmd)
+	case PinCardCommand:
+		return e.applyPinCard(state, cmd)
 	case ChooseTrumpCommand:
 		return e.applyChooseTrump(state, cmd)
 	case RevealFaceDownCommand:
@@ -216,7 +220,7 @@ func (e DealEngine) applyAttack(state DealState, cmd AttackCommand) MoveResult {
 	events = append(events, NewCardAttacked(cmd.Seat, cmd.Card))
 
 	next := state.WithPlayer(player)
-	next.Table = append(copySlots(state.Table), NewSlot(cmd.Card))
+	next.Table = append(copySlots(state.Table), NewSlot(cmd.Card, cmd.Seat))
 	// ⚠️ Объявленное «беру» переживает подкид: пока подкидывающие не закончатся,
 	// раунд остаётся в TAKING, а не возвращается в защиту.
 	if state.Phase != PhaseTaking {
@@ -236,7 +240,7 @@ func (e DealEngine) applyDefend(state DealState, cmd DefendCommand) MoveResult {
 	table := make([]TableSlot, 0, len(state.Table))
 	for _, slot := range state.Table {
 		if slot.Attack == cmd.Target {
-			beaten, err := slot.BeatenWith(cmd.Card)
+			beaten, err := slot.BeatenWith(cmd.Card, cmd.Seat)
 			if err != nil {
 				return RejectedResult(TargetAlreadyBeaten)
 			}
@@ -297,7 +301,7 @@ func (e DealEngine) applyTransfer(state DealState, cmd TransferCommand) MoveResu
 	events = append(events, NewAttackTransferred(cmd.Seat, receiver, cmd.Card))
 
 	next := state.WithPlayer(player)
-	next.Table = append(copySlots(state.Table), NewSlot(cmd.Card))
+	next.Table = append(copySlots(state.Table), NewSlot(cmd.Card, cmd.Seat))
 	next.RoundStarterSeat = cmd.Seat
 	next.AttackRightSeat = cmd.Seat
 	next.DefenderSeat = receiver
@@ -810,4 +814,110 @@ func indexOfInt(values []int, value int) int {
 		}
 	}
 	return -1
+}
+
+// ── Отзыв карты и «Карте место!» ─────────────────────────────────────────────
+
+// applyRecallCard — забрать свою карту со стола обратно в руку.
+//
+// ⭐ Передумать можно ровно до возражения: пока карту не зафиксировали, она считается
+// предложением, а не ходом. Возражает любой другой игрок — нажатием (PinCardCommand).
+//
+// ⚠️ Только в живом раунде. После объявленного «беру» защищающийся уже сказал, что
+// забирает ЭТИ карты, и вынимать из-под него — менять условия задним числом.
+func (e DealEngine) applyRecallCard(state DealState, cmd RecallCardCommand) MoveResult {
+	if state.Phase != PhaseAttack && state.Phase != PhaseDefend {
+		return RejectedResult(RecallTooLate)
+	}
+	for index, slot := range state.Table {
+		switch {
+		case slot.Attack == cmd.Card:
+			if slot.AttackBy != cmd.Seat {
+				return RejectedResult(CardNotYours)
+			}
+			if slot.AttackPinned {
+				return RejectedResult(CardIsPinned)
+			}
+			// ⚠️ Отбитую атаку забрать нельзя: соперник уже потратил на неё карту,
+			// и её пришлось бы возвращать тоже — то есть отменять чужой ход.
+			if slot.IsBeaten() {
+				return RejectedResult(RecallTooLate)
+			}
+			next := state.Clone()
+			next.Table = append(copySlots(state.Table[:index]), copySlots(state.Table[index+1:])...)
+			next = returnToHand(next, cmd.Seat, cmd.Card)
+			// Стол опустел — раунд снова ждёт атаки.
+			if len(next.Table) == 0 {
+				next.Phase = PhaseAttack
+			}
+			return AppliedResult(next, []DealEvent{NewCardRecalled(cmd.Seat, cmd.Card)})
+
+		case slot.Defence == cmd.Card:
+			if slot.DefenceBy != cmd.Seat {
+				return RejectedResult(CardNotYours)
+			}
+			if slot.DefencePinned {
+				return RejectedResult(CardIsPinned)
+			}
+			next := state.Clone()
+			slots := copySlots(state.Table)
+			slots[index].Defence = nil
+			slots[index].DefenceBy = 0
+			next.Table = slots
+			next = returnToHand(next, cmd.Seat, cmd.Card)
+			// Атака снова открыта — значит снова ход защиты.
+			next.Phase = PhaseDefend
+			return AppliedResult(next, []DealEvent{NewCardRecalled(cmd.Seat, cmd.Card)})
+		}
+	}
+	return RejectedResult(CardNotOnTable)
+}
+
+// applyPinCard — «Карте место!»: чужая карта остаётся на столе навсегда.
+//
+// ⭐ Право есть у любого, кто ещё в раздаче, и очереди тут нет: возражение — это
+// реакция, а не ход, и ждать своей очереди, чтобы возразить, бессмысленно.
+func (e DealEngine) applyPinCard(state DealState, cmd PinCardCommand) MoveResult {
+	player, err := state.PlayerAt(cmd.Seat)
+	if err != nil || !player.InDeal {
+		return RejectedResult(NotYourTurn)
+	}
+	for index, slot := range state.Table {
+		switch {
+		case slot.Attack == cmd.Card:
+			// ⚠️ Свою карту фиксировать нечего: она и так под твоим контролем,
+			// а «зафиксировать себе» означало бы просто отказаться от права передумать.
+			if slot.AttackBy == cmd.Seat {
+				return RejectedResult(CardNotYours)
+			}
+			if slot.AttackPinned {
+				return RejectedResult(CardIsPinned)
+			}
+			next := state.Clone()
+			slots := copySlots(state.Table)
+			slots[index].AttackPinned = true
+			next.Table = slots
+			return AppliedResult(next, []DealEvent{NewCardPinned(cmd.Seat, cmd.Card)})
+
+		case slot.Defence == cmd.Card:
+			if slot.DefenceBy == cmd.Seat {
+				return RejectedResult(CardNotYours)
+			}
+			if slot.DefencePinned {
+				return RejectedResult(CardIsPinned)
+			}
+			next := state.Clone()
+			slots := copySlots(state.Table)
+			slots[index].DefencePinned = true
+			next.Table = slots
+			return AppliedResult(next, []DealEvent{NewCardPinned(cmd.Seat, cmd.Card)})
+		}
+	}
+	return RejectedResult(CardNotOnTable)
+}
+
+// returnToHand — карта возвращается владельцу.
+func returnToHand(state DealState, seatNo int, card Card) DealState {
+	player := state.MustPlayerAt(seatNo)
+	return state.WithPlayer(player.WithHand(append(copyCards(player.Hand), card)))
 }

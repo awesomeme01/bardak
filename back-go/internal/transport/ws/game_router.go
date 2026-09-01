@@ -20,6 +20,10 @@ var gameCommands = map[string]bool{
 	"MATCH_START": true, "PLAY_CARD": true, "PASS": true, "TAKE": true, "TRANSFER": true,
 	"HANG_CARD": true, "HANG_SKIP": true, "CHOOSE_TRUMP": true, "REVEAL_FACE_DOWN": true,
 	"STATE_REQUEST": true, "RESYNC": true, "MATCH_LEAVE": true,
+	// ⚠️ Отзыв и фиксация обязаны быть ЗДЕСЬ, а не только в кодеке команд: не попав
+	// в этот список, тип уезжает в эхо — сервер отвечает бодро, движка команда не видит,
+	// и отказа тоже нет. Сквозной прогон нашёл ровно это, все слои по отдельности работали.
+	"RECALL_CARD": true, "PIN_CARD": true,
 }
 
 // MatchPort — идущие матчи.

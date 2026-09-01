@@ -58,6 +58,12 @@ type snapshotPlayer struct {
 type snapshotSlot struct {
 	Attack  string  `json:"attack"`
 	Defence *string `json:"defence,omitempty"`
+	// ⚠️ Автор и фиксация обязаны пережить перезапуск сервера: без них после подъёма
+	// из снимка «забрать своё» превратилось бы в «забрать чью угодно».
+	AttackBy      int  `json:"attackBy"`
+	DefenceBy     int  `json:"defenceBy"`
+	AttackPinned  bool `json:"attackPinned,omitempty"`
+	DefencePinned bool `json:"defencePinned,omitempty"`
 }
 
 type snapshotWindow struct {
@@ -177,7 +183,13 @@ func encodeDeal(deal game.DealState) snapshotDeal {
 		node.Players = []snapshotPlayer{}
 	}
 	for _, slot := range deal.Table {
-		entry := snapshotSlot{Attack: EncodeCard(slot.Attack)}
+		entry := snapshotSlot{
+			Attack:        EncodeCard(slot.Attack),
+			AttackBy:      slot.AttackBy,
+			DefenceBy:     slot.DefenceBy,
+			AttackPinned:  slot.AttackPinned,
+			DefencePinned: slot.DefencePinned,
+		}
 		if slot.Defence != nil {
 			defence := EncodeCard(slot.Defence)
 			entry.Defence = &defence
@@ -246,15 +258,17 @@ func decodeDeal(node snapshotDeal) (game.DealState, error) {
 		if err != nil {
 			return game.DealState{}, err
 		}
-		entry := game.NewSlot(attack)
+		entry := game.NewSlot(attack, slot.AttackBy)
+		entry.AttackPinned = slot.AttackPinned
 		if slot.Defence != nil {
 			defence, err := DecodeCard(*slot.Defence)
 			if err != nil {
 				return game.DealState{}, err
 			}
-			if entry, err = entry.BeatenWith(defence); err != nil {
+			if entry, err = entry.BeatenWith(defence, slot.DefenceBy); err != nil {
 				return game.DealState{}, err
 			}
+			entry.DefencePinned = slot.DefencePinned
 		}
 		deal.Table = append(deal.Table, entry)
 	}

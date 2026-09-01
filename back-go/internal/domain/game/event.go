@@ -223,3 +223,23 @@ func AppliedResult(state DealState, events []DealEvent) MoveResult {
 func RejectedResult(reason RejectionReason) MoveResult {
 	return MoveResult{Applied: false, Reason: reason}
 }
+
+// CardRecalled — игрок забрал свою карту со стола обратно в руку.
+type CardRecalled struct {
+	publicEvent
+	Card Card
+}
+
+// CardPinned — «Карте место!»: карту зафиксировали, владелец забрать её уже не может.
+type CardPinned struct {
+	publicEvent
+	Card Card
+}
+
+func NewCardRecalled(seat int, card Card) CardRecalled {
+	return CardRecalled{publicEvent{seat}, card}
+}
+
+func NewCardPinned(seat int, card Card) CardPinned {
+	return CardPinned{publicEvent{seat}, card}
+}

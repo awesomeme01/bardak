@@ -23,6 +23,7 @@
     import {connection} from '../stores/connection.svelte.js';
     import {TIMING, anchorPoint, flyFrom} from './motion.svelte.js';
     import {sound, toggleSound} from './sound.svelte.js';
+    import {draggable, dropTargets} from './drag.svelte.js';
     import {isRedSuit, suitGlyph} from './naming.js';
 
     let {onLeave = null, onMenu = null} = $props();
@@ -352,6 +353,9 @@
      * ⭐ Кто на часах, когда ход не мой. Раньше это писалось НА СТОЛЕ поверх карт;
      * теперь — одной строкой в нижней панели, на месте кнопок, которых всё равно нет.
      */
+    /** Моя собственная реплика: у своего места аватара на столе нет. */
+    const myShout = $derived(table.shout?.seatNo === game?.mySeat ? table.shout.text : null);
+
     const onTheClock = $derived.by(() => {
         if (!game || myTurn) {
             return null;
@@ -441,6 +445,61 @@
      * карта молча не реагирует, и отличить «нельзя» от «не попал» было невозможно.
      * Теперь карта поднимается всегда, а кнопка внизу объясняет, что с ней будет.
      */
+    /**
+     * Карту донесли до цели.
+     *
+     * ⭐ Что именно произошло, решают `availableActions`, а не бросок: правил фронт
+     * не знает (ADR-003). Перетаскивание лишь называет карту и место — дальше ищется
+     * готовое действие, и если его нет, ничего не происходит.
+     */
+    function onDrop(code, target) {
+        if (target === 'board') {
+            const attack = actions.attacks.find((a) => a.payload.cardCode === code);
+            if (attack) {
+                selected = null;
+                play(attack);
+                return;
+            }
+            // ⚠️ Перевод — тоже «карта на стол»: с точки зрения руки жест тот же самый.
+            const transfer = actions.transfers.find((a) => a.payload.cardCode === code);
+            if (transfer) {
+                selected = null;
+                play(transfer);
+            }
+            return;
+        }
+        if (target.startsWith('slot:')) {
+            const attackCode = target.slice(5);
+            const defend = actions.defends.find((a) => a.payload.cardCode === code
+                && a.payload.targetCardCode === attackCode);
+            if (defend) {
+                selected = null;
+                play(defend);
+            }
+        }
+    }
+
+    /** Можно ли тащить эту карту: пустое перетаскивание только раздражает. */
+    function isDraggable(code) {
+        return actions.attacks.some((a) => a.payload.cardCode === code)
+            || actions.transfers.some((a) => a.payload.cardCode === code)
+            || actions.defends.some((a) => a.payload.cardCode === code);
+    }
+
+    /** Подсветка цели: годится ли сюда та карта, что сейчас в руке. */
+    function dropAccepts(target) {
+        const code = dropTargets.active;
+        if (!code) {
+            return false;
+        }
+        if (target === 'board') {
+            return actions.attacks.some((a) => a.payload.cardCode === code)
+                || actions.transfers.some((a) => a.payload.cardCode === code);
+        }
+        return actions.defends.some((a) => a.payload.cardCode === code
+            && a.payload.targetCardCode === target.slice(5));
+    }
+
     function tapCard(code) {
         // ⭐ При правиле отстающего карты НАБИРАЮТСЯ: нажатие добавляет или убирает
         // карту из набора, а отправляет его кнопка у жертвы.
@@ -451,6 +510,27 @@
             return;
         }
         selected = selected === code ? null : code;
+    }
+
+    /**
+     * Нажатие по карте, уже лежащей на столе.
+     *
+     * ⭐ Своя — забрать обратно, чужая — зафиксировать («Карте место!»). Одно и то же
+     * движение, разный смысл: своё держишь, чужому не даёшь передумать.
+     *
+     * ⚠️ Отбить важнее: если этой картой сейчас можно побиться, нажатие означает защиту,
+     * а не возню с чужой картой. Иначе выбранная в руке карта не находила бы цель.
+     */
+    function tapTableCard(code, by, pinned, canBeat) {
+        if (canBeat) {
+            tapTarget(code);
+            return;
+        }
+        if (pinned) {
+            return;   // зафиксированную не трогает уже никто
+        }
+        play({type: by === game.mySeat ? 'RECALL_CARD' : 'PIN_CARD',
+            payload: {cardCode: code}});
     }
 
     function tapTarget(attackCode) {
@@ -535,7 +615,8 @@
                   defending={seat.seatNo === game.defenderSeat}
                   decision={table.decisions[seat.seatNo] ?? null}
                   taking={seat.seatNo === game.defenderSeat && game.phase === 'TAKING'}
-                  hangCta={hangCtaFor(seat)} onHang={takeHangCard}/>
+                  hangCta={hangCtaFor(seat)} onHang={takeHangCard}
+                  shout={table.shout?.seatNo === seat.seatNo ? table.shout.text : null}/>
         {/each}
     </div>
 
@@ -579,7 +660,8 @@
             {/if}
         </div>
 
-        <div class="stake" style="--slot-w:{slotWidth}px; --slot-h:{slotHeight}px">
+        <div class="stake" data-drop="board" class:accepts={dropAccepts('board')}
+             style="--slot-w:{slotWidth}px; --slot-h:{slotHeight}px">
             {#if game.table.length === 0}
                 <div class="empty-stake mono" style="width:{stakeCard}px; height:{Math.round(stakeCard * 1.452)}px">
                     <span>брось</span><span>карту</span>
@@ -593,10 +675,17 @@
                       и карта летит именно туда, куда ляжет, а не в середину стола.
                     -->
                     <div class="slot" animate:flip={{duration: TIMING.move}}
+                         data-drop={`slot:${slot.attack}`}
+                         class:accepts={dropAccepts(`slot:${slot.attack}`)}
                          use:anchorPoint={`slot-${slot.attack}`}>
                         <span use:flyFrom={{key: slot.attack}}>
                             <Card code={slot.attack} width={stakeCard} selected={canBeat}
-                                  onclick={canBeat ? () => tapTarget(slot.attack) : null}/>
+                                  dimmed={slot.attackPinned}
+                                  title={slot.attackPinned ? 'Карте место — забрать нельзя'
+                                      : slot.attackBy === game.mySeat ? 'Забрать обратно'
+                                      : 'Карте место!'}
+                                  onclick={() => tapTableCard(slot.attack, slot.attackBy,
+                                      slot.attackPinned, canBeat)}/>
                         </span>
                         {#if slot.defend}
                             <!--
@@ -605,7 +694,13 @@
                             -->
                             <span class="defence" style="left:{stakeShiftX}px; top:{stakeShiftY}px">
                                 <span use:flyFrom={{key: slot.defend}}>
-                                    <Card code={slot.defend} width={stakeCard}/>
+                                    <Card code={slot.defend} width={stakeCard}
+                                          dimmed={slot.defendPinned}
+                                          title={slot.defendPinned ? 'Карте место — забрать нельзя'
+                                              : slot.defendBy === game.mySeat ? 'Забрать обратно'
+                                              : 'Карте место!'}
+                                          onclick={() => tapTableCard(slot.defend, slot.defendBy,
+                                              slot.defendPinned, false)}/>
                                 </span>
                             </span>
                         {/if}
@@ -634,7 +729,11 @@
       ⭐ У подсказки своя полоса, и текст физически не может лечь на карты. Раньше она
       висела в зоне стола и при шести картах наезжала на них.
     -->
-    <div class="hint mono" class:urgent={Boolean(prompt)}>{prompt ?? ''}</div>
+    <!-- ⭐ Своё «Карте место!» показываем здесь: над собственной рукой облачку места нет,
+         а увидеть, что твоё возражение услышано, надо не меньше, чем соседям. -->
+    <div class="hint mono" class:urgent={Boolean(prompt) || myShout}>
+        {myShout ?? prompt ?? ''}
+    </div>
 
     <!-- ═══ E · мой навес и потайная карта ═══ -->
     <div class="mine">
@@ -693,7 +792,9 @@
             {@const offset = index - middle}
             <span class="hand-card" animate:flip={{duration: TIMING.move}}>
                 <span class="fan" style="transform: rotate({offset * tiltStep}deg) translateY({Math.abs(offset) * 4}px)">
-                    <span use:flyFrom={{key: code, pool: 'hand', delay: index * 40}}>
+                    <span use:flyFrom={{key: code, pool: 'hand', delay: index * 40}}
+                          use:draggable={{code, enabled: isDraggable(code),
+                              onDrop: (target) => onDrop(code, target)}}>
                         <Card {code} width={cardWidth}
                               selected={selected === code || hangPicks.has(code)}
                               playable={hangingNow && hangable.has(code)}
@@ -953,6 +1054,13 @@
         gap: 6px 14px;
     }
 
+    /* Подсветка цели во время перетаскивания: сюда эту карту положить можно. */
+    .accepts {
+        outline: 2px dashed var(--gold);
+        outline-offset: 3px;
+        border-radius: 8px;
+    }
+
     .slot {
         position: relative;
         flex: none;
@@ -1076,7 +1184,13 @@
         padding: 0 8px 6px;
     }
 
+    /**
+     * ⚠️ `touch-action: none` именно на карте: иначе первое же движение пальцем браузер
+     * считает прокруткой и события указателя до нас не доходят — карта «не тащится».
+     * Глобально этого делать нельзя, прокрутка нужна на других экранах.
+     */
     .hand-card {
+        touch-action: none;
         /* ⭐ Без этого карты сжимаются под ширину экрана — и веер получается из карт
            разного размера, будто часть колоды другая. */
         flex: none;

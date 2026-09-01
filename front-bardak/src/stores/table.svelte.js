@@ -48,8 +48,24 @@ export const table = $state({
     notice: null,      // пауза, отмена, таймаут — то, что нужно показать человеком
     result: null,      // итог матча: места, уровни, дельта рейтинга
     decisions: {},     // место → что игрок только что решил; живёт несколько секунд
+    shout: null,       // {seatNo, text} — реплика игрока облачком, гаснет сама
     lastSeq: 0,
 });
+
+let shoutTimer = null;
+
+/**
+ * Реплика игрока — облачком, как в переписке.
+ *
+ * ⭐ Это не статус и не решение: «Карте место!» — обращение к столу, и висеть оно
+ * должно ровно столько, сколько живёт сам момент. Поэтому отдельная сущность,
+ * а не строка под аватаром: там место занято ролью в раздаче.
+ */
+function shout(seatNo, text) {
+    table.shout = {seatNo, text};
+    clearTimeout(shoutTimer);
+    shoutTimer = setTimeout(() => (table.shout = null), 5000);
+}
 
 /**
  * Что игрок только что сделал — видно всем за столом.
@@ -325,6 +341,15 @@ function animateGameEvent(envelope) {
             rememberOrigin(cardCode, handOf(seatNo), -8);
             decided(seatNo, 'перевёл', 'attack');
             playSound('card-transfer');
+            break;
+        case 'CARD_PINNED':
+            // ⭐ Возражение слышно сразу и всем: карта на столе больше не вернётся.
+            shout(seatNo, 'Карте место!');
+            playSound('card-play');
+            break;
+        case 'CARD_RECALLED':
+            decided(seatNo, 'передумал', 'pass');
+            playSound('cards-taken');
             break;
         case 'CARD_HUNG':
             // Навес садится именно в слот жертвы: по нему потом читают, кто близок к джокеру.

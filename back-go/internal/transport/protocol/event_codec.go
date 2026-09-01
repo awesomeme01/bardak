@@ -9,6 +9,10 @@ import "github.com/awesomeme01/bardak/back-go/internal/domain/game"
 // промолчит, а клиент получит пустое имя.
 func EventType(event game.DealEvent) string {
 	switch event.(type) {
+	case game.CardRecalled:
+		return "CARD_RECALLED"
+	case game.CardPinned:
+		return "CARD_PINNED"
 	case game.CardAttacked:
 		return "CARD_ATTACKED"
 	case game.CardDefended:
@@ -66,6 +70,10 @@ func EventPayload(event game.DealEvent) map[string]any {
 	payload := map[string]any{"seatNo": event.SeatNo()}
 
 	switch actual := event.(type) {
+	case game.CardRecalled:
+		payload["cardCode"] = EncodeCard(actual.Card)
+	case game.CardPinned:
+		payload["cardCode"] = EncodeCard(actual.Card)
 	case game.CardAttacked:
 		payload["cardCode"] = EncodeCard(actual.Card)
 	case game.CardDefended:

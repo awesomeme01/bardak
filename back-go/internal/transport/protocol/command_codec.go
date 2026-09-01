@@ -80,6 +80,20 @@ func ToCommand(commandType string, seatNo int, raw json.RawMessage) (game.DealCo
 		}
 		return game.HangCardCommand{Seat: seatNo, Card: card, Also: also}, nil
 
+	case "RECALL_CARD":
+		card, err := DecodeCard(payload.CardCode)
+		if err != nil {
+			return nil, err
+		}
+		return game.RecallCardCommand{Seat: seatNo, Card: card}, nil
+
+	case "PIN_CARD":
+		card, err := DecodeCard(payload.CardCode)
+		if err != nil {
+			return nil, err
+		}
+		return game.PinCardCommand{Seat: seatNo, Card: card}, nil
+
 	case "HANG_SKIP":
 		return game.HangSkipCommand{Seat: seatNo}, nil
 

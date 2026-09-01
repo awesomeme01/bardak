@@ -34,7 +34,15 @@ const (
 	// ExtraHangsNotAllowed — несколько карт разом можно отдать только когда право
 	// у всех (уникальный отстающий, §2.3). Обычный навес — это одна карта.
 	ExtraHangsNotAllowed RejectionReason = "EXTRA_HANGS_NOT_ALLOWED"
-	MustRevealFaceDown   RejectionReason = "MUST_REVEAL_FACE_DOWN"
+	// CardNotOnTable — такой карты на столе нет.
+	CardNotOnTable RejectionReason = "CARD_NOT_ON_TABLE"
+	// CardNotYours — забрать можно только своё, зафиксировать — только чужое.
+	CardNotYours RejectionReason = "CARD_NOT_YOURS"
+	// CardIsPinned — карту зафиксировали, передумать уже поздно.
+	CardIsPinned RejectionReason = "CARD_IS_PINNED"
+	// RecallTooLate — карту уже отбили либо раунд ушёл дальше.
+	RecallTooLate      RejectionReason = "RECALL_TOO_LATE"
+	MustRevealFaceDown RejectionReason = "MUST_REVEAL_FACE_DOWN"
 )
 
 // MoveVerdict — приговор по ходу: разрешён либо отклонён с причиной.

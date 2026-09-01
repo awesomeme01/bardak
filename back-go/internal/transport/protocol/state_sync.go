@@ -36,6 +36,13 @@ type StateSync struct {
 type SlotView struct {
 	Attack string  `json:"attack"`
 	Defend *string `json:"defend,omitempty"`
+	// ⭐ Кто положил карту и не зафиксирована ли она. Без этого клиент не может
+	// показать, что своё можно забрать, а чужое — придержать: правило про отзыв
+	// целиком опирается на авторство.
+	AttackBy     int  `json:"attackBy"`
+	DefendBy     int  `json:"defendBy"`
+	AttackPinned bool `json:"attackPinned"`
+	DefendPinned bool `json:"defendPinned"`
 }
 
 // SeatState — место за столом глазами смотрящего.
@@ -109,7 +116,13 @@ func ToStateSync(tableID string, dealNo int, view game.PlayerView, naming SeatNa
 	}
 
 	for _, slot := range view.Table {
-		entry := SlotView{Attack: EncodeCard(slot.Attack)}
+		entry := SlotView{
+			Attack:       EncodeCard(slot.Attack),
+			AttackBy:     slot.AttackBy,
+			DefendBy:     slot.DefenceBy,
+			AttackPinned: slot.AttackPinned,
+			DefendPinned: slot.DefencePinned,
+		}
 		if slot.Defence != nil {
 			defence := EncodeCard(slot.Defence)
 			entry.Defend = &defence
