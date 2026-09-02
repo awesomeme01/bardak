@@ -27,6 +27,8 @@
     import Profile from './Profile.svelte';
     import Stats from './Stats.svelte';
     import Leaders from './Leaders.svelte';
+    import Changelog from './Changelog.svelte';
+    import VersionLine from './VersionLine.svelte';
     import {go, replace, route, screenOf} from '../stores/route.svelte.js';
 
     /**
@@ -273,6 +275,8 @@
     <Stats onBack={viewingId ? closePlayer : toLobby} userId={viewingId} name={playerName}/>
 {:else if screen === 'leaders'}
     <Leaders onBack={toLobby} onPlayer={showPlayer}/>
+{:else if screen === 'changelog'}
+    <Changelog onBack={toLobby}/>
 {:else if screen === 'friends'}
     <Friends onBack={toLobby} onPlayer={showPlayer}/>
 {:else if screen === 'history'}
@@ -290,6 +294,8 @@
                onHistory={() => go('/history')}/>
 {:else}
     <Lobby bind:this={lobbyScreen} onEnter={toTable}/>
+    <!-- ⭐ Версия внизу главного: отсюда её и спрашивают, когда что-то «не работает». -->
+    <VersionLine/>
 {/if}
 
 <style>

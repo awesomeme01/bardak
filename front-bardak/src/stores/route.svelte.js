@@ -70,6 +70,8 @@ export function screenOf(path) {
             return {screen: 'history', param: tail ?? null};
         case 'friends':
             return {screen: 'friends', param: null};
+        case 'changelog':
+            return {screen: 'changelog', param: null};
         case 'leaders':
             return {screen: 'leaders', param: null};
         case 'profile':

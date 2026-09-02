@@ -389,6 +389,7 @@ function animateGameEvent(envelope) {
             break;
         case 'TAKE_ANNOUNCED':
             decided(seatNo, 'беру', 'take');
+            playSound('take-announce');
             break;
         case 'PASSED':
             decided(seatNo, 'пас', 'pass');

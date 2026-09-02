@@ -12,6 +12,10 @@ WORKDIR /src
 COPY front-bardak/package.json front-bardak/package-lock.json* ./
 RUN npm ci --no-audit --no-fund
 COPY front-bardak/ ./
+# ⚠️ Версия нужна и фронту: по ней он понимает, что установленная копия отстала
+# от серверной. Без этого «вышла новая версия» показать не из чего.
+ARG VERSION=dev
+ENV VITE_APP_VERSION=$VERSION
 RUN npm run build
 
 # ── бэкенд ──────────────────────────────────────────────────────────────────

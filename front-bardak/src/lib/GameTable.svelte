@@ -128,6 +128,14 @@
         if (actions.trumps.length) {
             return null;   // выбор козыря — отдельный ряд кнопок, там нечего подтверждать
         }
+        // ⚠️ Набранный навес обязан давать кнопку ЗДЕСЬ. Раньше при правиле отстающего
+        // нажатие по карте клало её в набор, но `selected` не трогало — нижняя кнопка
+        // не появлялась вовсе, и отправить набор можно было только кнопкой под жертвой.
+        // Со стороны это выглядело как «навес с руки не работает».
+        if (hangPicks.size) {
+            return {label: hangPicks.size > 1 ? `Навесить ${hangPicks.size} карты` : 'Навесить',
+                action: {type: 'HANG_PICKS'}};
+        }
         if (selected) {
             const hang = actions.hangs.find((a) => a.payload.cardCode === selected);
             if (hang) {
@@ -147,7 +155,7 @@
             return null;   // целей несколько — пусть укажет, какую карту бьёт
         }
         if (actions.reveal) {
-            return {label: 'Вскрыть скрытую', action: actions.reveal};
+            return {label: 'Взять потайную', action: actions.reveal};
         }
         return null;
     });
@@ -164,23 +172,35 @@
     const takeMatters = $derived(unbeaten.length > 0);
 
     /**
-     * ⚠️ «Беру» при полностью отбитом столе — почти всегда мисклик, и цена ему —
-     * унести в руку свои же отбитые карты. Живая партия: игрок отбил всё, включая
-     * джокера, нажал «Беру» — и докинутого в добор короля крыть было уже нельзя.
-     * Поэтому пустое взятие спрашивает второй раз; настоящее — уходит с первого.
+     * «Беру» срабатывает по УДЕРЖАНИЮ, а не по нажатию.
+     *
+     * ⚠️ Цена ошибки здесь высокая: взятие уносит в руку весь стол и закрывает защиту.
+     * Раньше стоял повторный вопрос «Точно беру?», но подтверждение вторым нажатием —
+     * это две возможности промахнуться вместо одной. Удержание нельзя нажать случайно,
+     * и оно не отнимает лишнего хода у того, кто действительно решил брать.
+     *
+     * ⭐ Отмена — просто отпустить палец: решение не зафиксировано, пока полоса не дошла.
      */
-    let takeAsked = $state(false);
-    $effect(() => {
-        void game;          // любой новый снимок сбрасывает вопрос
-        takeAsked = false;
-    });
+    const TAKE_HOLD_MS = 700;
 
-    function tapTake() {
-        if (!takeMatters && !takeAsked) {
-            takeAsked = true;
+    let takeHolding = $state(false);
+    let takeTimer = null;
+
+    function startTake() {
+        if (!actions.take) {
             return;
         }
-        run(actions.take);
+        takeHolding = true;
+        clearTimeout(takeTimer);
+        takeTimer = setTimeout(() => {
+            takeHolding = false;
+            run(actions.take);
+        }, TAKE_HOLD_MS);
+    }
+
+    function cancelTake() {
+        clearTimeout(takeTimer);
+        takeHolding = false;
     }
 
     /** Карта выбрана, а сделать ею нечего — это надо сказать словами, а не молчать. */
@@ -515,9 +535,13 @@
             if (attack) {
                 selected = null;
                 play(attack);
-                return;
             }
-            // ⚠️ Перевод — тоже «карта на стол»: с точки зрения руки жест тот же самый.
+            return;
+        }
+        // ⭐ У перевода СВОЯ цель, синяя: «положить к остальным» и «отдать дальше» —
+        // разные намерения, и жест обязан их различать. Раньше перевод и атака делили
+        // одну зону, и намерение угадывалось по тому, что нашлось первым.
+        if (target === 'transfer') {
             const transfer = actions.transfers.find((a) => a.payload.cardCode === code);
             if (transfer) {
                 selected = null;
@@ -536,6 +560,10 @@
         }
     }
 
+    /** Тащат карту, которой разрешён перевод, — значит показываем синюю цель. */
+    const canTransferDragged = $derived(Boolean(dropTargets.active)
+        && actions.transfers.some((a) => a.payload.cardCode === dropTargets.active));
+
     /** Можно ли тащить эту карту: пустое перетаскивание только раздражает. */
     function isDraggable(code) {
         return actions.attacks.some((a) => a.payload.cardCode === code)
@@ -550,8 +578,10 @@
             return false;
         }
         if (target === 'board') {
-            return actions.attacks.some((a) => a.payload.cardCode === code)
-                || actions.transfers.some((a) => a.payload.cardCode === code);
+            return actions.attacks.some((a) => a.payload.cardCode === code);
+        }
+        if (target === 'transfer') {
+            return actions.transfers.some((a) => a.payload.cardCode === code);
         }
         return actions.defends.some((a) => a.payload.cardCode === code
             && a.payload.targetCardCode === target.slice(5));
@@ -721,10 +751,27 @@
         <div class="stake" data-drop="board" class:accepts={dropAccepts('board')}
              style="--slot-w:{slotWidth}px; --slot-h:{slotHeight}px">
             {#if game.table.length === 0}
-                <div class="empty-stake mono" style="width:{stakeCard}px; height:{Math.round(stakeCard * 1.452)}px">
-                    <span>брось</span><span>карту</span>
-                </div>
+                <!-- ⭐ Приглашение положить карту адресное: тому, чья сейчас атака.
+                     Остальным оно предлагает то, чего они сделать не могут. -->
+                {#if game.canAttackSeat === game.mySeat && myTurn}
+                    <div class="empty-stake mono"
+                         style="width:{stakeCard}px; height:{Math.round(stakeCard * 1.452)}px">
+                        <span>брось</span><span>карту</span>
+                    </div>
+                {/if}
             {:else}
+                <!--
+                  ⭐ Цель перевода появляется только когда её и правда можно использовать:
+                  в руке зажата карта, которой перевод разрешён. Постоянный синий
+                  прямоугольник рядом со столом предлагал бы то, чего чаще всего нельзя.
+                -->
+                {#if canTransferDragged}
+                    <div class="transfer-slot mono" data-drop="transfer"
+                         class:accepts={dropAccepts('transfer')}
+                         style="width:{stakeCard}px; height:{Math.round(stakeCard * 1.452)}px">
+                        <span>перевести</span>
+                    </div>
+                {/if}
                 {#each game.table as slot (slot.attack)}
                     {@const canBeat = targets.some((a) => a.payload.targetCardCode === slot.attack)}
                     <!--
@@ -829,8 +876,16 @@
 
         <div class="my-hidden">
             {#if game.iHaveHiddenCard}
-                <!-- Свою скрытую карту не видит даже владелец (§1.8) — только рубашку. -->
-                <Card faceDown width={Math.round(stakeCard * 0.7)}/>
+                <!--
+                  Свою скрытую карту не видит даже владелец (§1.8) — только рубашку.
+                  ⭐ Когда её можно вскрыть, она мигает и открывается нажатием прямо здесь:
+                  искать для этого кнопку внизу — лишний шаг ровно в тот момент, когда
+                  выбора всё равно нет.
+                -->
+                <Card faceDown width={Math.round(stakeCard * 0.7)}
+                      selected={Boolean(actions.reveal)}
+                      onclick={actions.reveal ? () => run(actions.reveal) : null}
+                      title={actions.reveal ? 'Взять потайную' : 'Потайная карта'}/>
             {:else}
                 <div class="flying-slot mono"
                      style="width:{Math.round(stakeCard * 0.7)}px; height:{Math.round(stakeCard * 1.02)}px">взял</div>
@@ -883,16 +938,20 @@
         {:else}
             {#if actions.take}
                 <!-- Красным «Беру» зовёт только тогда, когда на столе есть что забирать. -->
-                <button class="narrow" class:btn={takeMatters} class:btn-red={takeMatters}
-                        class:btn-ghost={!takeMatters} type="button" onclick={tapTake}
-                        title={takeMatters ? 'Забрать стол' : 'Всё отбито — забирать нечего'}>
-                    {takeAsked ? 'Точно беру?' : 'Беру'}
+                <button class="narrow hold-take" class:btn={takeMatters} class:btn-red={takeMatters}
+                        class:btn-ghost={!takeMatters} class:holding={takeHolding} type="button"
+                        onpointerdown={startTake} onpointerup={cancelTake}
+                        onpointerleave={cancelTake} onpointercancel={cancelTake}
+                        title={takeMatters ? 'Держи, чтобы забрать стол'
+                            : 'Всё отбито — забирать нечего'}>
+                    <span class="hold-label">{takeHolding ? 'Держи…' : 'Беру'}</span>
                 </button>
             {/if}
             {#if primary}
                 <button class="btn wide" class:btn-blue={primary.tone === 'blue'}
                         class:cta={primary.action === actions.reveal && revealUrges} type="button"
-                        onclick={() => run(primary.action)}>{primary.label}</button>
+                        onclick={() => (primary.action.type === 'HANG_PICKS'
+                            ? takeHangCard() : run(primary.action))}>{primary.label}</button>
             {:else if selectedIsDead}
                 <div class="waiting mono">{short(selected)} сейчас не сыграть</div>
             {:else if onTheClock}
@@ -1114,11 +1173,50 @@
         gap: 6px 14px;
     }
 
-    /* Подсветка цели во время перетаскивания: сюда эту карту положить можно. */
+    /**
+     * Подсветка цели во время перетаскивания.
+     *
+     * ⭐ Та же обводка, что у выбранной карты, — чтобы «сюда можно» выглядело одинаково
+     * независимо от способа игры. Мигание отличает «я держу карту над целью» от простого
+     * выбора: выбор статичен, перетаскивание живёт, пока палец не отпущен.
+     */
     .accepts {
-        outline: 2px dashed var(--gold);
+        outline: 2px solid var(--gold);
         outline-offset: 3px;
         border-radius: 8px;
+        animation: target-call 0.75s ease-in-out infinite;
+    }
+
+    @keyframes target-call {
+        0%, 100% { box-shadow: 0 0 0 0 rgba(240, 205, 138, 0.35); }
+        50% { box-shadow: 0 0 0 9px rgba(240, 205, 138, 0); }
+    }
+
+    /* Синяя цель перевода: цвет тот же, что у кнопки перевода, — намерение читается сразу. */
+    .transfer-slot {
+        flex: none;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 8px;
+        border: 1px dashed #6aa6e8;
+        color: #8fc0f0;
+        font-size: 10px;
+        text-align: center;
+    }
+
+    .transfer-slot.accepts {
+        outline-color: #6aa6e8;
+        animation-name: transfer-call;
+    }
+
+    @keyframes transfer-call {
+        0%, 100% { box-shadow: 0 0 0 0 rgba(106, 166, 232, 0.4); }
+        50% { box-shadow: 0 0 0 9px rgba(106, 166, 232, 0); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .accepts { animation: none; }
     }
 
     .slot {
@@ -1251,6 +1349,20 @@
         outline-offset: 2px;
     }
 
+    /* Вскрыть можно — карта зовёт нажать, а не ждёт, пока её найдут в кнопках. */
+    .my-hidden :global(.playing-card.selected) {
+        animation: hidden-call 1.3s ease-in-out infinite;
+    }
+
+    @keyframes hidden-call {
+        0%, 100% { box-shadow: 0 0 0 0 rgba(240, 205, 138, 0); }
+        50% { box-shadow: 0 0 0 8px rgba(240, 205, 138, 0.22); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .my-hidden :global(.playing-card.selected) { animation: none; }
+    }
+
     .hidden-label {
         font-size: 9px;
         color: var(--text-45);
@@ -1305,6 +1417,41 @@
         flex: 1;
         height: 58px;
         font-size: 15px;
+    }
+
+    /**
+     * Полоса заполнения по удержанию: видно, сколько ещё держать и что отпускание
+     * всё отменит. Без неё удержание выглядит как «кнопка не сработала».
+     */
+    .hold-take {
+        position: relative;
+        overflow: hidden;
+        touch-action: none;
+    }
+
+    .hold-take::after {
+        content: '';
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 0;
+        background: rgba(255, 255, 255, 0.28);
+        pointer-events: none;
+    }
+
+    .hold-take.holding::after {
+        width: 100%;
+        transition: width 700ms linear;
+    }
+
+    .hold-label {
+        position: relative;
+        z-index: 1;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .hold-take.holding::after { transition: none; }
     }
 
     .wide {
