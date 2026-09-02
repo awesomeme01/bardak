@@ -51,8 +51,10 @@ services:
       BARDAK_VAPID_PUBLIC: ${BARDAK_VAPID_PUBLIC:-}
       BARDAK_VAPID_PRIVATE: ${BARDAK_VAPID_PRIVATE:-}
       BARDAK_VAPID_SUBJECT: ${BARDAK_VAPID_SUBJECT:-mailto:admin@${BARDAK_DOMAIN}}
-      # ⭐ Origin сокета — ровно домен и ничего больше: за Caddy запросы приходят с него.
-      BARDAK_WS_ORIGINS: https://${BARDAK_DOMAIN:?домен обязателен}
+      # ⭐ Origin сокета — ровно домены игры и ничего больше: за Caddy запросы приходят
+      # с них. ⚠️ Список обязан совпадать с доменами Caddy: сокет с чужого Origin
+      # отбивается, и «игра открылась, но стол не ходит» — это про рассинхрон здесь.
+      BARDAK_WS_ORIGINS: ${BARDAK_WS_ORIGINS:-https://${BARDAK_DOMAIN:?домен обязателен}}
       BARDAK_WS_ORIGIN_PATTERNS: ""
       BARDAK_AUTO_MOVE: ${BARDAK_AUTO_MOVE:-false}
       BARDAK_LOG_FORMAT: json
@@ -71,6 +73,8 @@ services:
       - "443:443"
     environment:
       BARDAK_DOMAIN: ${BARDAK_DOMAIN}
+      # Список доменов для Caddy; не задан — берётся единственный, как было раньше.
+      BARDAK_DOMAINS: ${BARDAK_DOMAINS:-${BARDAK_DOMAIN}}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
