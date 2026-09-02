@@ -226,7 +226,29 @@ func (e DealEngine) applyAttack(state DealState, cmd AttackCommand) MoveResult {
 	if state.Phase != PhaseTaking {
 		next.Phase = PhaseDefend
 	}
-	return AppliedResult(next, events)
+	return e.passIfNothingLeft(next, cmd.Seat, events)
+}
+
+// passIfNothingLeft — отдавший последнюю карту пасует сам.
+//
+// ⚠️ Иначе раунд ЖДЁТ его паса, а пасовать ему нечем и незачем: подкинуть он всё равно
+// не может. На экране это выглядело как кнопка «Пас» без выбора — единственное доступное
+// действие, которое игрок обязан нажать, чтобы игра пошла дальше.
+//
+// ⭐ Событие `PASSED` при этом порождается настоящее: за столом это так и читается —
+// человек выложился и в этом раунде больше не участвует.
+func (e DealEngine) passIfNothingLeft(state DealState, seat int,
+	events []DealEvent) MoveResult {
+	player, err := state.PlayerAt(seat)
+	if err != nil || player.HandSize() > 0 || player.CanPlayFaceDown(state.IsDeckEmpty()) {
+		return AppliedResult(state, events)
+	}
+	passed := e.applyPass(state, PassCommand{Seat: seat})
+	if !passed.Applied {
+		// Пас не прошёл (например, право уже ушло) — состояние и так корректно.
+		return AppliedResult(state, events)
+	}
+	return AppliedResult(passed.State, append(events, passed.Events...))
 }
 
 func (e DealEngine) applyDefend(state DealState, cmd DefendCommand) MoveResult {

@@ -47,5 +47,11 @@ func isEligibleAttacker(state DealState, seat int) bool {
 		return false
 	}
 	player, err := state.PlayerAt(seat)
-	return err == nil && player.InDeal
+	if err != nil || !player.InDeal {
+		return false
+	}
+	// ⚠️ Пустой рукой подкинуть нечем, и право к такому игроку не переходит вовсе:
+	// иначе раунд ждал бы паса от того, у кого нет выбора, а на экране висела бы
+	// кнопка «Пас», которая ничего не решает.
+	return player.HandSize() > 0 || player.CanPlayFaceDown(state.IsDeckEmpty())
 }

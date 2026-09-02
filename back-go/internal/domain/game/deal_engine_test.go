@@ -69,7 +69,11 @@ func TestRejectedCommandLeavesStateUntouched(t *testing.T) {
 func TestDefenceMarksNamedSlotBeaten(t *testing.T) {
 	target := NewPip(Seven, Diamonds)
 	card := NewPip(Nine, Diamonds)
-	state := aDeal().withHand(1, card).withAttack(target).withPhase(PhaseDefend).build()
+	// ⚠️ Подкидывающему нужна карта на руках, иначе раунд закрывается прямо здесь:
+	// право подкидывать к пустой руке больше не переходит, и стол уезжает в отбой
+	// до того, как тест успеет посмотреть на слот.
+	state := aDeal().withHand(0, NewPip(King, Clubs)).
+		withHand(1, card).withAttack(target).withPhase(PhaseDefend).build()
 
 	result := mustApply(t, state, DefendCommand{Seat: 1, Card: card, Target: target})
 
@@ -360,5 +364,60 @@ func TestPassIsRefusedOnAnEmptyTableWhileThereIsSomethingToPlay(t *testing.T) {
 
 	if result := engine.Apply(withAttack.Clone(), PassCommand{Seat: 0}); !result.Applied {
 		t.Errorf("пас при непустом столе отклонён: %s", result.Reason)
+	}
+}
+
+// Отдавший последнюю карту пасует сам: раунду незачем ждать подтверждения от того,
+// кому подкидывать нечем (ADR-067).
+//
+// ⚠️ Разведка перед правкой показала: у такого игрока PASS оставался ЕДИНСТВЕННЫМ
+// доступным действием. Спрятать кнопку на клиенте значило повесить стол.
+func TestLastCardPassesByItself(t *testing.T) {
+	engine := NewDealEngineFor(DefaultRulesConfig())
+	last := NewPip(Six, Clubs)
+	state := aDeal().withPlayers(2).withTrump(Hearts).
+		withHand(0, last).
+		withHand(1, NewPip(Ten, Hearts)).
+		withDeck(NewPip(Ace, Spades)).
+		withDefender(1).withAttackRight(0).build()
+
+	move := engine.Apply(state, AttackCommand{Seat: 0, Card: last})
+
+	if !move.Applied {
+		t.Fatalf("атака последней картой отклонена: %s", move.Reason)
+	}
+	passed := hasEvent(move.Events, func(e DealEvent) bool {
+		_, is := e.(Passed)
+		return is
+	})
+	if !passed {
+		t.Fatal("пас за опустевшего игрока не проведён: раунд будет ждать его кнопки")
+	}
+	// Атака на столе осталась — пас не закрыл раунд, защищающийся ещё отбивается.
+	if move.State.Phase != PhaseDefend {
+		t.Errorf("фаза после авто-паса = %s, ждали защиту", move.State.Phase)
+	}
+	if move.State.UnbeatenCount() != 1 {
+		t.Errorf("неотбитых на столе %d, ждали 1", move.State.UnbeatenCount())
+	}
+}
+
+// Право подкинуть идёт мимо игрока с пустой рукой: объявлять ему нечего (ADR-067).
+func TestEmptyHandGetsNoAttackRight(t *testing.T) {
+	attack := NewPip(Six, Clubs)
+	state := aDeal().withPlayers(3).withTrump(Hearts).
+		withHand(0, NewPip(Six, Spades)).
+		withHand(1, NewPip(Ten, Hearts)).
+		// Место 2 без карт: колода ещё есть, потайной нет — подкинуть нечем.
+		withHand(2).
+		withDeck(NewPip(Ace, Spades)).
+		withAttack(attack).
+		withDefender(1).withAttackRight(0).withPhase(PhaseDefend).build()
+
+	if isEligibleAttacker(state, 2) {
+		t.Fatal("пустая рука получила право подкинуть — игроку покажут «Пас» без выбора")
+	}
+	if !isEligibleAttacker(state, 0) {
+		t.Error("место 0 с картой права лишилось")
 	}
 }

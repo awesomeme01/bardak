@@ -144,11 +144,15 @@ func TestBeatenCardsLeaveTheDefenceBudget(t *testing.T) {
 	expectAllowed(t, rules().CanAttack(state, 0, extra), "отбитая карта не занимает бюджет")
 }
 
-// ⚠️ Скрытая карта входит в бюджет защиты, ТОЛЬКО когда колода пуста: пока колода есть,
-// атака не вправе вынудить её вскрыть.
-func TestFaceDownCountsOnlyWhenDeckIsEmpty(t *testing.T) {
+// ⭐ Скрытая карта входит в бюджет защиты, только пока её МОЖНО вскрыть: колода пуста
+// И обычных карт не осталось (§1.8, решение владельца 2026-09-02).
+//
+// ⚠️ Раньше она засчитывалась при любой пустой колоде, и при карте на руках потенциал
+// выходил на единицу больше настоящего: подкидывали то, отбить чем было нечем.
+func TestFaceDownCountsOnlyWhileItCanBePlayed(t *testing.T) {
 	extra := NewPip(Six, Clubs)
 
+	// Колода есть — потайную вскрыть нельзя, считается только рука.
 	withDeck := aDeal().
 		withHand(0, extra).
 		withHand(1, NewPip(Ace, Hearts)).
@@ -158,14 +162,26 @@ func TestFaceDownCountsOnlyWhenDeckIsEmpty(t *testing.T) {
 	expectRejected(t, rules().CanAttack(withDeck, 0, extra), DefenderHasTooFewCards,
 		"скрытая карта при непустой колоде")
 
-	deckEmpty := aDeal().
+	// ⚠️ Колода пуста, но в руке ещё есть карта — потайную играть рано, и в запас
+	// она не идёт. Прежнее правило здесь разрешало лишнюю карту.
+	handNotEmpty := aDeal().
 		withHand(0, extra).
 		withHand(1, NewPip(Ace, Hearts)).
 		withFaceDown(1, NewPip(King, Spades)).
 		withAttack(NewPip(Six, Diamonds)).
 		withEmptyDeck().
 		build()
-	expectAllowed(t, rules().CanAttack(deckEmpty, 0, extra), "скрытая карта при пустой колоде")
+	expectRejected(t, rules().CanAttack(handNotEmpty, 0, extra), DefenderHasTooFewCards,
+		"скрытая карта, пока в руке есть обычные")
+
+	// ⭐ Рука опустела — потайная стала играбельной и снова считается запасом.
+	handEmpty := aDeal().
+		withHand(0, extra).
+		withFaceDown(1, NewPip(King, Spades)).
+		withEmptyDeck().
+		build()
+	expectAllowed(t, rules().CanAttack(handEmpty, 0, extra),
+		"скрытая карта, когда играть можно только её")
 }
 
 // ⭐ Джокер совпадает только с джокером: под него нельзя подкинуть обычную карту.
