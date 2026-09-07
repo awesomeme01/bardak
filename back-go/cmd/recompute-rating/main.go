@@ -82,8 +82,12 @@ func main() {
 
 // load читает засчитанные матчи в хронологическом порядке.
 //
-// ⚠️ Берутся только те, у кого есть строка в rating_history: именно она — признак
-// «матч засчитан». Отменённые и незаконченные рейтинга не касаются.
+// ⚠️ Признак «матч засчитан» — СТРОКА В rating_history, а не статус матча. Так же
+// считает и сам движок (repository.MatchResults.AlreadyCounted), и это не придирка:
+// на проде нашёлся матч со статусом ABORTED, у которого рейтинг уже был посчитан —
+// его отменили после подведения итога. Фильтруй по статусу — и такой матч выпал бы
+// из пересчёта, оставив свои строки истории с рейтингом по старой формуле, а
+// matches_played разошёлся бы с числом строк.
 func load(ctx context.Context, pool *pgxpool.Pool) ([]match, error) {
 	const query = `select m.id, coalesce(m.finished_at, m.started_at),
 	                      (select h.season_id from rating_history h
@@ -91,7 +95,7 @@ func load(ctx context.Context, pool *pgxpool.Pool) ([]match, error) {
 	                      p.user_id, p.naves_level, p.loss_type
 	               from matches m
 	               join match_players p on p.match_id = m.id
-	               where m.status = 'FINISHED' and p.place is not null
+	               where p.place is not null
 	                 and exists (select 1 from rating_history h where h.match_id = m.id)
 	               order by coalesce(m.finished_at, m.started_at), m.id, p.seat_no`
 
