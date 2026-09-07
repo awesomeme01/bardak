@@ -27,7 +27,7 @@
         {/each}
     </div>
 {:else}
-    <div class="boxes">
+    <div class="boxes selectable">
         {#each chars as char, index (index)}
             <span class="box filled">{char}</span>
         {/each}

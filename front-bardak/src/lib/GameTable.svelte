@@ -26,6 +26,7 @@
     import {draggable, dropTargets} from './drag.svelte.js';
     import {isRedSuit, suitGlyph} from './naming.js';
 
+    import Icon from './Icon.svelte';
     let {onLeave = null, onMenu = null} = $props();
 
     const game = $derived(table.game);
@@ -671,11 +672,11 @@
         <div class="hud-buttons">
             <button class="icon" type="button" onclick={toggleSound}
                     title={sound.enabled ? 'Выключить звук' : 'Включить звук'}>
-                {sound.enabled ? '🔊' : '🔇'}
+                <Icon name={sound.enabled ? 'soundOn' : 'soundOff'} size={17}/>
             </button>
             {#if onMenu}
                 <button class="icon" type="button" onclick={onMenu}
-                        title="В главное меню — место за столом останется за тобой">☰</button>
+                        title="В главное меню — место за столом останется за тобой"><Icon name="history" size={17}/></button>
             {/if}
             {#if onLeave}
                 {#if leaveAsked}

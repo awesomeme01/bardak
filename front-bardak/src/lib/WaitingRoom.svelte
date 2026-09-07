@@ -12,6 +12,7 @@
     import {lobby} from '../stores/lobby.svelte.js';
     import {linkFor} from '../stores/invite-link.svelte.js';
 
+    import Icon from './Icon.svelte';
     /**
      * ⚠️ Стрелка назад и «Выйти из-за стола» — разные действия, а не одно.
      *
@@ -89,7 +90,7 @@
 
 <header class="bar">
     <button class="icon-btn" type="button" onclick={onMenu ?? onExit}
-            aria-label="В главное меню — место останется за тобой">←</button>
+            aria-label="В главное меню — место останется за тобой"><Icon name="back"/></button>
     <div>
         <div class="name">{info.name}</div>
         <div class="mono">{seats.length} из {info.maxPlayers} · {info.isPrivate ? 'по коду' : 'открытый'}</div>
@@ -113,7 +114,10 @@
         -->
         <div class="link-row">
             <span class="label">Ссылка — работает и для тех, кто ещё не играл</span>
-            <code class="link">{link}</code>
+            <!-- ⭐ Ссылку и код выделять МОЖНО: их для того и показывают. Кнопка
+                 «скопировать» есть, но в вебе она молча отказывает без https,
+                 и тогда единственный путь — выделить руками. -->
+            <code class="link selectable">{link}</code>
             <div class="row center">
                 <button class="btn-small gold" type="button" onclick={copyLink}>
                     {copied === 'link' ? 'Ссылка скопирована' : 'Скопировать ссылку'}

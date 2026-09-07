@@ -31,6 +31,7 @@
     import VersionLine from './VersionLine.svelte';
     import {go, replace, route, screenOf} from '../stores/route.svelte.js';
 
+    import Icon from './Icon.svelte';
     /**
      * ⭐ Экран берётся из АДРЕСА, а не из своей переменной. Отсюда всё остальное:
      * «назад» в браузере работает сам собой, перезагрузка возвращает туда же, где был,
@@ -66,7 +67,6 @@
     }
 
     let error = $state(null);
-    let lobbyScreen = $state(null);
 
     /** Стол из ссылки, когда игрок уже сидит за другим: ждёт его решения. */
     let pendingLink = $state(null);
@@ -198,8 +198,7 @@
 </script>
 
 {#if !atTable}
-    <AppHeader onRefresh={screen === 'lobby' ? () => lobbyScreen?.refresh() : null}
-               onHistory={() => go(screen === 'history' ? '/' : '/history')}
+    <AppHeader onHistory={() => go(screen === 'history' ? '/' : '/history')}
                onProfile={() => go('/profile')}
                onFriends={() => go('/friends')}
                onStats={() => { playerName = null; go('/stats'); }}
@@ -254,10 +253,18 @@
   ⭐ Полоса навигации на каждом экране, кроме самого стола: уйти в меню и вернуться
   к своей партии должно быть можно откуда угодно. За столом её нет намеренно — там
   экран занят игрой, а выход живёт в строке раздачи.
+
+  ⚠️ Кнопка «назад» на всё приложение ОДНА, и живёт она здесь. Раньше рядом с ней
+  каждый экран рисовал ещё и свою — со стрелкой без подписи, — и получалось две кнопки
+  подряд, делающие одно и то же. Здесь она к тому же знает, куда возвращать: из чужого
+  профиля — назад по истории, откуда пришли, а не в лобби через голову.
 -->
 {#if !atTable && screen !== 'lobby'}
     <nav class="screen-nav">
-        <button class="nav-btn" type="button" onclick={toLobby}>← В главное меню</button>
+        <button class="nav-btn" type="button" onclick={viewingId ? closePlayer : toLobby}>
+            <Icon name="back" size={16}/>
+            <span>{viewingId ? 'Назад' : 'В главное меню'}</span>
+        </button>
     </nav>
 {/if}
 
@@ -270,15 +277,15 @@
 {/if}
 
 {#if screen === 'profile'}
-    <Profile onBack={toLobby}/>
+    <Profile/>
 {:else if screen === 'stats'}
-    <Stats onBack={viewingId ? closePlayer : toLobby} userId={viewingId} name={playerName}/>
+    <Stats onPlayer={showPlayer} userId={viewingId} name={playerName}/>
 {:else if screen === 'leaders'}
-    <Leaders onBack={toLobby} onPlayer={showPlayer}/>
+    <Leaders onPlayer={showPlayer}/>
 {:else if screen === 'changelog'}
-    <Changelog onBack={toLobby}/>
+    <Changelog/>
 {:else if screen === 'friends'}
-    <Friends onBack={toLobby} onPlayer={showPlayer}/>
+    <Friends onPlayer={showPlayer}/>
 {:else if screen === 'history'}
     <!--
       ⭐ Реплей занимает экран целиком, а не раскрывается внутри карточки матча: смотреть
@@ -293,7 +300,7 @@
     <TableRoom info={lobby.current} onExit={leftTable} onMenu={toLobby}
                onHistory={() => go('/history')}/>
 {:else}
-    <Lobby bind:this={lobbyScreen} onEnter={toTable}/>
+    <Lobby onEnter={toTable}/>
     <!-- ⭐ Версия внизу главного: отсюда её и спрашивают, когда что-то «не работает». -->
     <VersionLine/>
 {/if}
@@ -310,6 +317,9 @@
     }
 
     .nav-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
         padding: 9px 14px;
         border-radius: 12px;
         border: 1px solid var(--line-strong);

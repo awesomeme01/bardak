@@ -8,8 +8,10 @@
     import {onMount} from 'svelte';
     import {apiGet} from '../net/rest-client.js';
     import RatingChart from './RatingChart.svelte';
+    import Overview from './Overview.svelte';
     import {degreeName} from './naming.js';
 
+    import Icon from './Icon.svelte';
     /**
      * ⭐ Экран один на себя и на чужого игрока. Отдельный «почти такой же» разошёлся бы
      * с этим на первой же правке: показатели те же, сервер считает их одинаково, и
@@ -17,7 +19,16 @@
      *
      * @param userId  чужой игрок; пусто — свои показатели
      */
-    let {onBack, userId = null, name = null} = $props();
+    let {userId = null, name = null, onPlayer = null} = $props();
+
+    /**
+     * Своя статистика и общая — две вкладки одного экрана.
+     *
+     * ⭐ Не отдельный раздел в меню: вопрос «как я играю» и «как мы играем» задают подряд,
+     * и разводить их по разным экранам значит заставлять ходить туда-сюда. У чужого
+     * профиля вкладок нет — там показывать нечего, кроме него самого.
+     */
+    let tab = $state('mine');
 
     let stats = $state(null);
     let rating = $state(null);
@@ -51,12 +62,22 @@
 
 <div class="screen">
     <div class="head">
-        <button class="icon-btn" type="button" onclick={onBack} aria-label="Назад">←</button>
         <h1>{mine ? 'Статистика' : (name ?? rating?.displayName ?? 'Игрок')}</h1>
         {#if !mine}<span class="whose mono">чужие показатели</span>{/if}
     </div>
 
-    {#if error}
+    {#if mine}
+        <div class="tabs">
+            <button class="tab" class:on={tab === 'mine'} type="button"
+                    onclick={() => (tab = 'mine')}>Моя</button>
+            <button class="tab" class:on={tab === 'all'} type="button"
+                    onclick={() => (tab = 'all')}>Общая</button>
+        </div>
+    {/if}
+
+    {#if mine && tab === 'all'}
+        <Overview {onPlayer}/>
+    {:else if error}
         <p class="notice notice-fail">{error}</p>
     {:else if !stats}
         <p class="muted">Считаю…</p>
@@ -189,6 +210,32 @@
         display: flex;
         align-items: center;
         gap: 12px;
+    }
+
+    /* Переключатель на две вкладки: половина ширины каждой, чтобы попадать пальцем. */
+    .tabs {
+        display: flex;
+        gap: 4px;
+        padding: 4px;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+    }
+
+    .tab {
+        flex: 1;
+        padding: 9px 12px;
+        border: none;
+        border-radius: 10px;
+        background: none;
+        color: var(--text-55);
+        font: inherit;
+        font-size: 13px;
+        font-weight: 600;
+    }
+
+    .tab.on {
+        background: rgba(240, 205, 138, 0.14);
+        color: var(--gold);
     }
 
     .tiles {

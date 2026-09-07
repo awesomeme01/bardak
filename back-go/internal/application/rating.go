@@ -170,6 +170,33 @@ type StatsStore interface {
 	HistoryOf(ctx context.Context, userID string) ([]repository.RatingHistoryEntry, error)
 }
 
+// OverviewStore — что сводной статистике нужно от базы.
+type OverviewStore interface {
+	Overview(ctx context.Context) ([]repository.OverviewPlayer, error)
+	OverviewTotals(ctx context.Context) (repository.OverviewTotals, error)
+}
+
+// OverviewRow — игрок в сводной таблице.
+type OverviewRow struct {
+	UserID      string
+	DisplayName string
+	// Rating — пусто у того, кто ещё не доиграл ни одного матча.
+	Rating  *string
+	Matches int
+	Wins    int
+	Losses  int
+	Royals  int
+	Hung    int
+	// AvgPlace — среднее место; пусто, если матчей нет.
+	AvgPlace *string
+}
+
+// Overview — сводка по всем игрокам вместе с общими итогами.
+type Overview struct {
+	Players []OverviewRow
+	Totals  repository.OverviewTotals
+}
+
 // HangingStore — что статистике нужно от лога событий.
 //
 // ⭐ Отдельным интерфейсом, а не полями в StatsStore: рейтинг и итоги живут в одних
@@ -245,13 +272,46 @@ func EmptyPlayerStats() PlayerStats {
 // это десятки строк; когда станет тысячами — сюда придёт витрина, а не досчитывание
 // в живых запросах.
 type StatsService struct {
-	stats   StatsStore
-	hanging HangingStore
+	stats    StatsStore
+	hanging  HangingStore
+	overview OverviewStore
 }
 
 // NewStatsService собирает сценарий статистики.
-func NewStatsService(stats StatsStore, hanging HangingStore) StatsService {
-	return StatsService{stats: stats, hanging: hanging}
+func NewStatsService(stats StatsStore, hanging HangingStore,
+	overview OverviewStore) StatsService {
+	return StatsService{stats: stats, hanging: hanging, overview: overview}
+}
+
+// Overview — сводка по всем игрокам.
+//
+// ⭐ Среднее место считается ЗДЕСЬ той же функцией, что и в личной статистике: два
+// округления одного и того же числа однажды разошлись бы на копейку, и игрок увидел
+// бы в своём профиле 2.37, а в общей таблице 2.38.
+func (s StatsService) Overview(ctx context.Context) (Overview, error) {
+	rows, err := s.overview.Overview(ctx)
+	if err != nil {
+		return Overview{}, err
+	}
+	totals, err := s.overview.OverviewTotals(ctx)
+	if err != nil {
+		return Overview{}, err
+	}
+
+	players := make([]OverviewRow, 0, len(rows))
+	for _, row := range rows {
+		item := OverviewRow{
+			UserID: row.UserID, DisplayName: row.DisplayName, Rating: row.Rating,
+			Matches: row.MatchesPlayed, Wins: row.Wins, Losses: row.Losses,
+			Royals: row.Royals, Hung: row.Hung,
+		}
+		if row.MatchesPlayed > 0 {
+			average := averagePlace(row.PlacesSum, row.MatchesPlayed)
+			item.AvgPlace = &average
+		}
+		players = append(players, item)
+	}
+	return Overview{Players: players, Totals: totals}, nil
 }
 
 // Of — статистика игрока.

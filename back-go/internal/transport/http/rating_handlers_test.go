@@ -239,7 +239,7 @@ func ratingHandlersWith(store stubRatingStore, users stubRatingUsers,
 		Rating: application.NewRatingService(store, users, isAdmin, func() time.Time {
 			return time.Date(2026, 8, 20, 9, 0, 0, 0, time.UTC)
 		}),
-		Stats: application.NewStatsService(store, noHangingStub{}),
+		Stats: application.NewStatsService(store, noHangingStub{}, noOverviewStub{}),
 	}
 }
 
@@ -428,4 +428,15 @@ func (noHangingStub) HungRanksOf(context.Context, string) ([]repository.HungRank
 
 func (noHangingStub) InflictedDegreesOf(context.Context, string) ([]repository.InflictedDegree, error) {
 	return []repository.InflictedDegree{}, nil
+}
+
+// noOverviewStub — сводка, в которой никого нет.
+type noOverviewStub struct{}
+
+func (noOverviewStub) Overview(context.Context) ([]repository.OverviewPlayer, error) {
+	return []repository.OverviewPlayer{}, nil
+}
+
+func (noOverviewStub) OverviewTotals(context.Context) (repository.OverviewTotals, error) {
+	return repository.OverviewTotals{}, nil
 }

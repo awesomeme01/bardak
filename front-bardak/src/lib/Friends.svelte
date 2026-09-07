@@ -12,7 +12,8 @@
         from '../stores/friends.svelte.js';
     import {lobby} from '../stores/lobby.svelte.js';
 
-    let {onBack, onPlayer = null} = $props();
+    import Icon from './Icon.svelte';
+    let {onPlayer = null} = $props();
 
     let username = $state('');
     let busy = $state(false);
@@ -39,7 +40,6 @@
 
 <div class="screen">
     <div class="head">
-        <button class="icon-btn" type="button" onclick={onBack} aria-label="Назад">←</button>
         <h1>Друзья</h1>
     </div>
 
@@ -108,7 +108,9 @@
                     </button>
                 {/if}
                 <button class="btn-ghost small" type="button"
-                        onclick={() => removeFriend(person.userId)} aria-label="Убрать из друзей">×</button>
+                        onclick={() => removeFriend(person.userId)} aria-label="Убрать из друзей">
+                    <Icon name="close" size={15}/>
+                </button>
             </div>
         {:else}
             <!-- Пустой список объясняет, что тут будет и как это получить. -->

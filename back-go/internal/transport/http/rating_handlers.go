@@ -163,6 +163,34 @@ type PlayerStatsView struct {
 	Inflicted []InflictedCountView `json:"inflicted"`
 }
 
+// OverviewRowView — игрок в сводной таблице.
+type OverviewRowView struct {
+	UserID      string `json:"userId"`
+	DisplayName string `json:"displayName"`
+	// Rating — ключа НЕТ у того, кто ещё не доиграл ни одного матча.
+	Rating   *json.Number `json:"rating,omitempty"`
+	Matches  int          `json:"matches"`
+	Wins     int          `json:"wins"`
+	Losses   int          `json:"losses"`
+	Royals   int          `json:"royals"`
+	Hung     int          `json:"hung"`
+	AvgPlace *json.Number `json:"avgPlace,omitempty"`
+}
+
+// OverviewTotalsView — сколько всего сыграно.
+type OverviewTotalsView struct {
+	Players int `json:"players"`
+	Matches int `json:"matches"`
+	Offline int `json:"offline"`
+	Deals   int `json:"deals"`
+}
+
+// OverviewView — сводка по всем игрокам.
+type OverviewView struct {
+	Totals  OverviewTotalsView `json:"totals"`
+	Players []OverviewRowView  `json:"players"`
+}
+
 // RatingHandlers — обработчики рейтинга, сезонов и статистики.
 //
 // ⚠️ Один тип на два префикса (/api/rating и /api/stats): в Java это два контроллера,
@@ -182,6 +210,7 @@ func (h RatingHandlers) Routes(router chi.Router) {
 	router.Get("/api/rating/top", h.top)
 	router.Get("/api/rating/seasons", h.seasons)
 	router.Post("/api/rating/seasons", h.newSeason)
+	router.Get("/api/stats/overview", h.overview)
 	router.Get("/api/stats/me", h.statsMine)
 	router.Get("/api/stats/users/{id}", h.statsOf)
 }
@@ -269,6 +298,37 @@ func (h RatingHandlers) newSeason(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	WriteJSON(w, http.StatusOK, toSeasonView(season))
+}
+
+// overview — сводка по всем игрокам.
+//
+// ⭐ Отдельная ручка, а не сборка на клиенте из /rating/top и статистик по одному:
+// клиенту пришлось бы делать запрос на игрока, а среднее место он посчитал бы своим
+// округлением — и разошёлся бы с профилем.
+func (h RatingHandlers) overview(w http.ResponseWriter, r *http.Request) {
+	view, err := h.Stats.Overview(r.Context())
+	if err != nil {
+		WriteError(w, r, h.Log, ErrInternal)
+		return
+	}
+
+	players := make([]OverviewRowView, 0, len(view.Players))
+	for _, row := range view.Players {
+		players = append(players, OverviewRowView{
+			UserID: row.UserID, DisplayName: row.DisplayName,
+			Rating:  toRatingNumber(row.Rating),
+			Matches: row.Matches, Wins: row.Wins, Losses: row.Losses,
+			Royals: row.Royals, Hung: row.Hung,
+			AvgPlace: toRatingNumber(row.AvgPlace),
+		})
+	}
+	WriteJSON(w, http.StatusOK, OverviewView{
+		Totals: OverviewTotalsView{
+			Players: view.Totals.Players, Matches: view.Totals.Matches,
+			Offline: view.Totals.Offline, Deals: view.Totals.Deals,
+		},
+		Players: players,
+	})
 }
 
 func (h RatingHandlers) statsMine(w http.ResponseWriter, r *http.Request) {

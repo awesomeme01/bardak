@@ -177,7 +177,7 @@ func TestCloseSeasonOpensNextWithGivenName(t *testing.T) {
 // ⚠️ Пустая статистика — это нули и пустой список степеней, а НЕ ошибка: неизвестный
 // идентификатор в Java даёт ровно PlayerStats.empty().
 func TestEmptyStatsForPlayerWithoutMatches(t *testing.T) {
-	service := NewStatsService(&fakeRatingStore{}, noHanging{})
+	service := NewStatsService(&fakeRatingStore{}, noHanging{}, noOverview{})
 
 	stats, err := service.Of(context.Background(), "кто угодно")
 	if err != nil {
@@ -206,7 +206,7 @@ func TestStatsAreCountedFromMatchHistory(t *testing.T) {
 		{Place: 3, LossType: ratingLossType("ROYAL"), Finished: true, DealsPlayed: 2},
 		{Place: 3, LossType: ratingLossType("FAIL"), Finished: true, DealsPlayed: 4},
 	}}
-	service := NewStatsService(store, noHanging{})
+	service := NewStatsService(store, noHanging{}, noOverview{})
 
 	stats, err := service.Of(context.Background(), "id")
 	if err != nil {
@@ -232,7 +232,7 @@ func TestDealsCountOnlyFinishedMatches(t *testing.T) {
 		{Place: 2, Finished: false, DealsPlayed: 9},
 	}}
 
-	stats, err := NewStatsService(store, noHanging{}).Of(context.Background(), "id")
+	stats, err := NewStatsService(store, noHanging{}, noOverview{}).Of(context.Background(), "id")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -277,7 +277,7 @@ func TestStreakGoesByPlacesNotByRatingDelta(t *testing.T) {
 		},
 	}
 
-	stats, err := NewStatsService(store, noHanging{}).Of(context.Background(), "id")
+	stats, err := NewStatsService(store, noHanging{}, noOverview{}).Of(context.Background(), "id")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -325,7 +325,7 @@ func TestDegreesFollowDeclarationOrder(t *testing.T) {
 		{Place: 5, LossType: ratingLossType("SUPER_MEGA_FAIL"), Finished: true},
 	}}
 
-	stats, err := NewStatsService(store, noHanging{}).Of(context.Background(), "id")
+	stats, err := NewStatsService(store, noHanging{}, noOverview{}).Of(context.Background(), "id")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -349,7 +349,7 @@ func TestOnlyFirstPlaceCountsAsWin(t *testing.T) {
 	store := &fakeRatingStore{outcomes: []repository.PlayerMatchOutcome{
 		{Place: 2, Finished: true}, {Place: 1, Finished: true},
 	}}
-	stats, err := NewStatsService(store, noHanging{}).Of(context.Background(), "id")
+	stats, err := NewStatsService(store, noHanging{}, noOverview{}).Of(context.Background(), "id")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -373,4 +373,15 @@ func (noHanging) HungRanksOf(context.Context, string) ([]repository.HungRank, er
 
 func (noHanging) InflictedDegreesOf(context.Context, string) ([]repository.InflictedDegree, error) {
 	return []repository.InflictedDegree{}, nil
+}
+
+// noOverview — сводка, в которой никого нет: эти сценарии проверяют личную статистику.
+type noOverview struct{}
+
+func (noOverview) Overview(context.Context) ([]repository.OverviewPlayer, error) {
+	return []repository.OverviewPlayer{}, nil
+}
+
+func (noOverview) OverviewTotals(context.Context) (repository.OverviewTotals, error) {
+	return repository.OverviewTotals{}, nil
 }

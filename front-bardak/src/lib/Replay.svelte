@@ -15,6 +15,7 @@
     import {onDestroy} from 'svelte';
     import {replayLine, suitName} from './naming.js';
 
+    import Icon from './Icon.svelte';
     let {replay, details, onClose} = $props();
 
     /** Скорости показа: обычная, вдвое быстрее, вчетверо. */
@@ -96,7 +97,7 @@
 
 <div class="replay screen">
     <div class="head">
-        <button class="icon-btn" type="button" onclick={onClose} aria-label="Закрыть реплей">←</button>
+        <button class="icon-btn" type="button" onclick={onClose} aria-label="Закрыть реплей"><Icon name="back"/></button>
         <div class="grow">
             <div class="title">Реплей · раздача {deal.dealNo}</div>
             <div class="mono sub">
@@ -118,9 +119,11 @@
 
     <div class="transport">
         <button class="rewind" type="button" onclick={() => { step = 0; playing = false; }}
-                title="К началу раздачи" aria-label="К началу">⏮</button>
+                title="К началу раздачи" aria-label="К началу"><Icon name="rewind" size={17}/></button>
         <button class="play" type="button" onclick={toggle}
-                aria-label={playing ? 'Пауза' : 'Играть'}>{playing ? '❚❚' : '▶'}</button>
+                aria-label={playing ? 'Пауза' : 'Играть'}>
+            <Icon name={playing ? 'pause' : 'play'} size={17}/>
+        </button>
         <div class="grow">
             <!-- Полоса — и показ хода, и перемотка: разбирают партию именно по ней. -->
             <input class="scrub" type="range" min="0" max={Math.max(0, total - 1)}
@@ -219,6 +222,8 @@
         border-bottom: 1px solid var(--line);
     }
 
+    /* ⚠️ flex по центру: внутри теперь значок, а не символ, и выключка по базовой
+       линии шрифта на него не действует. */
     .rewind {
         width: 36px;
         height: 40px;
@@ -226,7 +231,9 @@
         border: 1px solid var(--line-strong);
         background: var(--surface);
         color: var(--text-55);
-        font-size: 13px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
         flex: none;
     }
 
@@ -236,8 +243,9 @@
         border-radius: 12px;
         background: var(--gold-face);
         color: var(--gold-ink);
-        font-size: 14px;
-        font-weight: 800;
+        display: flex;
+        align-items: center;
+        justify-content: center;
         flex: none;
     }
 

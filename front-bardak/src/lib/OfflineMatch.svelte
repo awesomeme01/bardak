@@ -230,6 +230,28 @@
         gap: 10px;
     }
 
+    /*
+      ⚠️ min-width: 0 у списка ОБЯЗАТЕЛЕН. Флекс-элемент по умолчанию не ужимается
+      меньше своего содержимого, а в списке лежит «супер-мега-отсосал» — самая длинная
+      строка шкалы. Список распирал строку, и от имени игрока оставалась одна буква.
+    */
+    .rows select {
+        flex: 1 1 55%;
+        min-width: 0;
+        height: 44px;
+        padding: 0 10px;
+        border-radius: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        background: var(--surface);
+        color: var(--text);
+        font: inherit;
+        font-size: 13px;
+    }
+
+    .rows .who-name {
+        flex: 1 1 45%;
+    }
+
     .who-name {
         font-size: 14px;
         font-weight: 600;

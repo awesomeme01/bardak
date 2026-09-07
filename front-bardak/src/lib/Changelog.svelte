@@ -8,7 +8,7 @@
      */
     import {onMount} from 'svelte';
 
-    let {onBack} = $props();
+    
 
     let releases = $state([]);
     let error = $state(null);
@@ -39,7 +39,6 @@
 </script>
 
 <div class="screen">
-    <button class="btn-ghost back" type="button" onclick={onBack}>← В главное меню</button>
 
     <h2 class="title">Что менялось</h2>
 
@@ -72,10 +71,6 @@
         display: flex;
         flex-direction: column;
         gap: 14px;
-    }
-
-    .back {
-        align-self: flex-start;
     }
 
     .title {

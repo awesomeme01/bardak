@@ -86,7 +86,7 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool,
 	profileService := application.NewProfileService(users)
 	lobbyService := application.NewLobbyService(tables, time.Now, log)
 	ratingService := application.NewRatingService(ratings, users, cfg.IsSeasonAdmin, time.Now)
-	statsService := application.NewStatsService(ratings, history)
+	statsService := application.NewStatsService(ratings, history, ratings)
 	// ⭐ Присутствие и доставка приглашений живут в памяти узла: со вторым узлом это
 	// сломалось бы, но второй узел отменён решением (ADR-061), и это осознанная плата.
 	presence := application.NewPresence()

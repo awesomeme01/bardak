@@ -11,7 +11,8 @@
     import {FACES, avatarOf} from './naming.js';
     import {disablePush, enablePush, pwa} from '../stores/pwa.svelte.js';
 
-    let {onBack} = $props();
+    import Icon from './Icon.svelte';
+    
 
     let displayName = $state(profile.user?.displayName ?? '');
     let avatar = $state(profile.user?.avatar ?? '');
@@ -54,7 +55,6 @@
 
 <div class="screen">
     <div class="head">
-        <button class="icon-btn" type="button" onclick={onBack} aria-label="Назад">←</button>
         <h1>Профиль</h1>
     </div>
 

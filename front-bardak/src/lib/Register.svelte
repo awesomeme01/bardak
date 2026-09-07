@@ -2,6 +2,7 @@
     import {register} from '../stores/auth.svelte.js';
     import CodeBoxes from './CodeBoxes.svelte';
 
+    import Icon from './Icon.svelte';
     let {onDone} = $props();
 
     let form = $state({username: '', displayName: '', password: '', inviteCode: ''});
@@ -37,7 +38,7 @@
 <!-- Регистрация закрытая: без кода приглашения не пустит (bardak.auth.invite-codes). -->
 <form class="screen" onsubmit={submit}>
     <div class="head">
-        <button class="icon-btn" type="button" onclick={onDone} aria-label="Назад ко входу">←</button>
+        <button class="icon-btn" type="button" onclick={onDone} aria-label="Назад ко входу"><Icon name="back"/></button>
         <h1>Регистрация</h1>
     </div>
     <p class="muted">Клуб закрытый — нужен код от того, кто уже за столом.</p>

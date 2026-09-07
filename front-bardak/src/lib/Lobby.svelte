@@ -7,6 +7,7 @@
     import Avatar from './Avatar.svelte';
     import OfflineMatch from './OfflineMatch.svelte';
 
+    import Icon from './Icon.svelte';
     let {onEnter} = $props();
 
     let error = $state(null);
@@ -50,6 +51,28 @@
 
     /** Свободных мест, кроме моего: больше приглашений, чем стульев, звать бессмысленно. */
     const seatsToFill = $derived(maxPlayers - 1);
+
+    /**
+     * Список обновляется САМ, когда экран снова становится видимым.
+     *
+     * ⭐ Раньше для этого в шапке стояла кнопка со стрелкой. Кнопка занимала место
+     * рядом с именем и требовала догадаться, что её надо нажать; при этом единственный
+     * момент, когда список успевает устареть, — это когда игру свернули и вернулись.
+     * Его и ловим.
+     */
+    onMount(() => {
+        const again = () => {
+            if (document.visibilityState === 'visible') {
+                refresh();
+            }
+        };
+        window.addEventListener('focus', again);
+        document.addEventListener('visibilitychange', again);
+        return () => {
+            window.removeEventListener('focus', again);
+            document.removeEventListener('visibilitychange', again);
+        };
+    });
 
     export async function refresh() {
         error = null;
@@ -258,7 +281,7 @@
                 <span class="table-name">Войти по коду</span>
                 <span class="mono block">6 символов от друга</span>
             </span>
-            <span class="mono">→</span>
+            <Icon name="chevronRight" size={17}/>
         </button>
     {/if}
 </div>

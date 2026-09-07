@@ -14,7 +14,8 @@
     import Avatar from './Avatar.svelte';
     import {profile} from '../stores/profile.svelte.js';
 
-    let {onBack, onPlayer = null} = $props();
+    import Icon from './Icon.svelte';
+    let {onPlayer = null} = $props();
 
     let rows = $state([]);
     let seasons = $state([]);
@@ -64,8 +65,17 @@
     /** ⭐ Своя строка подсвечивается: в таблице на два экрана себя иначе не найти. */
     const myId = $derived(profile.user?.id ?? null);
 
-    function medal(index) {
-        return ['🥇', '🥈', '🥉'][index] ?? null;
+    /**
+     * Тройка призёров.
+     *
+     * ⚠️ Были эмодзи-медали. На каждой платформе они рисуются по-своему, а в тёмной теме
+     * светятся собственным цветом — `color` на цветной эмодзи не действует. Теперь это
+     * тот же номер места, только окрашенный: золото, серебро, бронза.
+     */
+    const PODIUM = ['gold', 'silver', 'bronze'];
+
+    function podium(index) {
+        return PODIUM[index] ?? null;
     }
 
     function when(iso) {
@@ -95,7 +105,6 @@
 
 <div class="screen">
     <div class="head">
-        <button class="icon-btn" type="button" onclick={onBack} aria-label="Назад">←</button>
         <h1>Таблица</h1>
         {#if openSeason}
             <span class="season-pill mono">сезон «{openSeason.name}»</span>
@@ -112,7 +121,7 @@
                 <button class="card row" class:mine={row.userId === myId}
                         type="button" disabled={!onPlayer || row.userId === myId}
                         onclick={() => onPlayer?.(row.userId, row.displayName)}>
-                    <span class="place mono">{medal(index) ?? index + 1}</span>
+                    <span class="place mono {podium(index) ?? ''}">{index + 1}</span>
                     <Avatar userId={row.userId} size={36}/>
                     <span class="who">
                         <span class="name">{row.displayName}{#if row.userId === myId}<span class="you"> · ты</span>{/if}</span>
@@ -121,10 +130,20 @@
                     </span>
                     <span class="rating mono">{Math.round(row.rating)}</span>
                 </button>
-            {:else}
-                <!-- ⭐ Пусто — не ошибка: до первого доигранного матча рейтинга ещё ни у кого нет. -->
-                <p class="muted empty">Ещё никто не доиграл ни одного матча — сыграйте первый.</p>
             {/each}
+
+            <!--
+              ⚠️ Пусто и «никто не набрал зачёт» — РАЗНЫЕ вещи, и путать их нельзя.
+              Пока эти два случая делили одно сообщение, таблица с семью игроками ниже
+              порога сообщала «ещё никто не доиграл ни одного матча», а прямо под этой
+              фразой шли их строки с рейтингом.
+            -->
+            {#if !rows.length}
+                <p class="muted empty">Ещё никто не доиграл ни одного матча — сыграйте первый.</p>
+            {:else if !ranked.length}
+                <p class="muted empty">Зачёт начинается с {RANKED_FROM} матчей — пока к нему
+                    никто не подошёл. Ниже те, кто ближе всех.</p>
+            {/if}
 
             {#each unranked as row (row.userId)}
                 <button class="card row dim" class:mine={row.userId === myId}
@@ -228,7 +247,9 @@
         width: 100%;
     }
 
+    /* ⚠️ То же, что и в сводке: своя строка не должна гаснуть из-за disabled. */
     .row:disabled {
+        opacity: 1;
         cursor: default;
     }
 
@@ -246,8 +267,21 @@
         width: 28px;
         text-align: center;
         font-size: 15px;
-        color: var(--text-55);
+        font-weight: 700;
+        color: var(--text-45);
         flex: none;
+    }
+
+    .place.gold {
+        color: #f0cd8a;
+    }
+
+    .place.silver {
+        color: #cfd6d8;
+    }
+
+    .place.bronze {
+        color: #cd9b6a;
     }
 
     .who {
