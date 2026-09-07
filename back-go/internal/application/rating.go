@@ -170,6 +170,15 @@ type StatsStore interface {
 	HistoryOf(ctx context.Context, userID string) ([]repository.RatingHistoryEntry, error)
 }
 
+// HangingStore — что статистике нужно от лога событий.
+//
+// ⭐ Отдельным интерфейсом, а не полями в StatsStore: рейтинг и итоги живут в одних
+// таблицах, а навесы — в логе матча, и это другой репозиторий.
+type HangingStore interface {
+	HungRanksOf(ctx context.Context, userID string) ([]repository.HungRank, error)
+	InflictedDegreesOf(ctx context.Context, userID string) ([]repository.InflictedDegree, error)
+}
+
 // Streak — текущая серия: подряд выигранных или подряд проигранных матчей.
 type Streak struct {
 	// Kind — WIN, LOSS или NONE: до первого матча серии нет вовсе.
@@ -179,6 +188,18 @@ type Streak struct {
 
 // DegreeCount — сколько раз игрок доигрывался до этой степени проигрыша.
 type DegreeCount struct {
+	Degree string
+	Count  int
+}
+
+// HungCount — сколько раз игрок навесил карту этой ступени.
+type HungCount struct {
+	Rank  string
+	Count int
+}
+
+// InflictedCount — сколько раз игрок сам довёл соперника до этой степени.
+type InflictedCount struct {
 	Degree string
 	Count  int
 }
@@ -198,13 +219,19 @@ type PlayerStats struct {
 	BestRating  *string
 	WorstRating *string
 	Degrees     []DegreeCount
+	// Hung — что игрок навешивал сам, по ступеням от младшей к джокеру.
+	Hung []HungCount
+	// Inflicted — до каких степеней он доводил соперников, от тяжёлой к обычной.
+	Inflicted []InflictedCount
 }
 
 // EmptyPlayerStats — статистика того, кто ещё не сыграл ни одного матча.
 func EmptyPlayerStats() PlayerStats {
 	return PlayerStats{
-		Streak:  Streak{Kind: "NONE"},
-		Degrees: []DegreeCount{},
+		Streak:    Streak{Kind: "NONE"},
+		Degrees:   []DegreeCount{},
+		Hung:      []HungCount{},
+		Inflicted: []InflictedCount{},
 	}
 }
 
@@ -217,10 +244,15 @@ func EmptyPlayerStats() PlayerStats {
 // ⚠️ Считается на лету по ВСЕМ матчам игрока, без кэша и без пагинации. Для узкого круга
 // это десятки строк; когда станет тысячами — сюда придёт витрина, а не досчитывание
 // в живых запросах.
-type StatsService struct{ stats StatsStore }
+type StatsService struct {
+	stats   StatsStore
+	hanging HangingStore
+}
 
 // NewStatsService собирает сценарий статистики.
-func NewStatsService(stats StatsStore) StatsService { return StatsService{stats: stats} }
+func NewStatsService(stats StatsStore, hanging HangingStore) StatsService {
+	return StatsService{stats: stats, hanging: hanging}
+}
 
 // Of — статистика игрока.
 //
@@ -263,7 +295,65 @@ func (s StatsService) Of(ctx context.Context, userID string) (PlayerStats, error
 	}
 	stats.Streak = streakOf(history)
 	stats.BestRating, stats.WorstRating = ratingBounds(history)
+
+	// ⚠️ Навесы читаются из лога событий и только у онлайн-матчей: за настоящим столом
+	// никто не записывает, кто кому что навесил.
+	hung, err := s.hanging.HungRanksOf(ctx, userID)
+	if err != nil {
+		return PlayerStats{}, err
+	}
+	stats.Hung = hungList(hung)
+
+	inflicted, err := s.hanging.InflictedDegreesOf(ctx, userID)
+	if err != nil {
+		return PlayerStats{}, err
+	}
+	stats.Inflicted = inflictedList(inflicted)
 	return stats, nil
+}
+
+// hungList — навешенные ступени в порядке ШКАЛЫ, а не по частоте: экран рисует шкалу
+// сверху вниз, и дырка в ней читается как «этой карты не навешивал ни разу».
+func hungList(rows []repository.HungRank) []HungCount {
+	counts := make(map[string]int, len(rows))
+	for _, row := range rows {
+		counts[row.Rank] += row.Count
+	}
+
+	order := make([]string, 0, len(game.Ranks())+1)
+	for _, rank := range game.Ranks() {
+		order = append(order, rank.Code())
+	}
+	order = append(order, JokerNavesLevel)
+
+	list := make([]HungCount, 0, len(order))
+	for _, code := range order {
+		if count := counts[code]; count > 0 {
+			list = append(list, HungCount{Rank: code, Count: count})
+		}
+	}
+	return list
+}
+
+// inflictedList — степени в порядке объявления, от самой тяжёлой к обычной.
+func inflictedList(rows []repository.InflictedDegree) []InflictedCount {
+	counts := make(map[string]int, len(rows))
+	for _, row := range rows {
+		counts[row.Degree] += row.Count
+	}
+
+	known := []game.LossDegree{
+		game.LossRoyal, game.LossSuperMegaSuck, game.LossSuperMegaFail,
+		game.LossSuperFail, game.LossFail,
+	}
+	list := make([]InflictedCount, 0, len(known))
+	for _, degree := range known {
+		name := degree.String()
+		if count := counts[name]; count > 0 {
+			list = append(list, InflictedCount{Degree: name, Count: count})
+		}
+	}
+	return list
 }
 
 // averagePlace — среднее место с двумя знаками, округление «половина вверх».

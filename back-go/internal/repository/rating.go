@@ -278,3 +278,36 @@ func (r Ratings) OutcomesOf(ctx context.Context, userID string) ([]PlayerMatchOu
 	}
 	return outcomes, nil
 }
+
+// RatingsOf — рейтинги сразу нескольких игроков.
+//
+// ⭐ Одним запросом, а не чтением на строку: значок рейтинга рисуется в каждом списке
+// друзей, и N+1 здесь означал бы десяток запросов на открытие экрана.
+//
+// ⚠️ У не игравшего строки нет вовсе, и в карте его не будет — это не ошибка, а «ещё
+// не играл». Подставлять ему стартовое значение должен показывающий, а не база.
+func (r Ratings) RatingsOf(ctx context.Context, userIDs []string) (map[string]string, error) {
+	ratings := make(map[string]string, len(userIDs))
+	if len(userIDs) == 0 {
+		return ratings, nil
+	}
+
+	const query = `select user_id, rating::text from user_rating where user_id = any($1)`
+	rows, err := r.pool.Query(ctx, query, userIDs)
+	if err != nil {
+		return nil, fmt.Errorf("рейтинги списка: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var userID, rating string
+		if err := rows.Scan(&userID, &rating); err != nil {
+			return nil, fmt.Errorf("разбор рейтинга списка: %w", err)
+		}
+		ratings[userID] = rating
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("рейтинги списка: %w", err)
+	}
+	return ratings, nil
+}

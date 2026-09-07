@@ -52,6 +52,8 @@ type Friend struct {
 	Status string
 	// Mine — заявку отправил спрашивающий. По этому флагу экран решает, звать или отвечать.
 	Mine bool
+	// Rating — текущий рейтинг; пусто у того, кто ещё не доиграл ни одного матча.
+	Rating *string
 }
 
 // FriendList — список, разложенный по смыслу: с кем дружим, кто ждёт ответа от нас
@@ -120,6 +122,7 @@ type FriendService struct {
 	presence    FriendPresence
 	invites     InviteDelivery
 	tables      TableLookup
+	ratings     FriendRatings
 	now         func() time.Time
 }
 
@@ -129,14 +132,23 @@ type FriendService struct {
 // а приглашение без доставки не уходит никуда. Так собранный сервис годен для списка
 // и заявок — то есть для всего, что не про живое соединение.
 func NewFriendService(friendships friendshipStore, users userLookup, presence FriendPresence,
-	invites InviteDelivery, tables TableLookup, now func() time.Time) FriendService {
+	invites InviteDelivery, tables TableLookup, ratings FriendRatings,
+	now func() time.Time) FriendService {
 	if now == nil {
 		now = time.Now
 	}
 	return FriendService{
 		friendships: friendships, users: users, presence: presence,
-		invites: invites, tables: tables, now: now,
+		invites: invites, tables: tables, ratings: ratings, now: now,
 	}
+}
+
+// FriendRatings — рейтинги списка игроков разом.
+//
+// ⭐ Взято интерфейсом и может быть пустым: значок рейтинга — украшение списка, и его
+// отсутствие не должно ронять экран друзей, без которого за стол не позвать.
+type FriendRatings interface {
+	RatingsOf(ctx context.Context, userIDs []string) (map[string]string, error)
 }
 
 // Request — позвать в друзья по логину.
@@ -235,6 +247,35 @@ func (s FriendService) Remove(ctx context.Context, userID, friendID string) erro
 	return nil
 }
 
+// attachRatings проставляет рейтинг всем, кто есть в списках.
+//
+// ⚠️ Ошибка чтения ГЛОТАЕТСЯ намеренно: без рейтинга список друзей полностью рабочий,
+// а без списка друзей за стол не позвать. Ронять экран из-за значка нельзя.
+func (s FriendService) attachRatings(ctx context.Context, groups ...[]Friend) {
+	if s.ratings == nil {
+		return
+	}
+
+	ids := make([]string, 0, 16)
+	for _, group := range groups {
+		for _, friend := range group {
+			ids = append(ids, friend.UserID)
+		}
+	}
+	found, err := s.ratings.RatingsOf(ctx, ids)
+	if err != nil {
+		return
+	}
+	for _, group := range groups {
+		for index := range group {
+			if rating, ok := found[group[index].UserID]; ok {
+				value := rating
+				group[index].Rating = &value
+			}
+		}
+	}
+}
+
 // List — друзья и заявки, разложенные по смыслу.
 func (s FriendService) List(ctx context.Context, userID string) (FriendList, error) {
 	pairs, err := s.friendships.FindAllInvolving(ctx, userID)
@@ -256,6 +297,7 @@ func (s FriendService) List(ctx context.Context, userID string) (FriendList, err
 			list.Incoming = append(list.Incoming, friend)
 		}
 	}
+	s.attachRatings(ctx, list.Friends, list.Incoming, list.Outgoing)
 
 	// Онлайн — наверх: за стол зовут тех, кто сейчас здесь. Внутри — по имени без учёта
 	// регистра. Сортировка устойчивая: у Java она тоже устойчивая, и порядок равных имён

@@ -129,6 +129,18 @@ type DegreeCountView struct {
 	Count  int    `json:"count"`
 }
 
+// HungCountView — сколько раз игрок навесил карту этой ступени.
+type HungCountView struct {
+	Rank  string `json:"rank"`
+	Count int    `json:"count"`
+}
+
+// InflictedCountView — сколько раз игрок сам довёл соперника до этой степени.
+type InflictedCountView struct {
+	Degree string `json:"degree"`
+	Count  int    `json:"count"`
+}
+
 // PlayerStatsView — статистика игрока.
 //
 // ⚠️ Здесь сходятся оба правила MD-003 сразу: avgPlace, bestRating и worstRating
@@ -145,6 +157,10 @@ type PlayerStatsView struct {
 	BestRating  *json.Number      `json:"bestRating,omitempty"`
 	WorstRating *json.Number      `json:"worstRating,omitempty"`
 	Degrees     []DegreeCountView `json:"degrees"`
+	// Hung и Inflicted — что игрок навешивал сам. Списки, а не null: у не навешивавшего
+	// это [] (MD-003). У оффлайн-партий их не бывает вовсе — за столом не протоколируют.
+	Hung      []HungCountView      `json:"hung"`
+	Inflicted []InflictedCountView `json:"inflicted"`
 }
 
 // RatingHandlers — обработчики рейтинга, сезонов и статистики.
@@ -404,6 +420,14 @@ func toPlayerStatsView(stats application.PlayerStats) PlayerStatsView {
 	for _, degree := range stats.Degrees {
 		degrees = append(degrees, DegreeCountView{Degree: degree.Degree, Count: degree.Count})
 	}
+	hung := make([]HungCountView, 0, len(stats.Hung))
+	for _, row := range stats.Hung {
+		hung = append(hung, HungCountView{Rank: row.Rank, Count: row.Count})
+	}
+	inflicted := make([]InflictedCountView, 0, len(stats.Inflicted))
+	for _, row := range stats.Inflicted {
+		inflicted = append(inflicted, InflictedCountView{Degree: row.Degree, Count: row.Count})
+	}
 	return PlayerStatsView{
 		Matches:     stats.Matches,
 		Wins:        stats.Wins,
@@ -414,6 +438,8 @@ func toPlayerStatsView(stats application.PlayerStats) PlayerStatsView {
 		BestRating:  toRatingNumber(stats.BestRating),
 		WorstRating: toRatingNumber(stats.WorstRating),
 		Degrees:     degrees,
+		Hung:        hung,
+		Inflicted:   inflicted,
 	}
 }
 

@@ -29,7 +29,7 @@ func TestEmptyPlayerStatsMatchesJavaByteForByte(t *testing.T) {
 		t.Fatal(err)
 	}
 	const want = `{"matches":0,"wins":0,"losses":0,"dealsPlayed":0,` +
-		`"streak":{"kind":"NONE","length":0},"degrees":[]}`
+		`"streak":{"kind":"NONE","length":0},"degrees":[],"hung":[],"inflicted":[]}`
 	if string(body) != want {
 		t.Errorf("пустая статистика:\n получили %s\n ждали   %s", body, want)
 	}
@@ -52,7 +52,7 @@ func TestPlayerStatsKeepsDecimalScaleAndFieldOrder(t *testing.T) {
 	}
 	const want = `{"matches":3,"wins":1,"losses":2,"avgPlace":2.33,"dealsPlayed":11,` +
 		`"streak":{"kind":"WIN","length":1},"bestRating":1012.50,"worstRating":980.00,` +
-		`"degrees":[{"degree":"ROYAL","count":1}]}`
+		`"degrees":[{"degree":"ROYAL","count":1}],"hung":[],"inflicted":[]}`
 	if string(body) != want {
 		t.Errorf("статистика:\n получили %s\n ждали   %s", body, want)
 	}
@@ -239,7 +239,7 @@ func ratingHandlersWith(store stubRatingStore, users stubRatingUsers,
 		Rating: application.NewRatingService(store, users, isAdmin, func() time.Time {
 			return time.Date(2026, 8, 20, 9, 0, 0, 0, time.UTC)
 		}),
-		Stats: application.NewStatsService(store),
+		Stats: application.NewStatsService(store, noHangingStub{}),
 	}
 }
 
@@ -288,7 +288,7 @@ func TestStatsOfUnknownPlayerIsEmptyNotAnError(t *testing.T) {
 		t.Fatalf("статус %d, ждали 200", recorder.Code)
 	}
 	const want = `{"matches":0,"wins":0,"losses":0,"dealsPlayed":0,` +
-		`"streak":{"kind":"NONE","length":0},"degrees":[]}`
+		`"streak":{"kind":"NONE","length":0},"degrees":[],"hung":[],"inflicted":[]}`
 	if strings.TrimSpace(recorder.Body.String()) != want {
 		t.Errorf("тело %s, ждали %s", recorder.Body.String(), want)
 	}
@@ -416,4 +416,16 @@ func TestEmptyLeaderboardIsEmptyList(t *testing.T) {
 	if strings.TrimSpace(recorder.Body.String()) != `[]` {
 		t.Errorf("тело %s, ждали []", recorder.Body.String())
 	}
+}
+
+// noHangingStub — лог навесов, в котором ничего нет: эти сценарии проверяют рейтинг
+// и итоги, а не навесы. Пустые списки, а не nil: в ответе обязано быть [] (MD-003).
+type noHangingStub struct{}
+
+func (noHangingStub) HungRanksOf(context.Context, string) ([]repository.HungRank, error) {
+	return []repository.HungRank{}, nil
+}
+
+func (noHangingStub) InflictedDegreesOf(context.Context, string) ([]repository.InflictedDegree, error) {
+	return []repository.InflictedDegree{}, nil
 }

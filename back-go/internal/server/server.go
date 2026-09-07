@@ -86,13 +86,13 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool,
 	profileService := application.NewProfileService(users)
 	lobbyService := application.NewLobbyService(tables, time.Now, log)
 	ratingService := application.NewRatingService(ratings, users, cfg.IsSeasonAdmin, time.Now)
-	statsService := application.NewStatsService(ratings)
+	statsService := application.NewStatsService(ratings, history)
 	// ⭐ Присутствие и доставка приглашений живут в памяти узла: со вторым узлом это
 	// сломалось бы, но второй узел отменён решением (ADR-061), и это осознанная плата.
 	presence := application.NewPresence()
 	friendService := application.NewFriendService(friendships, users, presence,
 		inviteWithPush{direct: presence, push: pushSender},
-		application.TableInviteLookup{Tables: tables}, time.Now)
+		application.TableInviteLookup{Tables: tables}, ratings, time.Now)
 	historyService := application.NewHistoryService(history, friendService)
 	pushService := application.NewPushSubscriptionService(pushes, cfg.VAPIDPublic, cfg.VAPIDPrivate)
 
@@ -101,6 +101,10 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool,
 	matchService := application.NewMatchService(lobbyService, tables, matchLog, matchPlayers,
 		history, codec, nil, nil, log)
 	resultService := application.NewMatchResultService(matchResults, ratings, time.Now)
+	// ⭐ Оффлайн-партия собирается из тех же кирпичей, что и онлайновая: те же итоги,
+	// тот же рейтинг, те же друзья для проверки состава.
+	offlineService := application.NewOfflineMatchService(matchResults, ratings,
+		friendService, time.Now)
 	dealRecorder := application.NewDealRecorder(dealHistory, codec, nil, time.Now)
 	turnClock := application.NewTurnClock()
 
@@ -115,6 +119,7 @@ func Build(ctx context.Context, cfg config.Config, pool *pgxpool.Pool,
 	apihttp.TableHandlers{Lobby: lobbyService, Log: log}.Routes(router)
 	apihttp.RatingHandlers{Rating: ratingService, Stats: statsService, Log: log}.Routes(router)
 	apihttp.HistoryHandlers{History: historyService, Log: log}.Routes(router)
+	apihttp.OfflineHandlers{Offline: offlineService, Log: log}.Routes(router)
 	apihttp.SocialHandlers{Friends: friendService, Push: pushService, Log: log}.Routes(router)
 	ws.TicketHandler{Tickets: tickets, Log: log}.Routes(router)
 

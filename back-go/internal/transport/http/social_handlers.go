@@ -2,6 +2,7 @@ package http
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -76,6 +77,8 @@ type FriendView struct {
 	Online      bool    `json:"online"`
 	Status      string  `json:"status"`
 	Mine        bool    `json:"mine"`
+	// Rating — текущий рейтинг; ключа НЕТ у того, кто ещё не доиграл ни одного матча.
+	Rating *json.Number `json:"rating,omitempty"`
 }
 
 // FriendListView — список друзей и заявок.
@@ -390,7 +393,17 @@ func toFriendView(friend application.Friend) FriendView {
 		Online:      friend.Online,
 		Status:      friend.Status,
 		Mine:        friend.Mine,
+		Rating:      friendRatingNumber(friend.Rating),
 	}
+}
+
+// friendRatingNumber — рейтинг числом; у не игравшего ключа в ответе не будет.
+func friendRatingNumber(raw *string) *json.Number {
+	if raw == nil {
+		return nil
+	}
+	number := json.Number(*raw)
+	return &number
 }
 
 // socialChecker — проверка полей друзей и push.

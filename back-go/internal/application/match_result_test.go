@@ -156,12 +156,39 @@ func TestMatchResultStartsTheNewcomerFromTheBaseRating(t *testing.T) {
 	if changes[0].Before != "1000.00" {
 		t.Fatalf("новичок начал с %q, ждали 1000.00", changes[0].Before)
 	}
-	// K новичка — 40, при равных рейтингах победитель получает +20.
-	if changes[0].After != "1020.00" || changes[0].Delta != "20.00" {
-		t.Fatalf("рейтинг новичка после победы: %q (%q)", changes[0].After, changes[0].Delta)
+	// ⚠️ Соседние ступени шкалы (7 против 8) — это БЛИЗКАЯ победа, и стоит она мало:
+	// K новичка 24, градация на разрыв в одну ступень даёт 0.5826, отсюда +1.98.
+	// До второй версии рейтинга здесь стояло ровно +20 на любой победе.
+	if changes[0].After != "1001.98" || changes[0].Delta != "1.98" {
+		t.Fatalf("рейтинг новичка после близкой победы: %q (%q)", changes[0].After, changes[0].Delta)
 	}
-	if changes[1].Delta != "-20.00" {
-		t.Fatalf("дельта проигравшего %q, ждали -20.00", changes[1].Delta)
+	if changes[1].Delta != "-1.98" {
+		t.Fatalf("дельта проигравшего %q, ждали -1.98", changes[1].Delta)
+	}
+}
+
+// ⭐ Та же победа, но разгромная: соперник доигрался до джокера. Цена матча обязана
+// вырасти в разы — ради этого шкала ущерба и заведена.
+func TestMatchResultPaysMoreForACrushingWin(t *testing.T) {
+	store := &fakeResultStore{}
+	service := NewMatchResultService(store, fakeRatings{}, nil)
+
+	scale := game.FullNavesScale()
+	changes, err := service.FinishMatch(context.Background(), "match-1", seatsOf("user-a", "user-b"),
+		stateEndingWith(game.NewDealOutcome([]game.PlayerOutcome{
+			game.NewPlayerOutcome(0, 0, game.NoNaves, game.NoLossDegree),
+			game.NewPlayerOutcome(1, 0, scale.JokerLevel(), game.LossRoyal),
+		}, 1)), scale)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Ущерб 0 против 18: градация даёт 0.9975, K новичка 24 — отсюда +11.94.
+	if changes[0].Delta != "11.94" {
+		t.Fatalf("разгромная победа дала %q, ждали 11.94", changes[0].Delta)
+	}
+	if changes[1].Delta != "-11.94" {
+		t.Fatalf("королевский проигрыш стоил %q, ждали -11.94", changes[1].Delta)
 	}
 }
 

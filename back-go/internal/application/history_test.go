@@ -209,9 +209,10 @@ type historyStoreStub struct {
 func newHistoryStoreStub() *historyStoreStub {
 	firstPlace, secondPlace := 1, 2
 	dealNo, privateToSeat := 1, 1
+	tableID := "66666666-6666-6666-6666-666666666666"
 	return &historyStoreStub{
 		match: repository.HistoryMatch{
-			ID: historyMatchID, TableID: "66666666-6666-6666-6666-666666666666",
+			ID: historyMatchID, TableID: &tableID,
 			Status: "FINISHED", PlayersCount: 3, DealsPlayed: 1,
 		},
 		participants: []repository.HistoryParticipant{

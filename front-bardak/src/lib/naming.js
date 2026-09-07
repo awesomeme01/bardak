@@ -40,6 +40,21 @@ export function suitName(code) {
     return SUITS[code] ?? '—';
 }
 
+/**
+ * Исход оффлайн-партии по шкале: ступень навеса, джокер или степень проигрыша.
+ *
+ * ⭐ Коды приходят с сервера — здесь только перевод на человеческий, как и у степеней.
+ */
+export function outcomeName(code) {
+    if (code === 'NONE') {
+        return 'летит 6 — ничего не навесили';
+    }
+    if (code === 'Jk') {
+        return 'джокер';
+    }
+    return DEGREES[code] ?? `навесили ${code}`;
+}
+
 /** Уровень навесов. Пусто — навесов не было вовсе: «летит 6», а не ступень шкалы. */
 export function levelName(code) {
     if (code === null || code === undefined) {

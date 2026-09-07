@@ -5,6 +5,7 @@
     import {friends, inviteFriend, loadFriends} from '../stores/friends.svelte.js';
     import CodeBoxes from './CodeBoxes.svelte';
     import Avatar from './Avatar.svelte';
+    import OfflineMatch from './OfflineMatch.svelte';
 
     let {onEnter} = $props();
 
@@ -249,6 +250,8 @@
                 <button class="btn-ghost" type="button" onclick={() => (sheet = null)}>Отмена</button>
             </div>
         </form>
+    {:else if sheet === 'offline'}
+        <OfflineMatch onDone={() => (sheet = null)}/>
     {:else}
         <button class="card by-code" type="button" onclick={() => (sheet = 'code')}>
             <span>
@@ -263,6 +266,14 @@
 <div class="bottom-bar">
     <button class="btn grow" type="button" onclick={() => (sheet = sheet === 'create' ? null : 'create')}>
         Создать стол
+    </button>
+    <!--
+      ⭐ Рядом с созданием стола, а не в истории: и то и другое — «завести партию».
+      Севший играть вживую ищет это там же, где обычно начинает игру.
+    -->
+    <button class="btn-ghost offline-btn" type="button"
+            onclick={() => (sheet = sheet === 'offline' ? null : 'offline')}>
+        Записать оффлайн
     </button>
 </div>
 

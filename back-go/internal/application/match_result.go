@@ -91,7 +91,7 @@ func (s MatchResultService) FinishMatch(ctx context.Context, matchID string, sea
 
 	participants := make([]EloParticipant, 0, len(seats))
 	before := make([]string, 0, len(seats))
-	for index, seat := range seats {
+	for _, seat := range seats {
 		rating, err := s.ratingOf(ctx, seat.UserID)
 		if err != nil {
 			return nil, err
@@ -101,8 +101,15 @@ func (s MatchResultService) FinishMatch(ctx context.Context, matchID string, sea
 			return nil, fmt.Errorf("рейтинг игрока %s не разобран: %w", seat.UserID, err)
 		}
 		before = append(before, rating.Rating)
+		// ⚠️ Рейтинг считается по УЩЕРБУ, а не по месту: место отвечает только на вопрос
+		// «кто выше», а цена матча зависит ещё и от того, насколько. Место при этом
+		// по-прежнему пишется в историю — его показывает экран итога.
+		seatResult := outcome.MustForSeat(seat.SeatNo)
 		participants = append(participants, EloParticipant{
-			Rating: value, MatchesPlayed: rating.MatchesPlayed, Place: places[index]})
+			Rating:        value,
+			MatchesPlayed: rating.MatchesPlayed,
+			Damage:        DamageOf(scale, seatResult.LevelAfter, seatResult.LossDegree),
+		})
 	}
 
 	updated, err := Recalculate(participants)

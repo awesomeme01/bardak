@@ -177,7 +177,7 @@ func TestCloseSeasonOpensNextWithGivenName(t *testing.T) {
 // ⚠️ Пустая статистика — это нули и пустой список степеней, а НЕ ошибка: неизвестный
 // идентификатор в Java даёт ровно PlayerStats.empty().
 func TestEmptyStatsForPlayerWithoutMatches(t *testing.T) {
-	service := NewStatsService(&fakeRatingStore{})
+	service := NewStatsService(&fakeRatingStore{}, noHanging{})
 
 	stats, err := service.Of(context.Background(), "кто угодно")
 	if err != nil {
@@ -206,7 +206,7 @@ func TestStatsAreCountedFromMatchHistory(t *testing.T) {
 		{Place: 3, LossType: ratingLossType("ROYAL"), Finished: true, DealsPlayed: 2},
 		{Place: 3, LossType: ratingLossType("FAIL"), Finished: true, DealsPlayed: 4},
 	}}
-	service := NewStatsService(store)
+	service := NewStatsService(store, noHanging{})
 
 	stats, err := service.Of(context.Background(), "id")
 	if err != nil {
@@ -232,7 +232,7 @@ func TestDealsCountOnlyFinishedMatches(t *testing.T) {
 		{Place: 2, Finished: false, DealsPlayed: 9},
 	}}
 
-	stats, err := NewStatsService(store).Of(context.Background(), "id")
+	stats, err := NewStatsService(store, noHanging{}).Of(context.Background(), "id")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -277,7 +277,7 @@ func TestStreakGoesByPlacesNotByRatingDelta(t *testing.T) {
 		},
 	}
 
-	stats, err := NewStatsService(store).Of(context.Background(), "id")
+	stats, err := NewStatsService(store, noHanging{}).Of(context.Background(), "id")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -325,7 +325,7 @@ func TestDegreesFollowDeclarationOrder(t *testing.T) {
 		{Place: 5, LossType: ratingLossType("SUPER_MEGA_FAIL"), Finished: true},
 	}}
 
-	stats, err := NewStatsService(store).Of(context.Background(), "id")
+	stats, err := NewStatsService(store, noHanging{}).Of(context.Background(), "id")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -349,7 +349,7 @@ func TestOnlyFirstPlaceCountsAsWin(t *testing.T) {
 	store := &fakeRatingStore{outcomes: []repository.PlayerMatchOutcome{
 		{Place: 2, Finished: true}, {Place: 1, Finished: true},
 	}}
-	stats, err := NewStatsService(store).Of(context.Background(), "id")
+	stats, err := NewStatsService(store, noHanging{}).Of(context.Background(), "id")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -359,4 +359,18 @@ func TestOnlyFirstPlaceCountsAsWin(t *testing.T) {
 	if stats.Losses != 0 {
 		t.Errorf("поражений %d, ждали 0: поражение — это степень проигрыша, а не место", stats.Losses)
 	}
+}
+
+// noHanging — подставка лога навесов: у сценариев этого файла навесов нет вовсе.
+//
+// ⭐ Пустые списки, а не nil: статистика обязана отдавать [] и тому, кто ни разу
+// никого не навешивал (MD-003).
+type noHanging struct{}
+
+func (noHanging) HungRanksOf(context.Context, string) ([]repository.HungRank, error) {
+	return []repository.HungRank{}, nil
+}
+
+func (noHanging) InflictedDegreesOf(context.Context, string) ([]repository.InflictedDegree, error) {
+	return []repository.InflictedDegree{}, nil
 }

@@ -34,7 +34,7 @@ func TestHistoryListBodyMatchesJava(t *testing.T) {
 		t.Fatalf("код %d, ждали 200: %s", response.Code, response.Body)
 	}
 	want := `[{"id":"44444444-4444-4444-4444-444444444444",` +
-		`"tableId":"66666666-6666-6666-6666-666666666666","status":"FINISHED",` +
+		`"tableId":"66666666-6666-6666-6666-666666666666","offline":false,"status":"FINISHED",` +
 		`"startedAt":"2026-08-19T10:15:30Z","finishedAt":"2026-08-19T10:45:00Z",` +
 		`"playersCount":2,"dealsPlayed":1,"ratingCounted":true,"myPlace":1,` +
 		`"myRatingDelta":12.50,"players":[` +
@@ -263,7 +263,7 @@ func histNewStore() *histStore {
 
 	return &histStore{
 		matches: []repository.HistoryMatch{{
-			ID: histMatch, TableID: "66666666-6666-6666-6666-666666666666",
+			ID: histMatch, TableID: histText("66666666-6666-6666-6666-666666666666"),
 			Status: "FINISHED", PlayersCount: 2, DealsPlayed: 1,
 			StartedAt: started, FinishedAt: &finished,
 		}},

@@ -94,6 +94,12 @@
                         <span class="name">{person.displayName}</span>
                         <span class="mono block">{person.online ? 'в сети' : `@${person.username}`}</span>
                     </span>
+                    <!-- ⭐ Рейтинг прямо в строке: «с кем сесть» и «кто сильнее» —
+                         один и тот же вопрос, и разводить его по двум экранам незачем.
+                         У не игравшего значка нет вовсе, а не ноль. -->
+                    {#if person.rating !== undefined && person.rating !== null}
+                        <span class="elo mono">{Math.round(Number(person.rating))}</span>
+                    {/if}
                 </button>
                 {#if canInvite}
                     <button class="btn-small" type="button"
@@ -142,6 +148,17 @@
 </div>
 
 <style>
+    .elo {
+        flex: none;
+        font-size: 12px;
+        font-weight: 700;
+        color: var(--gold);
+        padding: 2px 8px;
+        border-radius: 999px;
+        background: rgba(240, 205, 138, 0.12);
+        font-variant-numeric: tabular-nums;
+    }
+
     /* Имя друга — кнопка, но выглядеть должно строкой списка, а не кнопкой. */
     .who {
         display: flex;

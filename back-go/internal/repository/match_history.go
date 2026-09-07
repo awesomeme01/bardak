@@ -23,8 +23,11 @@ import (
 // `rng_seed` и `rules_snapshot` сюда не читаются намеренно: клиенту они не отдаются,
 // а seed до конца матча — это раскрытая колода.
 type HistoryMatch struct {
-	ID           string
-	TableID      string
+	ID string
+	// TableID — стол, за которым игрался матч; пусто у оффлайн-партии, стола у неё нет.
+	TableID *string
+	// IsOffline — партия сыграна вживую и записана вручную: раздач и лога у неё нет.
+	IsOffline    bool
 	Status       string
 	PlayersCount int
 	DealsPlayed  int
@@ -106,8 +109,8 @@ type MatchHistory struct{ pool *pgxpool.Pool }
 // NewMatchHistory собирает репозиторий поверх пула.
 func NewMatchHistory(pool *pgxpool.Pool) MatchHistory { return MatchHistory{pool: pool} }
 
-const historyMatchColumns = `m.id, m.table_id, m.status, m.players_count, m.deals_played,
-	m.started_at, m.finished_at, m.abort_reason`
+const historyMatchColumns = `m.id, m.table_id, m.is_offline, m.status, m.players_count,
+	m.deals_played, m.started_at, m.finished_at, m.abort_reason`
 
 // MatchesOf — матчи игрока, новые сверху.
 //
@@ -356,7 +359,7 @@ func (r MatchHistory) EventsOf(ctx context.Context, matchID string) ([]HistoryEv
 
 func scanHistoryMatch(row scannable) (HistoryMatch, error) {
 	var match HistoryMatch
-	err := row.Scan(&match.ID, &match.TableID, &match.Status, &match.PlayersCount,
+	err := row.Scan(&match.ID, &match.TableID, &match.IsOffline, &match.Status, &match.PlayersCount,
 		&match.DealsPlayed, &match.StartedAt, &match.FinishedAt, &match.AbortReason)
 	return match, err
 }

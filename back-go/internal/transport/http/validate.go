@@ -59,6 +59,13 @@ func (c *checker) size(name, value string, min, max int) {
 	}
 }
 
+// fail — своя причина отказа по полю, когда проверка не сводится к длине.
+func (c *checker) fail(name, reason string) {
+	if _, already := c.fields[name]; !already {
+		c.fields[name] = reason
+	}
+}
+
 func (c *checker) result() error {
 	if len(c.fields) == 0 {
 		return nil

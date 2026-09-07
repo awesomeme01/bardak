@@ -125,6 +125,42 @@
         </div>
 
         <div class="card block">
+            <!--
+              ⭐ Обратная сторона проигрышей: что игрок навешивал САМ. Без неё статистика
+              рассказывает только про то, как ему доставалось, — а половина игры в том,
+              как достаётся от него.
+
+              ⚠️ Считается по логу онлайн-матчей. У оффлайн-партий этих чисел нет вовсе:
+              за настоящим столом никто не записывает, кто кому что навесил.
+            -->
+            <span class="label">Что навешивал сам</span>
+            <div class="hung">
+                {#each stats.hung as row (row.rank)}
+                    <span class="hung-chip">
+                        <span class="hung-rank">{row.rank === 'Jk' ? '🃏' : row.rank}</span>
+                        <span class="mono hung-count">{row.count}</span>
+                    </span>
+                {:else}
+                    <p class="muted">Пока никому ничего не навесил.</p>
+                {/each}
+            </div>
+        </div>
+
+        {#if stats.inflicted?.length}
+            <div class="card block">
+                <!-- ⭐ Кого он сам довёл до конца шкалы: джокер, добивший соперника,
+                     засчитывается тому, чья это была карта. -->
+                <span class="label">Кого добил джокером</span>
+                {#each stats.inflicted as row (row.degree)}
+                    <div class="line">
+                        <span class="degree green">{degreeName(row.degree)}</span>
+                        <span class="mono count">{row.count}</span>
+                    </div>
+                {/each}
+            </div>
+        {/if}
+
+        <div class="card block">
             <!-- ⭐ Степени идут от самой тяжёлой к обычной — так они и объявлены (§0.3). -->
             <span class="label">Чем заканчивались проигрыши</span>
             {#each stats.degrees as row (row.degree)}
@@ -220,6 +256,38 @@
     .degree {
         font-size: 14px;
         color: var(--red);
+    }
+
+    /* Навешенное самим — это достижение, а не потеря: зелёным, а не красным. */
+    .degree.green {
+        color: var(--green);
+    }
+
+    .hung {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .hung-chip {
+        display: flex;
+        align-items: baseline;
+        gap: 5px;
+        padding: 5px 10px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+    }
+
+    .hung-rank {
+        font-family: var(--display);
+        font-size: 15px;
+        font-weight: 600;
+    }
+
+    .hung-count {
+        font-size: 12px;
+        color: var(--gold);
+        font-variant-numeric: tabular-nums;
     }
 
     .count {

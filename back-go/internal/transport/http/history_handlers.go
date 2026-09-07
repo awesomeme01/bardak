@@ -22,8 +22,11 @@ import (
 
 // MatchSummaryView — матч в списке.
 type MatchSummaryView struct {
-	ID           string     `json:"id"`
-	TableID      string     `json:"tableId"`
+	ID string `json:"id"`
+	// TableID — у оффлайн-партии стола нет, и ключа в ответе тоже нет.
+	TableID *string `json:"tableId,omitempty"`
+	// Offline — БЕЗ omitempty: «онлайновая» это false, а не отсутствие поля (MD-003).
+	Offline      bool       `json:"offline"`
 	Status       string     `json:"status"`
 	StartedAt    time.Time  `json:"startedAt"`
 	FinishedAt   *time.Time `json:"finishedAt,omitempty"`
@@ -270,6 +273,7 @@ func toMatchSummaryView(summary application.MatchSummary) MatchSummaryView {
 	return MatchSummaryView{
 		ID:            summary.Match.ID,
 		TableID:       summary.Match.TableID,
+		Offline:       summary.Match.IsOffline,
 		Status:        summary.Match.Status,
 		StartedAt:     summary.Match.StartedAt.UTC(),
 		FinishedAt:    historyInstant(summary.Match.FinishedAt),

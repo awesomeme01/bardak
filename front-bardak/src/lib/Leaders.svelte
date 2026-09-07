@@ -49,6 +49,18 @@
 
     const openSeason = $derived(seasons.find((season) => season.open) ?? null);
 
+    /**
+     * Порог попадания в зачёт.
+     *
+     * ⭐ Защита от «сыграл один матч, выиграл, я первый» (07-rating-system.md). Строки
+     * НЕ прячутся: спрятанный игрок выглядит как отсутствующий, и он сам себя в таблице
+     * не найдёт. Вместо этого он уходит вниз и помечается — видно и его, и почему он там.
+     */
+    const RANKED_FROM = 10;
+
+    const ranked = $derived(rows.filter((row) => row.matchesPlayed >= RANKED_FROM));
+    const unranked = $derived(rows.filter((row) => row.matchesPlayed < RANKED_FROM));
+
     /** ⭐ Своя строка подсвечивается: в таблице на два экрана себя иначе не найти. */
     const myId = $derived(profile.user?.id ?? null);
 
@@ -96,7 +108,7 @@
         <p class="muted centered">Считаю…</p>
     {:else}
         <div class="rows">
-            {#each rows as row, index (row.userId)}
+            {#each ranked as row, index (row.userId)}
                 <button class="card row" class:mine={row.userId === myId}
                         type="button" disabled={!onPlayer || row.userId === myId}
                         onclick={() => onPlayer?.(row.userId, row.displayName)}>
@@ -112,6 +124,20 @@
             {:else}
                 <!-- ⭐ Пусто — не ошибка: до первого доигранного матча рейтинга ещё ни у кого нет. -->
                 <p class="muted empty">Ещё никто не доиграл ни одного матча — сыграйте первый.</p>
+            {/each}
+
+            {#each unranked as row (row.userId)}
+                <button class="card row dim" class:mine={row.userId === myId}
+                        type="button" disabled={!onPlayer || row.userId === myId}
+                        onclick={() => onPlayer?.(row.userId, row.displayName)}>
+                    <span class="place mono">·</span>
+                    <Avatar userId={row.userId} size={36}/>
+                    <span class="who">
+                        <span class="name">{row.displayName}{#if row.userId === myId}<span class="you"> · ты</span>{/if}</span>
+                        <span class="mono sub">ещё {RANKED_FROM - row.matchesPlayed} до зачёта</span>
+                    </span>
+                    <span class="rating mono">{Math.round(row.rating)}</span>
+                </button>
             {/each}
         </div>
 
@@ -204,6 +230,11 @@
 
     .row:disabled {
         cursor: default;
+    }
+
+    /* Не в зачёте — тусклее, но читаемо: это не ошибка, а «ещё мало матчей». */
+    .row.dim {
+        opacity: 0.5;
     }
 
     .row.mine {

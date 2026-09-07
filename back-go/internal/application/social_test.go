@@ -338,7 +338,7 @@ func newSocialFixture() (FriendService, *socialStoreFake, *socialPresenceFake) {
 		invites: &socialInvitesFake{deliver: true},
 	}
 	presence := &socialPresenceFake{online: map[string]bool{}}
-	service := NewFriendService(store, store, presence, store.invites, store,
+	service := NewFriendService(store, store, presence, store.invites, store, nil,
 		func() time.Time { return time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC) })
 	return service, store, presence
 }
