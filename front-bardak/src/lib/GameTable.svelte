@@ -883,10 +883,14 @@
                   искать для этого кнопку внизу — лишний шаг ровно в тот момент, когда
                   выбора всё равно нет.
                 -->
-                <Card faceDown width={Math.round(stakeCard * 0.7)}
-                      selected={Boolean(actions.reveal)}
-                      onclick={actions.reveal ? () => run(actions.reveal) : null}
-                      title={actions.reveal ? 'Взять потайную' : 'Потайная карта'}/>
+                <!-- ⚠️ Обёртка нужна ради кольца: карта — это `<img>`, а у картинки
+                     псевдоэлемента не бывает, и вешать свечение не на что. -->
+                <span class="hidden-card" class:calls={Boolean(actions.reveal)}>
+                    <Card faceDown width={Math.round(stakeCard * 0.7)}
+                          selected={Boolean(actions.reveal)}
+                          onclick={actions.reveal ? () => run(actions.reveal) : null}
+                          title={actions.reveal ? 'Взять потайную' : 'Потайная карта'}/>
+                </span>
             {:else}
                 <div class="flying-slot mono"
                      style="width:{Math.round(stakeCard * 0.7)}px; height:{Math.round(stakeCard * 1.02)}px">взял</div>
@@ -1182,15 +1186,35 @@
      * выбора: выбор статичен, перетаскивание живёт, пока палец не отпущен.
      */
     .accepts {
+        /* Якорь для кольца; у `.slot` он уже есть, у остальных целей — нет. */
+        position: relative;
         outline: 2px solid var(--gold);
         outline-offset: 3px;
         border-radius: 8px;
+    }
+
+    /**
+     * ⚠️ Кольцо — псевдоэлемент, а не растущая тень цели: тень перерисовывается каждый
+     * кадр, а палец над целью держат секундами (см. `pulse-ring` в styles.css).
+     *
+     * `pointer-events: none` обязателен: цель ищется через `elementFromPoint`, и слой
+     * поверх неё увёл бы попадание в пустоту.
+     */
+    .accepts::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border-radius: 8px;
+        box-shadow: 0 0 0 9px rgba(240, 205, 138, 0.35);
+        /* Базово кольца нет: движение целиком задают кадры, и без них ничего не горит. */
+        opacity: 0;
         animation: target-call 0.75s ease-in-out infinite;
+        pointer-events: none;
     }
 
     @keyframes target-call {
-        0%, 100% { box-shadow: 0 0 0 0 rgba(240, 205, 138, 0.35); }
-        50% { box-shadow: 0 0 0 9px rgba(240, 205, 138, 0); }
+        0%, 100% { transform: scale(0.97); opacity: 1; }
+        50% { transform: scale(1.03); opacity: 0; }
     }
 
     /* Синяя цель перевода: цвет тот же, что у кнопки перевода, — намерение читается сразу. */
@@ -1206,18 +1230,17 @@
         text-align: center;
     }
 
+    /* Цель перевода отличается только цветом — движение у всех целей одно. */
     .transfer-slot.accepts {
         outline-color: #6aa6e8;
-        animation-name: transfer-call;
     }
 
-    @keyframes transfer-call {
-        0%, 100% { box-shadow: 0 0 0 0 rgba(106, 166, 232, 0.4); }
-        50% { box-shadow: 0 0 0 9px rgba(106, 166, 232, 0); }
+    .transfer-slot.accepts::after {
+        box-shadow: 0 0 0 9px rgba(106, 166, 232, 0.4);
     }
 
     @media (prefers-reduced-motion: reduce) {
-        .accepts { animation: none; }
+        .accepts::after { animation: none; }
     }
 
     .slot {
@@ -1351,17 +1374,30 @@
     }
 
     /* Вскрыть можно — карта зовёт нажать, а не ждёт, пока её найдут в кнопках. */
-    .my-hidden :global(.playing-card.selected) {
+    .hidden-card {
+        position: relative;
+        display: block;
+        line-height: 0;
+    }
+
+    .hidden-card.calls::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border-radius: 3px;
+        box-shadow: 0 0 0 8px rgba(240, 205, 138, 0.22);
+        opacity: 0;
         animation: hidden-call 1.3s ease-in-out infinite;
+        pointer-events: none;
     }
 
     @keyframes hidden-call {
-        0%, 100% { box-shadow: 0 0 0 0 rgba(240, 205, 138, 0); }
-        50% { box-shadow: 0 0 0 8px rgba(240, 205, 138, 0.22); }
+        0%, 100% { transform: scale(0.97); opacity: 0; }
+        50% { transform: scale(1.03); opacity: 1; }
     }
 
     @media (prefers-reduced-motion: reduce) {
-        .my-hidden :global(.playing-card.selected) { animation: none; }
+        .hidden-card.calls::after { animation: none; }
     }
 
     .hidden-label {
@@ -1499,25 +1535,33 @@
      * а не тревога; «Беру» этого класса не получает никогда.
      */
     @keyframes cta-pulse {
-        0%, 100% {
-            box-shadow: 0 0 0 0 rgba(233, 196, 106, 0);
-            border-color: rgba(233, 196, 106, 0.35);
-        }
-        50% {
-            box-shadow: 0 0 0 7px rgba(233, 196, 106, 0.22);
-            border-color: rgba(233, 196, 106, 0.9);
-        }
+        0%, 100% { transform: scale(0.97); opacity: 0; }
+        50% { transform: scale(1.03); opacity: 1; }
     }
 
+    /**
+     * ⚠️ Раньше здесь дышала и рамка кнопки, и её тень. Обе — свойства, из-за которых
+     * кнопка перерисовывалась каждый кадр всё время, пока игра ждёт хода, то есть почти
+     * всю партию. Теперь рамка стоит на месте (яркая, кнопку и так видно), а дышит
+     * отдельный слой поверх неё — только `transform` и `opacity`.
+     */
     .cta {
+        position: relative;
+        border: 1px solid rgba(233, 196, 106, 0.9);
+    }
+
+    .cta::after {
+        content: '';
+        position: absolute;
+        inset: -1px;
+        border-radius: inherit;
+        box-shadow: 0 0 0 7px rgba(233, 196, 106, 0.22);
+        opacity: 0;
         animation: cta-pulse 1.5s ease-in-out infinite;
-        border: 1px solid rgba(233, 196, 106, 0.35);
+        pointer-events: none;
     }
 
     @media (prefers-reduced-motion: reduce) {
-        .cta {
-            animation: none;
-            border-color: rgba(233, 196, 106, 0.9);
-        }
+        .cta::after { animation: none; }
     }
 </style>

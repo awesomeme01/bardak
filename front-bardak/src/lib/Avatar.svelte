@@ -27,6 +27,8 @@
 
 <style>
     .avatar {
+        /* Якорь для кольца пульса — оно лежит поверх аватара и размеров не меняет. */
+        position: relative;
         border-radius: 50%;
         background: radial-gradient(60% 60% at 35% 30%, #4a453b, #2b271f);
         border: 2px solid rgba(255, 255, 255, 0.16);
@@ -53,16 +55,30 @@
         box-shadow: 0 0 0 3px rgba(127, 216, 166, 0.16);
     }
 
-    /* Пульс достаётся тому, кого сейчас ждут, — поверх цвета его роли. */
-    .pulse {
-        animation: turn-ring 1.9s ease-in-out infinite;
+    /**
+     * Пульс достаётся тому, кого сейчас ждут, — поверх цвета его роли.
+     *
+     * ⚠️ Кольцо — отдельный псевдоэлемент, а не растущая тень самого аватара. Тень
+     * пришлось бы перерисовывать каждый кадр; у псевдоэлемента меняются только
+     * `transform` и `opacity`, и слой остаётся тем же (см. `pulse-ring` в styles.css).
+     */
+    .pulse::after {
+        content: '';
+        position: absolute;
+        inset: -2px;
+        border-radius: 50%;
+        border: 3px solid var(--gold);
+        /* Базово кольца нет: движение целиком задают кадры (важно для reduced-motion). */
+        opacity: 0;
+        animation: pulse-ring 1.9s ease-in-out infinite;
+        pointer-events: none;
     }
 
-    .pulse.attack {
-        animation-name: turn-ring-attack;
+    .pulse.attack::after {
+        border-color: var(--seat-attack);
     }
 
-    .pulse.defend {
-        animation-name: turn-ring-defend;
+    .pulse.defend::after {
+        border-color: var(--seat-defend);
     }
 </style>

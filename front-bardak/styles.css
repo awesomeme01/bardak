@@ -79,9 +79,12 @@ html, body {
     min-height: 100%;
 }
 
+/* Под фоновым слоем всё равно должно быть темно: белая полоса на резинке прокрутки. */
+html {
+    background: var(--ink);
+}
+
 body {
-    background: var(--room);
-    background-attachment: fixed;
     color: var(--text);
     font: 500 15px/1.5 var(--body);
     -webkit-font-smoothing: antialiased;
@@ -111,12 +114,30 @@ body {
              env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 
+/**
+ * Фон — отдельный неподвижный слой, а не фон самого `body`.
+ *
+ * ⚠️ Раньше здесь стоял `background-attachment: fixed`. iOS это свойство игнорирует,
+ * но платить за него заставляет: градиент во весь экран пересчитывается при каждой
+ * смене высоты вьюпорта, а в мобильном Safari адресная строка уезжает и приезжает
+ * постоянно. Отдельный `position: fixed` слой браузер кладёт в свою композицию и
+ * не перерисовывает вовсе (planning/13).
+ */
+body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    background: var(--room);
+    pointer-events: none;
+}
+
 /* Экран стола красит фон сам: сукно отличается от комнаты ожидания. */
-body.at-table {
+body.at-table::before {
     background: var(--felt);
 }
 
-body.match-over {
+body.match-over::before {
     background: var(--defeat);
 }
 
@@ -485,19 +506,37 @@ select {
     outline-offset: 2px;
 }
 
-@keyframes turn-ring {
-    0%, 100% { box-shadow: 0 0 0 0 rgba(240, 205, 138, 0.55); }
-    50% { box-shadow: 0 0 0 8px rgba(240, 205, 138, 0); }
+/**
+ * ⭐ ЕДИНСТВЕННЫЙ вид бесконечной анимации в приложении: кольцо, которое расходится
+ * и гаснет. Цвет задаёт тот, кто её применяет, — рамкой своего псевдоэлемента.
+ *
+ * ⚠️ Анимируются ТОЛЬКО `transform` и `opacity`. Это правило, а не стиль: любое другое
+ * свойство (`box-shadow`, `border-color`, `filter`) заставляет WebKit перерисовывать слой
+ * заново каждый кадр. На 120-герцовом экране iPhone это 120 перерисовок в секунду, и в
+ * бардаке такие пульсы горели всю партию сразу в нескольких местах — телефон грелся
+ * ощутимо (planning/13). `transform` и `opacity` браузер считает на композиторе и
+ * содержимое слоя не трогает.
+ *
+ * ⚠️ Кольцо ярче всего в тот момент, когда оно ЕЩЁ у края, и гаснет, расходясь. Обратный
+ * порядок (появляться, расходясь) читается как «что-то прилетает», а смысл здесь — «отсюда
+ * исходит», то есть «ждут этого места».
+ */
+@keyframes pulse-ring {
+    0%, 100% { transform: scale(1); opacity: 0.55; }
+    50% { transform: scale(1.3); opacity: 0; }
 }
 
-@keyframes turn-ring-attack {
-    0%, 100% { box-shadow: 0 0 0 0 rgba(232, 98, 108, 0.6); }
-    50% { box-shadow: 0 0 0 9px rgba(232, 98, 108, 0); }
-}
-
-@keyframes turn-ring-defend {
-    0%, 100% { box-shadow: 0 0 0 0 rgba(127, 216, 166, 0.6); }
-    50% { box-shadow: 0 0 0 9px rgba(127, 216, 166, 0); }
+/**
+ * Вкладка не на экране — не анимируется ничего.
+ *
+ * ⭐ WebKit тормозит анимации в скрытых вкладках сам, но в установленном приложении и при
+ * частично перекрытом окне на это полагаться нельзя, а игра живёт в фоне подолгу: телефон
+ * убрали в карман, партия продолжается, кольца крутятся. Класс ставит `main.js`.
+ */
+html.page-hidden *,
+html.page-hidden *::before,
+html.page-hidden *::after {
+    animation-play-state: paused !important;
 }
 
 @media (prefers-reduced-motion: reduce) {

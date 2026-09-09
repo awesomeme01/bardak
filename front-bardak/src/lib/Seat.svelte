@@ -268,16 +268,33 @@
         font-size: 10px;
         font-weight: 700;
         cursor: pointer;
+    }
+
+    /**
+     * Свечение вокруг кнопки навеса.
+     *
+     * ⚠️ Отдельным псевдоэлементом, потому что у самой кнопки `transform` уже занят
+     * центровкой, а анимировать её тень нельзя: тень перерисовывается каждый кадр
+     * (см. `pulse-ring` в styles.css — здесь то же правило, только своя форма).
+     */
+    .hang-cta::after {
+        content: '';
+        position: absolute;
+        inset: -1px;
+        border-radius: 10px;
+        box-shadow: 0 0 0 6px rgba(240, 205, 138, 0.2);
+        opacity: 0;
         animation: hang-pulse 1.4s ease-in-out infinite;
+        pointer-events: none;
     }
 
     @keyframes hang-pulse {
-        0%, 100% { box-shadow: 0 0 0 0 rgba(240, 205, 138, 0); }
-        50% { box-shadow: 0 0 0 6px rgba(240, 205, 138, 0.2); }
+        0%, 100% { transform: scale(0.97); opacity: 0; }
+        50% { transform: scale(1.03); opacity: 1; }
     }
 
     @media (prefers-reduced-motion: reduce) {
-        .hang-cta { animation: none; }
+        .hang-cta::after { animation: none; }
     }
 
     .shout {

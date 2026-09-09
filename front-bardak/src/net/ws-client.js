@@ -25,7 +25,17 @@ import {apiPost} from './rest-client.js';
 
 const PROTOCOL_VERSION = 1;
 
-const BACKOFF_START_MS = 1000;
+/**
+ * ⭐ Первая пауза перед переподключением — три секунды, а не одна.
+ *
+ * Игру возят в такси, и там связь пропадает не «на мгновение», а на несколько секунд:
+ * машина проезжает между вышками, сеть перескакивает LTE↔5G. Секундная пауза означала
+ * три-четыре обречённых попытки на каждый такой провал, и каждая будила радиомодуль —
+ * то есть грела телефон ровно в тот момент, когда подключиться всё равно не к чему.
+ * Три секунды укладывают в тот же провал одну попытку вместо четырёх, а на живой сети
+ * разницы не видно: там сокет открывается с первого раза (planning/13).
+ */
+const BACKOFF_START_MS = 3000;
 const BACKOFF_MAX_MS = 30000;
 const HEARTBEAT_INTERVAL_MS = 20000;
 const HEARTBEAT_MISS_LIMIT = 2;
@@ -80,6 +90,9 @@ export class WsClient {
     #closedByUs = false;
     #ticketFailures = 0;
 
+    /** Подписка на возвращение сети; не null — сейчас ждём `online`, а не тикаем таймером. */
+    #networkListener = null;
+
     /** Было ли соединение уже открыто: отличает переподключение от первого входа. */
     #wasConnected = false;
 
@@ -97,6 +110,8 @@ export class WsClient {
 
     async connect() {
         this.#closedByUs = false;
+        // Подключаемся прямо сейчас — ждать `online` больше незачем.
+        this.#stopWaitingForNetwork();
         this.#onStatus('connecting');
 
         let ticket;
@@ -203,6 +218,7 @@ export class WsClient {
     close() {
         this.#closedByUs = true;
         this.#stopHeartbeat();
+        this.#stopWaitingForNetwork();
         clearTimeout(this.#reconnectTimer);
         this.#socket?.close();
     }
@@ -221,6 +237,20 @@ export class WsClient {
     }
 
     #scheduleReconnect() {
+        /*
+         * ⭐ Браузер сам говорит, что сети нет вовсе. Пробовать в эту пустоту раз в три
+         * секунды бессмысленно и вредно: каждая попытка будит радиомодуль, а он в дороге
+         * и так самый горячий узел телефона (planning/13). Поэтому пауза сразу растягивается
+         * до предела, а вернуть нас раньше берётся событие `online`.
+         *
+         * ⚠️ Таймер при этом НЕ отменяется. Соблазн был: раз ждём событие, зачем тикать.
+         * Но `online` в мобильном стеке приходит не всегда, и цена пропущенного события —
+         * партия, из которой уже не вернуться. Редкая попытка впустую дешевле.
+         */
+        if (navigator.onLine === false) {
+            this.#reconnectDelay = BACKOFF_MAX_MS;
+            this.#waitForNetwork();
+        }
         // Джиттер нужен, чтобы после падения сервера все клиенты не вернулись разом.
         const jitter = Math.random() * 0.3 * this.#reconnectDelay;
         const delay = this.#reconnectDelay + jitter;
@@ -228,6 +258,43 @@ export class WsClient {
 
         this.#reconnectTimer = setTimeout(() => this.connect(), delay);
         this.#reconnectDelay = Math.min(this.#reconnectDelay * 2, BACKOFF_MAX_MS);
+    }
+
+    /**
+     * Вернуться сразу, как только сеть появится, не дожидаясь тридцатисекундной паузы.
+     *
+     * ⚠️ Подписка ровно одна: разрывов подряд бывает много, а `online` придёт один раз,
+     * и вторая подписка означала бы два одновременных подключения на одно событие.
+     *
+     * ⚠️ `navigator.onLine` — надёжный сигнал только в одну сторону: если он false, сети
+     * точно нет; обратное неверно. Поэтому он решает только «ждать ли подольше», а не
+     * «подключаться ли вообще».
+     */
+    #waitForNetwork() {
+        if (this.#networkListener) {
+            return;
+        }
+        this.#networkListener = () => {
+            this.#stopWaitingForNetwork();
+            if (this.#closedByUs) {
+                return;
+            }
+            // ⚠️ Отложенная попытка отменяется: иначе их станет две — эта и по таймеру.
+            clearTimeout(this.#reconnectTimer);
+            // Сеть вернулась — пауза снова короткая: накопленный backoff относился
+            // к провалу, которого больше нет.
+            this.#reconnectDelay = BACKOFF_START_MS;
+            this.connect();
+        };
+        window.addEventListener('online', this.#networkListener);
+    }
+
+    #stopWaitingForNetwork() {
+        if (!this.#networkListener) {
+            return;
+        }
+        window.removeEventListener('online', this.#networkListener);
+        this.#networkListener = null;
     }
 
     #startHeartbeat() {

@@ -24,6 +24,23 @@ for (const name of ['gesturestart', 'gesturechange', 'gestureend']) {
     document.addEventListener(name, (event) => event.preventDefault(), {passive: false});
 }
 
+/**
+ * Пока приложение не на экране — не анимируется ничего.
+ *
+ * ⭐ Партия живёт в фоне подолгу: телефон убрали в карман, сунули в держатель, переключились
+ * на карту — а кольца очереди и зов кнопки продолжают крутиться. WebKit тормозит анимации
+ * в скрытых вкладках сам, но в установленном приложении и при частично перекрытом окне
+ * на это полагаться нельзя. Правило, которое их останавливает, — в `styles.css`.
+ *
+ * ⚠️ Останавливаются именно АНИМАЦИИ, а не игра: сокет, часы хода и звук работают дальше.
+ * Иначе вернувшийся из фона увидел бы стол, отставший на минуту.
+ */
+const markVisibility = () =>
+    document.documentElement.classList.toggle('page-hidden', document.hidden);
+
+document.addEventListener('visibilitychange', markVisibility);
+markVisibility();
+
 initPwa();
 
 // ⭐ Код из ссылки читается ДО построения разметки: приглашение адресовано и вошедшему,

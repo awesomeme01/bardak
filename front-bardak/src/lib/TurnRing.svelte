@@ -75,13 +75,24 @@
         transition: stroke-dashoffset 0.9s linear, stroke 0.3s ease;
     }
 
+    /**
+     * ⚠️ `will-change` только здесь, а не у `.progress` всегда.
+     *
+     * Мигает дуга, а не весь кружок, поэтому анимация висит на элементе внутри SVG —
+     * а внутренности SVG WebKit сам на отдельный слой не выносит и перерисовывает дугу
+     * каждый кадр. Подсказка выносит. Но слой стоит памяти, а мигание живёт последние
+     * двадцать секунд хода — поэтому подсказка появляется вместе с миганием и уходит
+     * вместе с ним (planning/13).
+     */
     .warn .progress {
         stroke: #f0a94e;
+        will-change: opacity;
         animation: ring-warn 1.1s ease-in-out infinite;
     }
 
     .alarm .progress {
         stroke: var(--red);
+        will-change: opacity;
         animation: ring-alarm 0.45s ease-in-out infinite;
     }
 
