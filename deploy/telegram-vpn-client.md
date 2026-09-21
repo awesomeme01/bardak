@@ -36,9 +36,14 @@
 **Вариант B — через Homebrew (без App Store):**
 ```sh
 brew install wireguard-tools
-sudo wg-quick up ~/Downloads/имя.conf     # включить
-sudo wg-quick down ~/Downloads/имя.conf   # выключить
+alias wgq="sudo $(brew --prefix)/bin/bash $(brew --prefix)/bin/wg-quick"
+wgq up ~/Downloads/имя.conf     # включить
+wgq down ~/Downloads/имя.conf   # выключить
 ```
+⚠️ Просто `sudo wg-quick …` падает с `bash 3 detected, when bash 4+ required`: `sudo`
+сбрасывает PATH, и подхватывается системный bash 3 вместо поставленного brew. Поэтому bash
+указан явно. Чтобы alias не пропадал — добавь строку с `alias` в `~/.zshrc`.
+
 После перезагрузки туннель сам не поднимется — включать заново.
 
 ### Windows
