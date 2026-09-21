@@ -80,6 +80,21 @@ services:
       - caddy-data:/data
       - caddy-config:/config
 
+  # Прокси для Telegram (MTProto, fake-TLS). К игре отношения не имеет — просто живёт рядом.
+  #
+  # ⭐ Профиль `proxy`: обычный `up -d` и tools/ship.sh прокси не трогают. Поднимается
+  # отдельно — tools/proxy.sh.
+  # ⭐ Секрет выпущен на домен игры: кто постучится на порт без секрета, получит
+  # настоящий сертификат от Caddy (domain fronting на 443 того же сервера).
+  # ⚠️ IP общий с игрой: заблокируют прокси — вместе с ним отвалится и игра.
+  mtproto:
+    image: nineseconds/mtg:2.1.7
+    profiles: [proxy]
+    restart: unless-stopped
+    command: ["simple-run", "-i", "prefer-ipv4", "-n", "1.1.1.1", "0.0.0.0:3128", "${MTG_SECRET:-}"]
+    ports:
+      - "${MTG_PORT:-8443}:3128"
+
 volumes:
   pgdata:
   caddy-data:
