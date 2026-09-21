@@ -110,7 +110,7 @@ tools/vpn.sh remove mashaphone
 tools/vpn.sh refresh-ranges   # Telegram сменил подсети — конфиги раздать заново
 ```
 
-Клиенту: телефон — приложение WireGuard → «+» → «Сканировать QR-код»; компьютер —
+Инструкция для друзей — [`telegram-vpn-client.md`](telegram-vpn-client.md). Кратко: телефон — приложение WireGuard → «+» → «Сканировать QR-код»; компьютер —
 WireGuard → «Импорт туннеля из файла».
 
 - ⚠️ Ключи — в томе `bardak_wg-config`, не в `deploy/`: `ship.sh` синхронизирует `deploy/`
