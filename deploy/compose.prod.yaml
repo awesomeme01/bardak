@@ -95,7 +95,42 @@ services:
     ports:
       - "${MTG_PORT:-8443}:3128"
 
+  # VPN «только для Telegram»: в туннель клиента попадают лишь подсети Telegram
+  # (deploy/wireguard/telegram-cidr.txt), остальной трафик идёт мимо. Работает и для
+  # приложения, и для веб-версии, без настроек внутри Telegram.
+  #
+  # ⭐ Профиль `vpn`: ship.sh и обычный `up -d` его не трогают. Управление — tools/vpn.sh.
+  # ⚠️ Ключи — в томе wg-config, а НЕ в ~/bardak/deploy: ship.sh синхронизирует deploy/
+  # с --delete и стёр бы их, как однажды стёр .env.
+  # ⚠️ Шаблон клиента без строки DNS: иначе VPN подменил бы DNS всей системы, и на рабочем
+  # ноутбуке отвалились бы корпоративные имена. Telegram ходит по IP, DNS ему не нужен.
+  # ⭐ IPv6 на сервере нет, но v6-подсети Telegram всё равно в туннеле: сервер их отбрасывает,
+  # и клиент откатывается на v4 через VPN, а не уходит по v6 мимо него.
+  wireguard:
+    image: lscr.io/linuxserver/wireguard:1.0.20250521
+    profiles: [vpn]
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+    sysctls:
+      - net.ipv4.conf.all.src_valid_mark=1
+    environment:
+      TZ: Asia/Almaty
+      SERVERURL: ${WG_PUBLIC_HOST:-auto}
+      SERVERPORT: ${WG_PORT:-51820}
+      PEERS: ${WG_PEERS:-}
+      ALLOWEDIPS: ${WG_ALLOWEDIPS:-}
+      INTERNAL_SUBNET: 10.13.13.0
+      # QR и конфиги в логах — это ключи в логах.
+      LOG_CONFS: "false"
+    ports:
+      - "${WG_PORT:-51820}:51820/udp"
+    volumes:
+      - wg-config:/config
+      - ./wireguard/peer.conf:/config/templates/peer.conf:ro
+
 volumes:
   pgdata:
   caddy-data:
   caddy-config:
+  wg-config:
