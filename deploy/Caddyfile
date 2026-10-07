@@ -30,3 +30,34 @@
 		format json
 	}
 }
+
+# ⭐ Соседнее приложение на этом же сервере — Agent Room (репозиторий agent-room-v,
+# свой compose-проект `agent-room`). Его контейнер подключён к сети bardak_default
+# под алиасом `agent-room`, поэтому Caddy видит его по имени.
+# ⚠️ Блок живёт здесь, а не только на сервере: ship.sh синхронизирует deploy/ с
+# --delete и стёр бы правку, сделанную руками на машине.
+agent-room.shabahost.space {
+	encode zstd gzip
+
+	reverse_proxy agent-room:8000 {
+		header_up X-Forwarded-For {remote_host}
+		# room_listen держит один MCP-запрос открытым до 240 с (LISTEN_MAX_MS).
+		flush_interval -1
+		transport http {
+			read_timeout 300s
+			write_timeout 300s
+		}
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}
